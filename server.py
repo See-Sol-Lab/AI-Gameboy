@@ -1,59 +1,114 @@
-"""AI-Gameboy · Stage A 通电检查服务。
+"""AI-Gameboy · Stage B V0 内部纸桌。
 
-只验证一件事:Codex Desktop 与 Claude Code 的真实窗口
-能否连上同一个本机 Streamable HTTP MCP 入口。
+一个 Python 进程、一个 HTTP MCP 入口、一份 SQLite 真相(蓝图 §18.1):
+- AI 侧只有两项工具:game_observe / game_act;
+- 人类侧极简页面:建局、复制席位连接信息、开局、旁观、手动结束;
+- 内置卡:《口袋电路》。
 
-- 只有一项只读工具 table_hello,返回座位名称;
-- 不建牌局、不存游戏状态、不碰 内部设计资料;
-- Stage B 开工前,本文件可整体替换。
-
-运行:python server.py
-入口:http://127.0.0.1:7777/mcp
+运行:python server.py  (或双击 start_server.bat)
+MCP 入口:http://127.0.0.1:7777/mcp
+人类页面:http://127.0.0.1:7777/
 """
 
-from datetime import datetime
 from pathlib import Path
 
-from mcp.server import MCPServer  # mcp SDK 2.0:FastMCP 的后继者
+from mcp.server import MCPServer
+from starlette.requests import Request
+from starlette.responses import FileResponse, JSONResponse
 
-HOST = "127.0.0.1"  # 只绑回环地址,不开局域网/公网
+from game_host import GameHost
+
+HOST = "127.0.0.1"  # 只绑回环地址,不开局域网/公网(蓝图 §15.4)
 PORT = 7777
-LOG_FILE = Path(__file__).parent / "data" / "stage_a_calls.log"
+BASE = Path(__file__).parent
+WEB = BASE / "web"
 
-# Stage A 的座位只是名称:没有令牌、没有私牌、没有牌局
-SEATS = [
-    {"seat_id": "seat_a", "name": "A 席(靠窗)"},
-    {"seat_id": "seat_b", "name": "B 席(靠门)"},
-]
+host = GameHost(BASE / "data" / "gameboy.db", BASE / "cartridges")
 
-mcp = MCPServer("ai-gameboy")
+mcp = MCPServer(
+    "ai-gameboy",
+    instructions=(
+        "AI-Gameboy 牌桌。你需要人类交给你的 session_id 与 seat_token 才能入座。"
+        "先 game_observe 看自己的桌面,再按 legal_actions 用 game_act 行动;"
+        "第一步通常是 introduce 自我介绍。"
+    ),
+)
 
 
-def _log(line: str) -> None:
-    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with LOG_FILE.open("a", encoding="utf-8") as f:
-        f.write(line + "\n")
+# ---------------- AI 的两项动作 ----------------
+
+@mcp.tool()
+def game_observe(session_id: str, seat_token: str) -> dict:
+    """看我的桌面:返回本局中只属于你这个席位的观察。
+
+    session_id / seat_token 来自人类交给你的连接信息。
+    返回:revision(提交动作时原样带上)、status、public_state、
+    private_state(只有你能看到,别人的私牌不会出现)、
+    legal_actions(你现在能做什么)、waiting_for(在等谁)。
+    只读、可随时调用;断开后凭原令牌调用即可回到原局。
+    """
+    return host.observe(session_id, seat_token)
 
 
 @mcp.tool()
-def table_hello(who: str = "unknown") -> dict:
-    """看一眼牌桌(Stage A 通电检查,只读)。
+def game_act(session_id: str, seat_token: str, expected_revision: int,
+             action_id: str, params: dict | None = None,
+             table_line: str = "") -> dict:
+    """提交我的动作。先用 game_observe 拿到最新 revision 和 legal_actions。
 
-    who:请自报你所在的窗口,例如 "Codex Desktop" 或 "Claude Code"。
-    返回座位名称与服务器时间;不创建牌局,不改变任何状态。
+    - expected_revision:填你刚观察到的 revision;若已过期,返回
+      stale_revision 与新观察,请重新决定后再提交;
+    - action_id / params:从 legal_actions 里选。大厅中是
+      introduce(display_name、surface 必填,now、public_anchors 可选);
+      开局后如 play_card,params 形如 {"card": 3};
+    - table_line:可选,一句公开桌边话(≤120 字),只随本次动作出现。
+    动作是你自己的选择:牌桌不替你决定,也不把你的私牌给别人看。
     """
-    now = datetime.now().astimezone().isoformat(timespec="seconds")
-    _log(f"{now}  table_hello  who={who!r}")
-    return {
-        "table": "AI-Gameboy",
-        "stage": "A(通电检查)",
-        "seats": SEATS,
-        "server_time": now,
-        "note": "本工具只读。真实验收 = 两个真实窗口各自调用成功,且服务端日志时间能对上。",
-    }
+    return host.act(session_id, seat_token, expected_revision,
+                    action_id, params, table_line)
+
+
+# ---------------- 人类页面(同进程、同端口) ----------------
+
+@mcp.custom_route("/", methods=["GET"])
+async def index(request: Request):
+    return FileResponse(WEB / "index.html")
+
+
+@mcp.custom_route("/web/app.js", methods=["GET"])
+async def app_js(request: Request):
+    return FileResponse(WEB / "app.js")
+
+
+@mcp.custom_route("/web/style.css", methods=["GET"])
+async def style_css(request: Request):
+    return FileResponse(WEB / "style.css")
+
+
+@mcp.custom_route("/api/sessions", methods=["GET", "POST"])
+async def sessions(request: Request):
+    if request.method == "POST":
+        return JSONResponse(host.create_session())
+    return JSONResponse(host.list_sessions())
+
+
+@mcp.custom_route("/api/sessions/{sid}", methods=["GET"])
+async def session_view(request: Request):
+    return JSONResponse(host.public_view(request.path_params["sid"]))
+
+
+@mcp.custom_route("/api/sessions/{sid}/start", methods=["POST"])
+async def session_start(request: Request):
+    return JSONResponse(host.start_game(request.path_params["sid"]))
+
+
+@mcp.custom_route("/api/sessions/{sid}/end", methods=["POST"])
+async def session_end(request: Request):
+    return JSONResponse(host.end_session(request.path_params["sid"]))
 
 
 if __name__ == "__main__":
-    print(f"AI-Gameboy Stage A 通电检查:http://{HOST}:{PORT}/mcp")
-    print(f"调用日志:{LOG_FILE}")
+    print(f"AI-Gameboy Stage B 内部纸桌")
+    print(f"MCP 入口:http://{HOST}:{PORT}/mcp")
+    print(f"人类页面:http://{HOST}:{PORT}/")
     mcp.run(transport="streamable-http", host=HOST, port=PORT)

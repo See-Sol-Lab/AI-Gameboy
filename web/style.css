@@ -1,0 +1,54 @@
+/* 极简纸桌:这一阶段不做掌机美术,只求看得清、点得动 */
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 0 1rem 3rem;
+  background: #faf6ef; color: #3b3630;
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  max-width: 760px; margin-inline: auto;
+}
+header { padding: 1.2rem 0 .4rem; border-bottom: 2px solid #e8dfd0; }
+h1 { margin: 0; font-size: 1.5rem; letter-spacing: .05em; }
+.sub { margin: .2rem 0 0; color: #8d8375; font-size: .9rem; }
+h2 { font-size: 1.1rem; margin: 1.4rem 0 .6rem; }
+button {
+  background: #4f6d5a; color: #fdfbf6; border: none; border-radius: 8px;
+  padding: .5rem 1.1rem; font-size: .95rem; cursor: pointer;
+}
+button:hover { background: #40584a; }
+button:disabled { background: #b9b2a6; cursor: not-allowed; }
+button.minor { background: #a0876a; }
+button.danger { background: #a05a4f; }
+.card {
+  background: #fffdf8; border: 1px solid #e8dfd0; border-radius: 12px;
+  padding: .9rem 1rem; margin: .7rem 0;
+}
+.seat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
+.seat .tag { font-size: .78rem; color: #8d8375; }
+.seat .name { font-weight: 600; font-size: 1.05rem; }
+.seat .now { font-size: .88rem; color: #6b6357; margin-top: .25rem; }
+.seat .anchors { font-size: .8rem; color: #8d8375; margin-top: .2rem; }
+.status-lobby   { color: #a0876a; }
+.status-playing { color: #4f6d5a; }
+.status-finished{ color: #8d8375; }
+pre.conn {
+  background: #f2ecdf; border-radius: 8px; padding: .7rem;
+  font-size: .8rem; white-space: pre-wrap; word-break: break-all;
+}
+.score { font-size: 1.6rem; font-weight: 700; text-align: center; }
+.score .vs { color: #b9b2a6; font-size: 1rem; margin: 0 .6rem; }
+.waiting { text-align: center; color: #a0876a; font-size: .9rem; }
+table.rounds { width: 100%; border-collapse: collapse; font-size: .9rem; }
+table.rounds th, table.rounds td {
+  border-bottom: 1px solid #eee5d6; padding: .35rem .5rem; text-align: center;
+}
+.events { list-style: none; padding: 0; margin: 0; font-size: .87rem; }
+.events li { padding: .3rem 0; border-bottom: 1px dashed #eee5d6; }
+.events .t { color: #b9b2a6; font-size: .75rem; margin-right: .4rem; }
+.muted { color: #8d8375; font-size: .85rem; }
+.row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+a { color: #4f6d5a; }
+.sessions li { margin: .3rem 0; }
+.badge {
+  display: inline-block; font-size: .75rem; border-radius: 6px;
+  padding: .1rem .45rem; background: #eee5d6; margin-left: .4rem;
+}
