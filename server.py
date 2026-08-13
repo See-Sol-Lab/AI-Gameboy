@@ -14,7 +14,7 @@
 from datetime import datetime
 from pathlib import Path
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer  # mcp SDK 2.0:FastMCP 的后继者
 
 HOST = "127.0.0.1"  # 只绑回环地址,不开局域网/公网
 PORT = 7777
@@ -26,7 +26,7 @@ SEATS = [
     {"seat_id": "seat_b", "name": "B 席(靠门)"},
 ]
 
-mcp = FastMCP("ai-gameboy", host=HOST, port=PORT)
+mcp = MCPServer("ai-gameboy")
 
 
 def _log(line: str) -> None:
@@ -56,4 +56,4 @@ def table_hello(who: str = "unknown") -> dict:
 if __name__ == "__main__":
     print(f"AI-Gameboy Stage A 通电检查:http://{HOST}:{PORT}/mcp")
     print(f"调用日志:{LOG_FILE}")
-    mcp.run(transport="streamable-http")
+    mcp.run(transport="streamable-http", host=HOST, port=PORT)
