@@ -56,7 +56,7 @@ url = "http://127.0.0.1:7777/mcp"
 | 表面 | 日期 | 客户端版本 | 配置位置 | table_hello 结果 | 卡点 |
 |---|---|---|---|---|---|
 | Claude Code | 2026-08-13 | 桌面版(无 CLI) | `C:\Users\Administrator\.claude\.mcp.json`(项目级) | **成功**:12:15:15 调用,日志留痕 `who='Claude Code'` | MCP 配置不热加载,需重启窗口;`claude` 不在 PATH |
-| Codex Desktop | 待实测 | | | | |
+| Codex Desktop | 2026-08-13 | Codex Desktop 26.803.10989.0 / Codex CLI 0.147.0-alpha.6.6 | `C:\Users\Administrator\.codex\config.toml` | **成功**:12:36:51 调用,日志留痕 `who='Codex Desktop'` | MCP 配置需重启 Codex 后装载 |
 
 ## Stage A 验收
 
