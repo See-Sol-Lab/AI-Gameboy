@@ -269,11 +269,11 @@ body {
   position: absolute; left: 39px; top: 39px; width: 40px; height: 40px;
   background: #4a443b;
 }
-.ss-bar { display: flex; gap: 1.4rem; justify-self: center; padding-top: 1.4rem; }
-.ss { display: flex; flex-direction: column; align-items: center; gap: .3rem; }
-.ss span { font-size: .62rem; letter-spacing: .18em; color: #8b7355; font-weight: 700; }
+.ss-bar { display: flex; gap: 2rem; justify-self: center; padding-top: 1.2rem; }
+.ss { display: flex; flex-direction: column; align-items: center; gap: .7rem; }
+.ss span { font-size: .7rem; letter-spacing: .26em; color: #8b7355; font-weight: 700; }
 .ss-btn {
-  width: 52px; height: 16px; border: none; border-radius: 8px; cursor: pointer;
+  width: 68px; height: 24px; border: none; border-radius: 12px; cursor: pointer;
   background: linear-gradient(180deg, #7a7264, #625b4e);
   box-shadow: 0 3px 0 #453f35, inset 0 1px 0 rgba(255,255,255,.3);
   transform: rotate(-18deg);
