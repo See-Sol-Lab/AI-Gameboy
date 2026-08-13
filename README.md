@@ -18,10 +18,23 @@ python server.py
 
 ## 配置 Claude Code
 
+有 CLI 时:
+
 ```bash
 claude mcp add --transport http gameboy http://127.0.0.1:7777/mcp
 ```
 
+桌面版无 CLI 时(2026-08-13 实测本机即此情况):在项目根目录写 `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "gameboy": { "type": "http", "url": "http://127.0.0.1:7777/mcp" }
+  }
+}
+```
+
+**MCP 配置只在会话启动时加载,不热加载**——写完必须重启窗口,首次加载会弹批准提示。
 然后在 Claude Code 真实窗口里让它调用 `table_hello`,`who` 填 `"Claude Code"`。
 
 ## 配置 Codex Desktop
@@ -42,7 +55,7 @@ url = "http://127.0.0.1:7777/mcp"
 
 | 表面 | 日期 | 客户端版本 | 配置位置 | table_hello 结果 | 卡点 |
 |---|---|---|---|---|---|
-| Claude Code | 待实测 | | | | |
+| Claude Code | 2026-08-13 | 桌面版(无 CLI) | `C:\Users\Administrator\.claude\.mcp.json`(项目级) | 待窗口重启后调用 | MCP 配置不热加载,需重启窗口;`claude` 不在 PATH |
 | Codex Desktop | 待实测 | | | | |
 
 ## Stage A 验收
