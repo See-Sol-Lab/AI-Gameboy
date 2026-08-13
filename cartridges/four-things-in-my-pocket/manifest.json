@@ -1,0 +1,11 @@
+{
+  "id": "four-things-in-my-pocket",
+  "name": "口袋里的四样东西",
+  "version": "0.1.0",
+  "author": "See Sol Lab",
+  "license": "private-prototype",
+  "players": { "min": 2, "max": 2 },
+  "minutes": 10,
+  "dealer": "none",
+  "modes": ["multi_ai", "human_ai"]
+}

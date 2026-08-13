@@ -89,11 +89,48 @@ async def style_css(request: Request):
     return FileResponse(WEB / "style.css", headers=_STATIC_HEADERS)
 
 
+async def _json_body(request: Request) -> dict:
+    try:
+        body = await request.json()
+        return body if isinstance(body, dict) else {}
+    except Exception:
+        return {}
+
+
+@mcp.custom_route("/api/cartridges", methods=["GET"])
+async def cartridges(request: Request):
+    return JSONResponse(host.list_cartridges())
+
+
 @mcp.custom_route("/api/sessions", methods=["GET", "POST"])
 async def sessions(request: Request):
     if request.method == "POST":
-        return JSONResponse(host.create_session())
+        body = await _json_body(request)
+        return JSONResponse(host.create_session(
+            body.get("cartridge_id", "pocket-circuit"),
+            body.get("mode", "ai_ai")))
     return JSONResponse(host.list_sessions())
+
+
+# ---- 人类席:与 MCP 完全同构的薄封装,令牌走 POST body 不进 URL ----
+
+@mcp.custom_route("/api/sessions/{sid}/observe", methods=["POST"])
+async def human_observe(request: Request):
+    body = await _json_body(request)
+    return JSONResponse(host.observe(request.path_params["sid"],
+                                     body.get("seat_token", "")))
+
+
+@mcp.custom_route("/api/sessions/{sid}/act", methods=["POST"])
+async def human_act(request: Request):
+    body = await _json_body(request)
+    return JSONResponse(host.act(
+        request.path_params["sid"],
+        body.get("seat_token", ""),
+        body.get("expected_revision", -1),
+        body.get("action_id", ""),
+        body.get("params") or {},
+        body.get("table_line", "")))
 
 
 @mcp.custom_route("/api/sessions/{sid}", methods=["GET"])

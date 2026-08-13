@@ -1,11 +1,14 @@
 """《口袋电路》纯规则测试:发牌、暗投、揭示、计分、终局与非法动作。"""
 
-import sys
+import importlib.util
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cartridges" / "pocket-circuit"))
-import rules  # noqa: E402
+_spec = importlib.util.spec_from_file_location(
+    "pocket_circuit_rules",
+    Path(__file__).resolve().parents[1] / "cartridges" / "pocket-circuit" / "rules.py")
+rules = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(rules)
 
 SEATS = ["seat_a", "seat_b"]
 

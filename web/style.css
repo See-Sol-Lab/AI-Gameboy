@@ -246,6 +246,60 @@ body {
 .mem-talk .who { font-weight: 700; }
 .mem-talk .tt { font-size: .68rem; color: #a5987a; margin-right: .3rem; }
 
+/* ---------- 《口袋里的四样东西》与人类席 ---------- */
+.mode-choices {
+  display: flex; flex-direction: column; gap: .7rem; align-items: center;
+  margin: 1.2rem 0;
+}
+.mode-choices .soft { min-width: 240px; font-size: 1rem; padding: .6rem 1.2rem; }
+.warn-note { color: #7a4a3c; font-size: .85rem; }
+.situation {
+  background: rgba(243,236,216,.72); border-radius: 10px;
+  padding: .55rem .7rem; margin-top: .5rem; text-align: center;
+  box-shadow: inset 0 1px 3px rgba(90,80,40,.3);
+}
+.sit-name { font-weight: 800; color: #3c422b; }
+.sit-text { font-size: .84rem; color: #55503d; margin-top: .15rem; }
+.sit-tags { margin-top: .4rem; }
+.chip {
+  display: inline-block; font-size: .74rem; border-radius: 6px;
+  padding: .08rem .5rem; margin: .1rem .15rem;
+  background: #d8cfa4; color: #3c422b;
+}
+.chip.need { background: #4c563a; color: #e6ecd2; }
+.chip.risk { background: #7a4a3c; color: #f3e4dc; }
+.four-round, .mem-four {
+  font-size: .82rem; color: #4c563a; margin: .3rem 0;
+  border-top: 1px dashed rgba(120,110,70,.35); padding-top: .3rem;
+}
+.my-panel {
+  margin-top: .8rem; border: 2px solid #7d8663; border-radius: 12px;
+  padding: .6rem .7rem; background: rgba(255,255,255,.18);
+}
+.hand-row { display: flex; gap: .6rem; flex-wrap: wrap; justify-content: center; margin-top: .5rem; }
+.item-card {
+  width: 132px; cursor: pointer; border-radius: 9px; padding: .45rem .5rem;
+  background: #f3ecd8; border: 2px solid #b6ac8b;
+  box-shadow: 1px 2px 0 rgba(60,50,20,.3);
+}
+.item-card.picked { border-color: #3c422b; background: #e9e0c2;
+  box-shadow: inset 0 1px 4px rgba(60,50,20,.35); }
+.item-card .it-name { font-weight: 800; color: #3c422b; }
+.item-card .it-tags { margin-top: .25rem; }
+.confirm-bar {
+  display: flex; gap: .55rem; align-items: center; flex-wrap: wrap;
+  justify-content: center; margin-top: .7rem;
+}
+.intro-form { display: flex; flex-direction: column; gap: .45rem; margin-top: .5rem; }
+.intro-form input, .confirm-bar input {
+  background: rgba(255,255,255,.55); border: 1.5px solid #7d8663;
+  border-radius: 7px; padding: .38rem .55rem; font-size: .9rem;
+  color: #3c422b; font-family: inherit; min-width: 180px;
+}
+.intro-form input:focus, .confirm-bar input:focus {
+  outline: 2px solid #4c563a;
+}
+
 /* ---------- 按键区 ---------- */
 .controls {
   display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;

@@ -81,8 +81,22 @@ class GameHost:
 
     # ---------------- 人类 UI 动作 ----------------
 
-    def create_session(self, cartridge_id: str = "pocket-circuit") -> dict:
-        manifest = self._load_manifest(cartridge_id)
+    # mode -> manifest.modes 里的能力名;人类×AI 时 seat_b 是人类席
+    MODES = {"ai_ai": "multi_ai", "human_ai": "human_ai"}
+
+    def create_session(self, cartridge_id: str = "pocket-circuit",
+                       mode: str = "ai_ai") -> dict:
+        try:
+            manifest = self._load_manifest(cartridge_id)
+        except CartridgeVersionMissing:
+            return {"result": "rejected", "reason": "没有这张卡带"}
+        if mode not in self.MODES:
+            return {"result": "rejected", "reason": "mode 只能是 ai_ai 或 human_ai"}
+        if self.MODES[mode] not in manifest.get("modes", []):
+            return {"result": "rejected",
+                    "reason": f"《{manifest.get('name', cartridge_id)}》不支持 {mode} 模式"}
+        participant = {"seat_a": "ai_window",
+                       "seat_b": "human" if mode == "human_ai" else "ai_window"}
         sid = datetime.now().strftime("%Y%m%d") + "-" + secrets.token_hex(3)
         now = _now()
         engine = {"events": [], "cartridge_state": None}
@@ -95,8 +109,10 @@ class GameHost:
                                  now, now)
             for seat_id in ("seat_a", "seat_b"):
                 token = secrets.token_urlsafe(24)
-                store.insert_seat(conn, sid, seat_id, "ai_window", _hash(token), now)
-                seats_out.append({"seat_id": seat_id, "seat_token": token})
+                store.insert_seat(conn, sid, seat_id, participant[seat_id],
+                                  _hash(token), now)
+                seats_out.append({"seat_id": seat_id, "seat_token": token,
+                                  "participant_type": participant[seat_id]})
             conn.execute("COMMIT")
         except BaseException:
             conn.execute("ROLLBACK")
@@ -108,9 +124,22 @@ class GameHost:
             "session_id": sid,
             "cartridge": {"id": cartridge_id, "version": manifest["version"],
                           "name": manifest.get("name", cartridge_id)},
+            "mode": mode,
             "seats": seats_out,
             "note": "席位令牌只显示这一次,服务器只保存哈希。",
         }
+
+    def list_cartridges(self) -> dict:
+        """卡带架真实清单:扫描 cartridges/*/manifest.json(只读)。"""
+        out = []
+        for p in sorted(self.cartridges_dir.iterdir()):
+            m = p / "manifest.json"
+            if m.is_file():
+                d = json.loads(m.read_text("utf-8"))
+                out.append({k: d.get(k) for k in
+                            ("id", "name", "version", "author", "license",
+                             "players", "minutes", "dealer", "modes")})
+        return {"result": "ok", "cartridges": out}
 
     def start_game(self, session_id: str) -> dict:
         conn = store.connect(self.db_path)
