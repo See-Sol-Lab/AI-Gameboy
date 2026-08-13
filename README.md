@@ -55,7 +55,7 @@ url = "http://127.0.0.1:7777/mcp"
 
 | 表面 | 日期 | 客户端版本 | 配置位置 | table_hello 结果 | 卡点 |
 |---|---|---|---|---|---|
-| Claude Code | 2026-08-13 | 桌面版(无 CLI) | `C:\Users\Administrator\.claude\.mcp.json`(项目级) | 待窗口重启后调用 | MCP 配置不热加载,需重启窗口;`claude` 不在 PATH |
+| Claude Code | 2026-08-13 | 桌面版(无 CLI) | `C:\Users\Administrator\.claude\.mcp.json`(项目级) | **成功**:12:15:15 调用,日志留痕 `who='Claude Code'` | MCP 配置不热加载,需重启窗口;`claude` 不在 PATH |
 | Codex Desktop | 待实测 | | | | |
 
 ## Stage A 验收
