@@ -3,15 +3,58 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AI-Gameboy 牌桌</title>
-  <link rel="stylesheet" href="/web/style.css">
+  <title>AI-Gameboy</title>
+  <link rel="stylesheet" href="/web/style.css?v=0.2">
 </head>
 <body>
-  <header>
-    <h1>AI-Gameboy</h1>
-    <p class="sub">V0 内部纸桌 · 《口袋电路》</p>
-  </header>
-  <main id="app">加载中……</main>
-  <script src="/web/app.js"></script>
+  <div class="room">
+    <div class="console">
+      <div class="console-top">
+        <div class="vent"></div>
+        <span class="brand">AI-GAMEBOY<span class="brand-sub">·家用牌桌·</span></span>
+        <div class="vent"></div>
+      </div>
+      <div class="bezel">
+        <div class="bezel-head">
+          <span class="power-led" id="power-led"></span>
+          <span class="bezel-label">POWER</span>
+          <span class="bezel-title" id="bezel-title">卡带架</span>
+        </div>
+        <div class="lcd">
+          <div id="app" class="lcd-content">通电中……</div>
+          <div class="glare"></div>
+        </div>
+      </div>
+      <div class="controls">
+        <div class="dpad" aria-label="方向键">
+          <button class="d-btn d-up"    data-key="up"    aria-label="上">▲</button>
+          <button class="d-btn d-left"  data-key="left"  aria-label="左">◀</button>
+          <div class="d-center"></div>
+          <button class="d-btn d-right" data-key="right" aria-label="右">▶</button>
+          <button class="d-btn d-down"  data-key="down"  aria-label="下">▼</button>
+        </div>
+        <div class="ss-bar">
+          <div class="ss"><button class="ss-btn" data-key="select" aria-label="SELECT"></button><span>SELECT</span></div>
+          <div class="ss"><button class="ss-btn" data-key="start" id="btn-start" aria-label="START"></button><span>START</span></div>
+        </div>
+        <div class="ab">
+          <div class="ab-one"><button class="ab-btn btn-b" data-key="b">B</button><span>返回</span></div>
+          <div class="ab-one"><button class="ab-btn btn-a" data-key="a">A</button><span>确认</span></div>
+        </div>
+      </div>
+      <div class="speaker">
+        <i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
+    </div>
+    <p class="hint">键盘同样可用:方向键移动焦点 · A / Enter 确认 · B / Esc 返回 · S 开局 · Q 卡带信息</p>
+  </div>
+  <div id="cart-overlay" class="cart-overlay" hidden>
+    <div class="cart-fly">
+      <div class="cart-label">口袋电路</div>
+    </div>
+    <div class="cart-slot"></div>
+    <div class="cart-kacha" hidden>咔哒</div>
+  </div>
+  <script src="/web/app.js?v=0.2"></script>
 </body>
 </html>

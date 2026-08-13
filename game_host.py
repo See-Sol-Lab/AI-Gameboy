@@ -229,6 +229,8 @@ class GameHost:
                 "public_state": public_state,
                 "waiting_for": waiting,
                 "recent_public_events": engine["events"][-EVENTS_RECENT:],
+                # 纪念卡需要完整公开事件流(Stage C 最小补充,仍为只读派生)
+                "public_events": engine["events"],
                 "created_at": srow["created_at"],
                 "updated_at": srow["updated_at"],
             }

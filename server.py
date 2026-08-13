@@ -70,19 +70,23 @@ def game_act(session_id: str, seat_token: str, expected_revision: int,
 
 # ---------------- 人类页面(同进程、同端口) ----------------
 
+# no-cache:每次重新验证,掌机壳升级后人类刷新即得新版
+_STATIC_HEADERS = {"Cache-Control": "no-cache"}
+
+
 @mcp.custom_route("/", methods=["GET"])
 async def index(request: Request):
-    return FileResponse(WEB / "index.html")
+    return FileResponse(WEB / "index.html", headers=_STATIC_HEADERS)
 
 
 @mcp.custom_route("/web/app.js", methods=["GET"])
 async def app_js(request: Request):
-    return FileResponse(WEB / "app.js")
+    return FileResponse(WEB / "app.js", headers=_STATIC_HEADERS)
 
 
 @mcp.custom_route("/web/style.css", methods=["GET"])
 async def style_css(request: Request):
-    return FileResponse(WEB / "style.css")
+    return FileResponse(WEB / "style.css", headers=_STATIC_HEADERS)
 
 
 @mcp.custom_route("/api/sessions", methods=["GET", "POST"])
