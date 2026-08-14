@@ -1,4 +1,13 @@
-"""《口袋穿越》规则 v0.2(Step 2:真荷官接入版)。
+"""《口袋穿越》规则 v0.3(支线暗典版)。
+
+v0.3 新增(源自 早期测试测试局验尸报告):
+- 支线暗典:worldgen 时预写 2 条支线悬案(谜题+定死的谜底),谜底玩家不可见;
+  一条绑剧情 NPC(在 1..10 幕中随机两个登场窗口,可错过、可翻盘),
+  一条绑数值考验(默契/探索胜场/对抗胜场达标即自动揭示)。
+- 悬事生命周期:hooks 由引擎全权管理 = 未解支线的谜题原句;荷官不得增殖同义悬事。
+- 主线锁定即冻结:main_goal_locked 后进度与时钟不再变动(法则失效)。
+- 提议停笔不再折算成休整:单方 end = 静候,不掷骰、不触发法则。
+- 幕数走满由引擎强制结算,不再依赖双方同意。
 
 与 v0.1 的机制完全相同(账本/骰子/法则/隐藏线/三类结局),区别只有一个:
 世界、身份池、每一幕场景、结局文本改由叙事荷官(外部 API)按合同生成,
@@ -22,17 +31,51 @@ LINE_MAX = 60
 MAX_SCENES = 10
 INTENTS = ["advance", "explore", "support", "confront", "recover"]
 INTENT_NAMES = {"advance": "推进", "explore": "探索", "support": "支援",
-                "confront": "对抗", "recover": "休整", "end": "停笔"}
+                "confront": "对抗", "recover": "休整", "end": "停笔",
+                "wait": "静候"}
 
+# v0.3 词库重铸(起点男频/女频题材与标签,经人类作者审定):
+# 每项 (词, 权重)。世界生成器 ≠ 任务生成器——题材决定世界,发动机决定这局的事,
+# 倒计时毁灭只是发动机之一且权重压低(≈12%),大量对局应是中低烈度的世间事。
 POOLS = {
-    "form": ["现代都市", "架空古代", "未来都市", "末世废土", "深海文明", "蒸汽时代",
-             "魔法大陆", "东方玄幻", "修仙世界", "梦境世界", "封闭空间", "时间夹层"],
-    "power": ["无超凡", "低武", "中武", "高武", "神话级"],
-    "kind": ["求生", "逃离", "护送", "寻物", "调查", "夺回", "守城", "潜入",
-             "远征", "营救", "谈判"],
-    "mood": ["温暖", "轻快", "诡谲", "压抑", "壮烈", "荒诞", "史诗", "孤独", "黑色幽默"],
-    "variable": ["时间不多了", "身份存疑", "资源枯竭", "世界正在遗忘",
-                 "敌人会学习你们", "两人记忆不一致", "道路无法回头", "死亡会改变规则"],
+    "genre": [  # 世界题材:这个世界是什么小说
+        ("仙侠修真", 3), ("玄幻大陆", 3), ("武侠江湖", 2), ("西方奇幻", 2),
+        ("现代都市", 3), ("都市异闻", 2), ("历史古代", 2), ("古代言情", 2),
+        ("现代言情", 2), ("浪漫青春", 2), ("悬疑推理", 2), ("悬疑灵异", 2),
+        ("科幻未来", 2), ("星际空间", 1), ("末世废土", 1), ("游戏电竞", 1),
+        ("体育竞技", 1), ("军事谍战", 1), ("市井现实", 2), ("深海文明", 1),
+        ("蒸汽时代", 1), ("梦境世界", 1), ("时间夹层", 1), ("封闭空间", 1),
+        ("西游神话", 1), ("洪荒神话", 1), ("剑仙山门", 1), ("诸天无限", 1),
+    ],
+    "power": [("无超凡", 1), ("低武", 1), ("中武", 1), ("高武", 1), ("神话级", 1)],
+    "engine": [  # 故事发动机:这局的剧情由什么牵引(≠世界末日)
+        ("调查悬案", 3), ("寻人寻物", 3), ("经营生计", 3), ("市井日常", 3),
+        ("护送同行", 2), ("夺宝竞逐", 2), ("拍卖风云", 2), ("大典选拔", 2),
+        ("竞赛比武", 2), ("行商旅途", 2), ("社交风波", 2), ("奇遇机缘", 2),
+        ("复仇雪冤", 2), ("营救脱困", 2), ("逃亡追捕", 2), ("潜入窃取", 1),
+        ("谈判斡旋", 1), ("建设重建", 1), ("危机倒计时", 5),
+    ],
+    "element": [  # 特色元素:给世界加一味料(多数时候不加)
+        ("(无特别元素)", 8),
+        ("阵法符箓", 1), ("丹药炼制", 1), ("卡片御灵", 1), ("召唤契约", 1),
+        ("亡灵鬼怪", 1), ("吸血鬼", 1), ("龙族", 1), ("魔兽异兽", 1),
+        ("僵尸丧尸", 1), ("盗墓玄学", 1), ("鉴宝奇珍", 1), ("灵宠相伴", 1),
+        ("系统面板", 1), ("随身空间", 1), ("位面穿梭", 1),
+    ],
+    "mood": [
+        ("温暖", 2), ("轻快", 2), ("热血", 2), ("诡谲", 2), ("市井烟火", 2),
+        ("压抑", 1), ("壮烈", 1), ("荒诞", 1), ("史诗", 1), ("孤独", 1),
+        ("黑色幽默", 1), ("爆笑恶搞", 1), ("励志", 1), ("冷酷", 1),
+    ],
+    "entry": [  # 进入方式:两位玩家怎么来到这个世界
+        ("穿越而来", 5), ("重生此世", 2), ("穿书成配角", 2),
+        ("魂穿他人", 2), ("变身异类", 1), ("强者归来", 1),
+    ],
+    "variable": [
+        ("身份存疑", 1), ("资源枯竭", 1), ("世界正在遗忘", 1),
+        ("敌人会学习你们", 1), ("两人记忆不一致", 1), ("道路无法回头", 1),
+        ("死亡会改变规则", 1), ("你们的到来早有预言", 1), ("原典主角就在附近", 1),
+    ],
 }
 
 # 菜单制:荷官只能从这里选机制代码
@@ -66,8 +109,14 @@ class IllegalAction(Exception):
 # ---------------- 建局与种子 ----------------
 
 def _pick(seed, salt, pool):
-    h = int(hashlib.sha256(f"{seed}:{salt}".encode()).hexdigest(), 16)
-    return pool[h % len(pool)]
+    """加权抽签:pool 是 (词, 权重) 列表,seed 定死,可复现。"""
+    total = sum(w for _, w in pool)
+    h = int(hashlib.sha256(f"{seed}:{salt}".encode()).hexdigest(), 16) % total
+    for v, w in pool:
+        h -= w
+        if h < 0:
+            return v
+    return pool[-1][0]
 
 
 def new_game(seats, seed):
@@ -92,10 +141,14 @@ def new_game(seats, seed):
         "inventory": {seats[0]: [], seats[1]: [], "shared": []},
         "facts": [], "flags": [], "hooks": [],
         "hooks_resolved": 0, "hidden_fired": [],
+        "side_quests": [],
+        "wins": {"advance": 0, "explore": 0, "support": 0,
+                 "confront": 0, "recover": 0},
         "pending": {}, "history": [],
         "prophecies": {seats[0]: [], seats[1]: []},   # 先知情报:私密撕页
         "prophecy_i": 0,
         "ending": None, "rolls_used": 0, "end_proposed_by": None,
+        "end_streaks": {seats[0]: 0, seats[1]: 0},   # 连续三幕提停笔=强制结算
         "narration_request": {"kind": "gen_world", "context": {"axes": axes}},
     }
 
@@ -108,6 +161,38 @@ def _die(state):
 
 def _identity(s, iid):
     return next(i for i in s["identity_pool"] if i["id"] == iid)
+
+
+# ---------------- 支线暗典 ----------------
+
+def _npc_windows(seed):
+    """NPC 的两个登场窗口:1..MAX_SCENES 里随机两幕,seed 定死,可复现。"""
+    w1 = int(hashlib.sha256(f"{seed}:npcw1".encode()).hexdigest(), 16) % MAX_SCENES + 1
+    w2 = int(hashlib.sha256(f"{seed}:npcw2".encode()).hexdigest(), 16) % MAX_SCENES + 1
+    if w2 == w1:
+        w2 = w2 % MAX_SCENES + 1
+    return sorted([w1, w2])
+
+
+def _npc_due(s, scene_no):
+    """本幕是否有剧情 NPC 登场(支线未解且撞上窗口)。"""
+    for q in s.get("side_quests") or []:
+        if q["unlock_kind"] == "npc" and q["status"] == "open" \
+                and scene_no in q.get("windows", []):
+            return q
+    return None
+
+
+def _quest_resolve(s, q, report, how):
+    """支线了结:谜底从暗典掏出,写成既成事实,悬事划掉。"""
+    q["status"] = "resolved"
+    q["resolved_at"] = s["scene_index"]
+    s["hooks_resolved"] += 1
+    s["facts"].append(f"真相大白:{q['truth']}")
+    if q["question"] in s["hooks"]:
+        s["hooks"].remove(q["question"])
+    report.append(f"◆ 悬事了结({how}):{q['question']}")
+    report.append(f"  真相:{q['truth']}")
 
 
 # ---------------- 荷官回填(宿主专用入口,玩家动作到不了这里) ----------------
@@ -127,6 +212,16 @@ def apply_system(full_state, action_id, payload):
         s["world"] = data
         s["milestones_done"] = []
         s["facts"] = list(data["opening_facts"])
+        # 支线暗典入库:谜底与登场窗口只有引擎知道,悬事 = 谜题原句
+        quests = []
+        for q in data.get("side_quests", []):
+            q = dict(q)
+            q["status"] = "open"
+            if q["unlock_kind"] == "npc":
+                q["windows"] = _npc_windows(s["seed"])
+            quests.append(q)
+        s["side_quests"] = quests
+        s["hooks"] = [q["question"] for q in quests]
         s["narration_request"] = {"kind": "gen_identities",
                                   "context": {"world": _world_brief(s)}}
         s["stage"] = "identities_gen"
@@ -173,6 +268,7 @@ def _world_brief(s):
     return {"world_name": w["world_name"], "premise": w["premise"],
             "lore": w["lore"], "power_level": w["power_level"],
             "public_goal": w["public_goal"],
+            "clock_text": w.get("clock_text"),
             "laws": [_law_gloss(l) for l in w["laws"]]}
 
 
@@ -197,8 +293,8 @@ def _scene_context(s, last_report):
     if s.get("main_goal_locked"):
         remaining = max(0, MAX_SCENES - s["scene_index"])
         pacing = (f"余波幕:公开目标已经达成,主线结局已锁定。还可行动{remaining}幕;"
-                  "允许玩家自由追查悬事、探索支线、修补代价或改变彼此处境。"
-                  "承认主线成果,不要再制造新的主线门槛。")
+                  "余下的戏全在支线:未解悬事的答案早已写在暗典里,由引擎按解锁条件揭示,"
+                  "你不负责回答也不负责加谜——只推演现场。承认主线成果,不要再制造新的主线门槛。")
     elif s["progress"] >= 8 or (cur and ms and cur is ms[-1]):
         pacing = "决胜幕:终点已在眼前,本幕危机必须是通往目标的最后一道阻碍,不得新增支线人物或新谜团。"
     elif s["clock"] >= 6:
@@ -208,7 +304,12 @@ def _scene_context(s, last_report):
     chronicle_now = (f"第{chron[idx].get('chapter', idx + 1)}章"
                      f"《{chron[idx]['title']}》:{chron[idx]['event']}"
                      if idx >= 0 else None)
+    npc = _npc_due(s, s["scene_index"] + 1)
     return {
+        "npc_onstage": ({"name": npc["npc"]["name"], "desc": npc["npc"]["desc"],
+                         "question": npc["question"]} if npc else None),
+        "open_questions": [q["question"] for q in s.get("side_quests") or []
+                           if q["status"] == "open"],
         "pacing": pacing,
         "milestones": [{"text": m["text"],
                         "done": m["id"] in s.get("milestones_done", [])}
@@ -273,7 +374,15 @@ def observe(full_state, seat_id):
         # 原典只在全书终了时揭晓——这一刻是穿越者的对账时刻
         "chronicle_reveal": (
             {"chapters": deepcopy((s["world"] or {}).get("chronicle", [])),
-             "original_ending": (s["world"] or {}).get("original_ending")}
+             "original_ending": (s["world"] or {}).get("original_ending"),
+             # 支线对账:解开的、错过的,谜底与钥匙一并摊牌
+             "side_quests": [
+                 {"question": q["question"], "truth": q["truth"],
+                  "status": q["status"], "unlock_kind": q["unlock_kind"],
+                  "npc_name": (q.get("npc") or {}).get("name"),
+                  "windows": q.get("windows"),
+                  "stat": q.get("stat")}
+                 for q in s.get("side_quests") or []]}
             if s["phase"] == "finished" and s["world"] else None),
     }
     my_ident = s["identities"][seat_id]
@@ -310,12 +419,18 @@ def observe(full_state, seat_id):
             if seat_id in waiting:
                 my_items = [i["id"] for i in s["inventory"][seat_id]] + \
                            [i["id"] for i in s["inventory"]["shared"]]
-                legal = [{"action_id": "commit", "params": {
+                commit_params = {
                     "intent": f"必填:{INTENTS} 之一;或 'end'=提议停笔(双方同幕都选才生效)",
                     "action": f"必填:这一步你具体怎么做(≤{ACTION_TEXT_MAX}字)",
                     "item_id": f"可选:动用一件物品,标签匹配意图时骰+1,可用:{my_items}",
                     "line": f"可选:一句桌边留言(≤{LINE_MAX}字,不参与判定)",
-                }}]
+                }
+                npc = _npc_due(s, s["scene_index"])
+                if npc:
+                    commit_params["target"] = (
+                        f"可选:'npc'=本幕追查登场人物「{npc['npc']['name']}」"
+                        "(成功即揭开其知晓的悬事;此人不会久留)")
+                legal = [{"action_id": "commit", "params": commit_params}]
     return {"public_state": public, "private_state": private,
             "legal_actions": legal, "waiting_for": waiting}
 
@@ -381,8 +496,17 @@ def _apply_commit(s, seat_id, params):
     line = params.get("line", "")
     if not isinstance(line, str) or len(line.strip()) > LINE_MAX:
         raise IllegalAction(f"line 须是字符串且 ≤{LINE_MAX} 字")
+    target = params.get("target")
+    if target is not None:
+        if target != "npc":
+            raise IllegalAction("target 只支持 'npc'")
+        if not _npc_due(s, s["scene_index"]):
+            raise IllegalAction("本幕没有可追查的剧情人物")
+        if intent == "end":
+            raise IllegalAction("提议停笔的同时不能追查人物")
     s["pending"][seat_id] = {"intent": intent, "action": (action or "").strip(),
-                             "item_id": item_id, "line": line.strip()}
+                             "item_id": item_id, "line": line.strip(),
+                             "target": target}
     if len(s["pending"]) == 2:
         _resolve(s)
 
@@ -452,19 +576,30 @@ def _resolve(s):
         else:
             _finish(s, "TE", "mutual_end")
         return
+    streaks = s.setdefault("end_streaks", {a: 0, b: 0})
     for seat, p in ((a, pa), (b, pb)):
         if p["intent"] == "end":
+            # 单方停笔=静候:不掷骰、不折算休整、不触发任何法则
             s["end_proposed_by"] = seat
-            p["intent"] = "recover"
-            report.append(f"{seat} 提议就此停笔——另一人还想再走一程。")
+            p["intent"] = "wait"
+            streaks[seat] = streaks.get(seat, 0) + 1
+            report.append(f"{seat} 提议就此停笔,静静等着——另一人还想再走一程。"
+                          f"(连提三幕即强制收卷,已 {streaks[seat]}/3)")
+        else:
+            streaks[seat] = 0
 
     slip = {"outcome": {}, "progress_delta": 0, "danger_delta": 0,
-            "clock_delta": 1, "synergy_delta": 0,
+            "clock_delta": 0 if s.get("main_goal_locked") else 1,
+            "synergy_delta": 0,
             "vitality_delta": {a: 0, b: 0}, "facts_added": [],
             "flags_added": [], "hooks_added": [], "hooks_resolved": 0,
             "items_gained": []}
     tiers = {}
     for seat, p, other_p in ((a, pa, pb), (b, pb, pa)):
+        if p["intent"] == "wait":
+            tiers[seat] = "wait"
+            slip["outcome"][seat] = "wait"
+            continue
         ident = _identity(s, s["identities"][seat])
         die = _die(s)
         if ident["gift"]["kind"] == "ones_are_fours" and die == 1:
@@ -493,11 +628,10 @@ def _resolve(s):
         elif tier == "mixed_success":
             if it in ("advance", "explore"):
                 slip["progress_delta"] += 1
-            qs = scene.get("questions") or []
-            if qs and qs[0] not in s["hooks"]:
-                slip["hooks_added"].append(qs[0])
-                report.append(f"  但留下悬事:{qs[0]}")
+            # v0.3:悬事由暗典管理,勉强成功不再增殖新问号
         else:
+            s.setdefault("wins", {}).setdefault(it, 0)
+            s["wins"][it] += 1
             if it == "advance":
                 slip["progress_delta"] += 2 if tier == "success" else 3
             elif it == "explore":
@@ -532,12 +666,28 @@ def _resolve(s):
                 for hseat in heal:
                     slip["vitality_delta"][hseat] += 1
             if tier == "critical_success":
-                if s["hooks"]:
-                    slip["hooks_resolved"] += 1
-                    report.append(f"  顺手了结了悬事:{s['hooks'][0]}")
                 if it == "advance" and ident["gift"]["kind"] == "advance_crit_clock":
                     slip["clock_delta"] = 0
                     report.append("  抄了近路:这一幕没有花掉时钟")
+
+    # 剧情 NPC 窗口:追查者按本幕骰果裁决;最后一个窗口错过即永久埋没
+    due = _npc_due(s, s["scene_index"])
+    if due:
+        npc_name = due["npc"]["name"]
+        pursuers = [(seat, p) for seat, p in ((a, pa), (b, pb))
+                    if p.get("target") == "npc"]
+        if any(tiers[seat] in ("success", "critical_success")
+               for seat, _ in pursuers):
+            _quest_resolve(s, due, report, f"从{npc_name}口中问出")
+        elif any(tiers[seat] == "mixed_success" for seat, _ in pursuers):
+            report.append(f"  {npc_name}只留下半句话,便隐入人群——话没说完。")
+        elif pursuers:
+            report.append(f"  {npc_name}被惊动,消失在暗处。")
+        else:
+            report.append(f"  {npc_name}在人群边缘停了停,无人上前,他转身离去。")
+        if due["status"] == "open" and s["scene_index"] >= max(due["windows"]):
+            due["status"] = "lost"
+            report.append(f"◆ {npc_name}再也不会出现了——某段真相就此埋没。")
 
     ia, ib = pa["intent"], pb["intent"]
     both_ok = all(t != "failure" for t in tiers.values())
@@ -566,6 +716,10 @@ def _resolve(s):
         elif tk.startswith("danger>=") and s["danger"] >= int(tk[8:]):
             _apply_law_cost(s, slip, law, report)
 
+    if s.get("main_goal_locked"):
+        # 主线锁定即冻结:进度与时钟是主线的账,余波幕不再改写
+        slip["progress_delta"] = 0
+        slip["clock_delta"] = 0
     s["progress"] = max(0, min(10, s["progress"] + slip["progress_delta"]))
     s["danger"] = max(0, min(10, s["danger"] + slip["danger_delta"]))
     s["synergy"] = max(0, min(5, s["synergy"] + slip["synergy_delta"]))
@@ -577,11 +731,18 @@ def _resolve(s):
         if f not in s["flags"]:
             s["flags"].append(f)
     s["facts"].extend(slip["facts_added"])
-    s["hooks"].extend(slip["hooks_added"])
-    for _ in range(slip["hooks_resolved"]):
-        if s["hooks"]:
-            s["hooks"].pop(0)
-            s["hooks_resolved"] += 1
+    for h in slip["hooks_added"]:
+        if h not in s["hooks"]:   # 悬事永不重复
+            s["hooks"].append(h)
+
+    # 数值考验支线:账本更新完毕后对表,条件一到,真相自动大白
+    for q in s.get("side_quests") or []:
+        if q["status"] == "open" and q["unlock_kind"] == "stat":
+            (k, v), = list(q["stat"].items())
+            cur = s["synergy"] if k == "synergy>=" \
+                else s.get("wins", {}).get(k.split("_wins")[0], 0)
+            if cur >= v:
+                _quest_resolve(s, q, report, "数值考验通过")
 
     for seat, item in slip["items_gained"]:
         s["inventory"][seat].append(item)
@@ -627,14 +788,31 @@ def _resolve(s):
     _log(s, scene, {a: pa, b: pb}, slip, report)
 
     alive = [x for x in s["seats"] if s["vitality"][x] > 0]
+    locked = s.get("main_goal_locked")
     if len(alive) == 0:
         _finish(s, "BE", "all_down")
-    elif s.get("main_goal_locked") and s["scene_index"] >= MAX_SCENES:
-        _finish(s, "HE" if len(alive) == 2 else "TE",
-                "goal" if len(alive) == 2 else "sacrifice")
-    elif s["danger"] >= 10 and not s.get("main_goal_locked"):
-        _finish(s, "BE", "world_lost")
-    elif s["clock"] >= 8 and not s.get("main_goal_locked"):
+    elif max(s.get("end_streaks", {}).values() or [0]) >= 3:
+        # 三辞而别:一人连提三幕停笔,引擎替这段散伙收卷
+        if locked:
+            _finish(s, "HE" if len(alive) == 2 else "TE",
+                    "goal" if len(alive) == 2 else "sacrifice")
+        else:
+            _finish(s, "TE", "insist_end")
+    elif s["scene_index"] >= MAX_SCENES:
+        # 幕数走满,引擎强制收卷——不看任何人脸色
+        if locked:
+            _finish(s, "HE" if len(alive) == 2 else "TE",
+                    "goal" if len(alive) == 2 else "sacrifice")
+        else:
+            _finish(s, "TE", "out_of_time")
+    elif s["danger"] >= 10:
+        # 危险溢出:主线未成是世界失守;主线已成则是余波中被迫收场
+        if locked:
+            _finish(s, "HE" if len(alive) == 2 else "TE",
+                    "goal" if len(alive) == 2 else "sacrifice")
+        else:
+            _finish(s, "BE", "world_lost")
+    elif s["clock"] >= 8 and not locked:
         _finish(s, "TE", "out_of_time")
     else:
         s["stage"] = "scenegen"
@@ -644,6 +822,9 @@ def _resolve(s):
 
 def _apply_law_cost(s, slip, law, report):
     ck = law["cost_kind"]
+    if ck in ("progress", "clock") and s.get("main_goal_locked"):
+        report.append(f"  法则失效(主线已锁定):{law['text']}")
+        return
     if ck == "danger":
         slip["danger_delta"] += 1
         report.append(f"  法则应验:{law['text']}")
@@ -673,7 +854,7 @@ def _log(s, scene, commits, slip, report):
 
 REASON_NAMES = {"goal": "目标达成", "all_down": "无人生还", "world_lost": "世界失守",
                 "sacrifice": "有人没能回来", "out_of_time": "时钟走完",
-                "mutual_end": "双双停笔"}
+                "mutual_end": "双双停笔", "insist_end": "三辞而别"}
 
 
 def _finish(s, kind, reason):
@@ -720,6 +901,12 @@ def _finish(s, kind, reason):
             "main_goal_locked": s.get("main_goal_locked", False),
             "goal_locked_at_scene": s.get("goal_locked_at_scene"),
             "unresolved_hooks": list(s["hooks"]),
+            # 支线对账单:解开的谜底可入文;未解开的谜底禁止入文
+            "side_quests": [
+                {"question": q["question"], "truth": q["truth"],
+                 "status": q["status"],
+                 "npc_name": (q.get("npc") or {}).get("name")}
+                for q in s.get("side_quests") or []],
             "hidden_fired": [th["brief"] for th in
                              (s["world"].get("hidden_threads", []) if s["world"] else [])
                              if th["id"] in s["hidden_fired"]],

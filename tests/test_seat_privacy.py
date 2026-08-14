@@ -72,23 +72,27 @@ class TestSeatPrivacy(unittest.TestCase):
         self.assertNotIn("pending", a["public_state"])
 
     def test_opponent_pending_card_invisible_until_reveal(self):
-        b_hand = self.obs(self.tb)["private_state"]["hand"]
-        card = max(b_hand)  # 手牌拆成 3/3,大的一半 ≥4,与轮次/比分数字不撞
-        self.assertGreaterEqual(card, 4)
-        r = self.host.act(self.sid, self.tb, self.obs(self.tb)["revision"],
+        # 洗牌是随机 3/3 切分,谁摸到 6 谁来暗投——6 必在某人手里,
+        # 且不与轮次/比分数字相撞,泄露检查不会误报
+        card = 6
+        actor = self.ta if card in self.obs(self.ta)["private_state"]["hand"] \
+            else self.tb
+        viewer = self.tb if actor is self.ta else self.ta
+        actor_seat = "seat_a" if actor is self.ta else "seat_b"
+        r = self.host.act(self.sid, actor, self.obs(actor)["revision"],
                           "play_card", {"card": card})
         self.assertEqual(r["result"], "ok")
-        a = self.obs(self.ta)
-        # 公开面只见"乙已暗投",不见牌面
-        self.assertTrue(a["public_state"]["submitted"]["seat_b"])
+        a = self.obs(viewer)
+        # 公开面只见"对方已暗投",不见牌面
+        self.assertTrue(a["public_state"]["submitted"][actor_seat])
         body = {"public_state": a["public_state"],
                 "private_state": a["private_state"],
                 "legal_actions": a["legal_actions"]}
         leaked = [n for n in ints_in(body)
                   if n == card and n not in a["private_state"]["hand"]]
-        self.assertEqual(leaked, [], f"乙的暗投牌 {card} 泄露进甲的观察:{body}")
-        # 乙自己能看到自己的暗投
-        self.assertEqual(self.obs(self.tb)["private_state"]["my_pending"], card)
+        self.assertEqual(leaked, [], f"暗投牌 {card} 泄露进对家的观察:{body}")
+        # 自己能看到自己的暗投
+        self.assertEqual(self.obs(actor)["private_state"]["my_pending"], card)
 
     def test_wrong_token_forbidden(self):
         self.assertEqual(self.host.observe(self.sid, "not-a-token")["result"],

@@ -714,13 +714,24 @@ const CART_UI = {
         <div class="mem-sec"><div class="sec-t">结 局 · ${esc(e.kind)}</div>
           <div class="mem-line">${esc(e.text)}</div>${drives}</div>` : "";
       const cr = ps.chronicle_reveal;
+      const sqIcon = { resolved: "🔓", lost: "🗝️", open: "❔" };
+      const sqHow = (q) => q.status === "resolved" ? "已解开"
+        : q.unlock_kind === "npc"
+          ? `错过了知情人${q.npc_name ? "「" + esc(q.npc_name) + "」" : ""}(登场于第${(q.windows || []).join("、")}幕)`
+          : `数值考验未达成(${esc(JSON.stringify(q.stat || {}))})`;
+      const sideQuests = cr && (cr.side_quests || []).length ? `
+        <div class="mem-sec"><div class="sec-t">支 线 对 账 · 谜 底 摊 牌</div>
+          ${cr.side_quests.map((q) => `<div class="mem-line">
+            ${sqIcon[q.status] || "❔"} ${esc(q.question)}<br>
+            <span class="dim">真相:${esc(q.truth)} —— ${sqHow(q)}</span></div>`).join("")}
+        </div>` : "";
       const chronicle = cr ? `
         <div class="mem-sec"><div class="sec-t">原 典 揭 晓 · 本 该 发 生 的</div>
           ${(cr.chapters || []).map((c) => `<div class="mem-line">
             第${c.chapter}章《${esc(c.title)}》 ${esc(c.event)}</div>`).join("")}
           <div class="mem-line" style="margin-top:.4rem">📖 原典结局:${esc(cr.original_ending || "")}</div>
           <div class="dim">—— 而以上,是没有你们的版本。</div></div>` : "";
-      return { rounds: rounds + memory + chronicle,
+      return { rounds: rounds + memory + sideQuests + chronicle,
                champ: e ? `《${esc(e.world_name)}》· 世界种子 ${esc(String(e.seed))} · 孤本` : "本局提前收起",
                scoreLine: e ? `【${esc(e.kind)}】` : "未完" };
     },

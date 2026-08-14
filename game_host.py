@@ -192,12 +192,18 @@ class GameHost:
             conn.close()
 
     def list_cartridges(self) -> dict:
-        """卡带架真实清单:扫描 cartridges/*/manifest.json(只读)。"""
+        """卡带架真实清单:扫描 cartridges/*/manifest.json(只读)。
+
+        manifest 里 "retired": true 的卡不上架(原型退役,文件与存档保留,
+        凭 cartridge_id 仍可开局/回放——只是不再出现在架子上扰乱视线)。
+        """
         out = []
         for p in sorted(self.cartridges_dir.iterdir()):
             m = p / "manifest.json"
             if m.is_file():
                 d = json.loads(m.read_text("utf-8"))
+                if d.get("retired"):
+                    continue
                 out.append({k: d.get(k) for k in
                             ("id", "name", "version", "author", "license",
                              "players", "minutes", "dealer", "modes")})

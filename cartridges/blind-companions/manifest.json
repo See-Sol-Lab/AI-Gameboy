@@ -7,5 +7,6 @@
   "players": { "min": 2, "max": 2 },
   "minutes": 20,
   "dealer": "none",
-  "modes": ["multi_ai", "human_ai"]
+  "modes": ["multi_ai", "human_ai"],
+  "retired": true
 }

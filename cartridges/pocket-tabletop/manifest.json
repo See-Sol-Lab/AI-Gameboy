@@ -1,0 +1,11 @@
+{
+  "id": "pocket-tabletop",
+  "name": "口袋跑团",
+  "version": "1.0.0",
+  "author": "See Sol Lab",
+  "license": "private-prototype",
+  "players": { "min": 2, "max": 2 },
+  "minutes": 40,
+  "dealer": "narrator",
+  "modes": ["multi_ai", "human_ai"]
+}

@@ -113,8 +113,28 @@ def call(kind, context):
 
 def _p_world(ctx):
     a = ctx["axes"]
-    return f"""为一局新游戏生成世界卡。世界种子(必须全部体现):
-题材={a['form']},力量等级={a['power']},冒险类型={a['kind']},情绪基调={a['mood']},核心变数={a['variable']}。
+    if "engine" in a:   # 《口袋穿越》新种子:世界生成器 ≠ 任务生成器
+        seed_block = f"""世界种子(必须全部体现):
+世界题材={a['genre']},力量等级={a['power']},故事发动机={a['engine']},特色元素={a['element']},
+情绪基调={a['mood']},进入方式={a['entry']},核心变数={a['variable']}。
+
+种子怎么读:
+- 世界题材决定这个世界本身是部什么小说——它在玩家到来之前已经运转了很久,
+  有自己的历史与正在发生的大事(写进 chronicle);
+- 故事发动机决定**这一局**玩家被卷入的事:只有抽到「危机倒计时」才允许末日、
+  毁灭、大限将至;其余发动机都是世间常事(一场拍卖、一桩悬案、一门生意),
+  世界不需要摇摇欲坠,鸡毛蒜皮也能有好故事;
+- 特色元素为(无特别元素)时不要硬塞超凡设定;
+- 进入方式决定两位玩家与这个世界的关系(穿书成配角=他们是原典里的路人)。"""
+        goal_desc = "本局共同主目标:由故事发动机引出的一件具体可完成的事,不必拯救世界"
+        clock_desc = ("时钟在这局代表什么、走满了会发生什么,一句"
+                      "——不必是灾难,可以只是'商队出发了''大典落幕了'")
+    else:               # 《口袋跑团》经典种子:危机跑团,直给
+        seed_block = f"""世界种子(必须全部体现):
+题材={a['form']},力量等级={a['power']},冒险类型={a['kind']},情绪基调={a['mood']},核心变数={a['variable']}。"""
+        goal_desc = "本局共同主目标,一句,具体可完成"
+        clock_desc = "时钟走满会发生什么,一句(危机跑团:通常是大祸临头)"
+    return f"""为一局新游戏生成世界卡。{seed_block}
 
 只输出这个 JSON:
 {{
@@ -122,7 +142,8 @@ def _p_world(ctx):
  "premise": "一句话说明两位玩家来到了哪里",
  "lore": "不超过400字的世界背景,三段以内,必须埋入核心变数",
  "power_level": "{a['power']}",
- "public_goal": "本局共同主目标,一句,具体可完成",
+ "public_goal": "{goal_desc}",
+ "clock_text": "{clock_desc}",
  "milestones": [把主目标拆成2到3步,按先后排序,每步 {{"id":"m1这样的短名","text":"一句可判定的阶段目标,如『通过西境检查站』"}}——玩家每完成一步,引擎当场记账;全部完成即结算,你无权拖延],
  "laws": [2到3条,每条 {{"id":"law_英文短名","text":"玩家能读懂的世界法则",
    "trigger_kind":"只能严格写成以下形式之一(不要照抄占位符):intent:advance / intent:explore / intent:support / intent:confront / intent:recover / clock>=5 这种带具体数字的 / danger>=6 这种带具体数字的",
@@ -133,13 +154,24 @@ def _p_world(ctx):
      {{"flag": "found_the_key_truth"}} 或 {{"synergy>=": 4}} 或 {{"progress>=": 7}} 或 {{"danger>=": 6}},
    "effect_kind":"truth|ending_modifier",
    "brief":"暗线浮出时向玩家公布的一句话"}}],
+ "side_quests": [恰好2条支线悬案。这是玩家会反复追问的谜题,谜底**现在就定死**,
+   写在这里只有引擎能看到;此后你永远只许照抄,不许改写、不许另编:
+   第1条 {{"id":"sq_npc","question":"一句悬而未决的谜题(玩家视角的问句)",
+     "truth":"谜底,≤80字,必须直接回答谜题,且与lore、原典自洽",
+     "unlock_kind":"npc",
+     "npc":{{"name":"知晓此事的剧情人物称呼","desc":"他登场时的样子与来意暗示,一句"}}}},
+   第2条 {{"id":"sq_stat","question":"另一句谜题","truth":"谜底,≤80字,同上要求",
+     "unlock_kind":"stat",
+     "stat": 逐字采用其一:{{"synergy>=": 3}} 或 {{"explore_wins>=": 3}} 或 {{"confront_wins>=": 2}}}}],
  "chronicle": [恰好8章,这个世界**没有玩家时**本该上演的完整剧情,按时间排序,
    每章 {{"chapter":1,"title":"≤8字","event":"本章原典事件一句,≤60字"}}——
    这是只有你和引擎能看到的底本小说,玩家永远看不到,直到终局才揭晓],
  "original_ending": "原典结局一句:没有任何人干预时,这个世界最后怎么了(≤80字)"
 }}
 要求:法则是给玩家的真实约束与权衡,不是装饰;隐藏线要值得期待;
-原典要是一个自洽的完整故事(玩家不来它也成立);禁止恋爱元素。"""
+原典要是一个自洽的完整故事(玩家不来它也成立);
+支线谜底是本局唯一的真相来源——谜底答不上谜题即废稿;
+言情类题材允许 NPC 之间的感情戏,但两位玩家之间仍禁止恋爱剧情。"""
 
 
 def _p_identities(ctx):
@@ -171,11 +203,21 @@ def _p_scene(ctx):
 但两位穿越者已经造成了这些偏移(见既成事实)。你的任务不是编新故事,
 而是**推演**:原典的这一章,被他们的行动扰动之后,现场变成了什么样。
 原典中的人物、事件照常想登场,除非偏移已经改变了它们。"""
+    npc = ""
+    if ctx.get("npc_onstage"):
+        n = ctx["npc_onstage"]
+        npc = f"""
+【剧情人物登场(必须执行)】{n['name']}:{n['desc']}
+此人知晓「{n['question']}」的内情。把他写进 text 的现场,并放进 objects
+(该条 id 必须恰好是 "npc")。他只现身、只露暗示,绝不主动全盘托出;
+玩家是否追上去、能不能问出来,由引擎裁决,与你无关。"""
+    oq = ctx.get("open_questions") or []
     return f"""为《{w['world_name']}》生成第 {ctx['scene_index']} 幕场景。
 世界目标:{w['public_goal']}
 里程碑账本(已达成的绝不能推翻或重考):{ms or "(无)"}
-本幕危机必须服务于当前里程碑:{cur or "全部已达成,收束"}{chron}
+本幕危机必须服务于当前里程碑:{cur or "全部已达成,收束"}{chron}{npc}
 世界法则:{'; '.join(w['laws'])}
+时钟含义:{w.get('clock_text') or "时钟走满,这段故事就到站"}
 当前账本:{json.dumps(ctx['tracks'], ensure_ascii=False)}
 在场身份:{json.dumps(ctx['identities'], ensure_ascii=False)}
 既成事实(不可推翻):{json.dumps(ctx['facts'], ensure_ascii=False)}
@@ -189,7 +231,8 @@ def _p_scene(ctx):
 {{"title":"不超过10字","text":"不超过300字,只描写玩家行动前已经发生的事,承接上一幕结果与既成事实;危险值越高氛围越紧",
  "crisis":"本幕必须面对的问题,一句",
  "objects":[3到4个,每个 {{"id":"英文短名","name":"对象名","hint":"玩家此刻能观察到的一句线索"}}],
- "questions":["本幕尚未有答案的事,0到2条"]}}
+ "questions":[0到2条,**只能从这份清单里逐字挑选**:{json.dumps(oq, ensure_ascii=False)};
+   清单为空或都不贴切就写 []。禁止自创新谜题,禁止改写措辞——悬事的生老病死归引擎管]}}
 铁律(违反即废稿):
 - 用第三人称写场景,绝不用"你/你们"直接称呼玩家,绝不与玩家对话;
 - 上一幕玩家做了什么,以裁决记录为准——不得移动、囚禁、伤害玩家角色,
@@ -200,7 +243,21 @@ def _p_scene(ctx):
 
 def _p_ending(ctx):
     w = ctx["world"]
-    return f"""为《{w['world_name']}》写终局。结局类型:{ctx['kind']}({ctx['reason_name']})。
+    sq = ""
+    quests = ctx.get("side_quests") or []
+    if quests:
+        lines = []
+        for q in quests:
+            if q["status"] == "resolved":
+                lines.append(f"- 已解开:「{q['question']}」→ 真相:{q['truth']}(可以入文回响)")
+            else:
+                how = f"知情人{q['npc_name']}未被问到" if q.get("npc_name") else "考验未达成"
+                lines.append(f"- 未解开({how}):「{q['question']}」——玩家至终不知道答案。"
+                             "结局里**禁止**揭示或暗示谜底,只可写这个谜随他们一同留在了那个世界")
+        sq = "\n【支线对账(纪律)】过程中没挣到的答案,结局无权补发:\n" + "\n".join(lines)
+    return f"""为《{w['world_name']}》写终局。结局类型:{ctx['kind']}({ctx['reason_name']})。{sq}
+时钟含义:{w.get('clock_text') or "时钟走满,这段故事就到站"}
+(若结局因"时钟走完"或"三辞而别"而来,按时钟含义与散伙的分量写,不必强行升级成灾难。)
 最终账本:{json.dumps(ctx['tracks'], ensure_ascii=False)}
 两位旅人:{json.dumps(ctx['identities'], ensure_ascii=False)}
 走过的地方:{json.dumps(ctx['scene_titles'], ensure_ascii=False)}
@@ -262,6 +319,8 @@ def _v_world(d):
              "chronicle 章节缺字段")
     _req(isinstance(d.get("original_ending"), str) and d["original_ending"],
          "缺 original_ending")
+    if not isinstance(d.get("clock_text"), str) or not d["clock_text"].strip():
+        d["clock_text"] = "时钟走满,这段故事就到站。"   # 宽容:漏写不废稿
     _req(isinstance(d["hidden_threads"], list) and 1 <= len(d["hidden_threads"]) <= 3,
          "hidden_threads 数量不对")
     for t in d["hidden_threads"]:
@@ -287,6 +346,34 @@ def _v_world(d):
         _req(fixed, f"thread 触发条件非法:{r}")
         t["required"] = fixed
         _req(t["effect_kind"] in ("truth", "ending_modifier"), "effect_kind 非法")
+    # 支线暗典:恰好2条,一条NPC一条数值,谜题谜底俱全——这是余波幕的命根子
+    sq = d.get("side_quests")
+    _req(isinstance(sq, list) and len(sq) == 2, "side_quests 须恰好2条")
+    kinds = sorted(q.get("unlock_kind") for q in sq if isinstance(q, dict))
+    _req(kinds == ["npc", "stat"], "side_quests 须一条 npc 一条 stat")
+    for q in sq:
+        for k in ("id", "question", "truth", "unlock_kind"):
+            _req(isinstance(q.get(k), str) and q[k].strip(), f"side_quest 缺字段 {k}")
+        _req(len(q["truth"]) <= 160, "side_quest truth 过长")
+        if q["unlock_kind"] == "npc":
+            n = q.get("npc")
+            _req(isinstance(n, dict) and n.get("name") and n.get("desc"),
+                 "npc 支线缺 name/desc")
+        else:
+            st = q.get("stat")
+            _req(isinstance(st, dict) and st, "stat 支线缺触发条件")
+            fixed = {}
+            for k, v in st.items():
+                key = k.strip()
+                if key in ("synergy", "explore_wins", "confront_wins"):
+                    key += ">="
+                if key in ("synergy>=", "explore_wins>=", "confront_wins>="):
+                    try:
+                        fixed[key] = int(v)
+                    except (TypeError, ValueError):
+                        pass
+            _req(len(fixed) == 1, f"stat 触发条件非法:{st}")
+            q["stat"] = fixed
 
 
 def _v_identities(d):

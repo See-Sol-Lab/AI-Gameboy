@@ -45,6 +45,15 @@ FIX_WORLD = {
         {"id": "h-syn", "required": {"synergy>=": 4},
          "effect_kind": "ending_modifier", "brief": "断言也记住了你们。"},
     ],
+    "side_quests": [
+        {"id": "sq_npc", "question": "档案馆为什么整夜亮灯?",
+         "truth": "馆长在誊抄将被归档的城,一页一页救下它的记忆。",
+         "unlock_kind": "npc",
+         "npc": {"name": "档案馆长", "desc": "抱着一摞誊本,袖口沾着墨。"}},
+        {"id": "sq_stat", "question": "巡检为什么从不眨眼?",
+         "truth": "巡检是断言化成的人形,眨眼即失效,所以永远睁着。",
+         "unlock_kind": "stat", "stat": {"explore_wins>=": 3}},
+    ],
 }
 
 FIX_IDENTITIES = [
@@ -331,6 +340,153 @@ class TestHiddenAndEndings(unittest.TestCase):
             self.assertIn(s["ending"]["kind"], ("HE", "BE", "TE"))
             self.assertTrue(s["ending"]["text"])
             self.assertEqual(len(s["ending"]["secret_drives"]), 2)
+
+
+class TestSideQuests(unittest.TestCase):
+    """v0.3 支线暗典:谜底预写、NPC 窗口、数值考验、悬事生命周期。"""
+
+    @staticmethod
+    def _npc_quest(s):
+        return next(q for q in s["side_quests"] if q["unlock_kind"] == "npc")
+
+    def test_hooks_seeded_from_quests_and_never_proliferate(self):
+        s = setup_playing(11)
+        qs = [q["question"] for q in s["side_quests"]]
+        self.assertEqual(s["hooks"], qs)
+        s = commit(commit(s, "seat_a", "explore"), "seat_b", "advance")
+        self.assertTrue(set(s["hooks"]) <= set(qs))     # 只减不增
+        self.assertEqual(len(s["hooks"]), len(set(s["hooks"])))  # 永不重复
+
+    def test_truth_hidden_during_play(self):
+        s = setup_playing(15)
+        for seat in SEATS:
+            blob = json.dumps(rules.observe(s, seat), ensure_ascii=False)
+            for q in s["side_quests"]:
+                self.assertNotIn(q["truth"], blob)
+
+    def test_npc_windows_deterministic(self):
+        self.assertEqual(rules._npc_windows(123), rules._npc_windows(123))
+        for seed in range(30):
+            ws = rules._npc_windows(seed)
+            self.assertEqual(len(set(ws)), 2)
+            for w in ws:
+                self.assertTrue(1 <= w <= rules.MAX_SCENES)
+
+    def test_npc_pursuit_success_resolves(self):
+        s = setup_playing(12)
+        self._npc_quest(s)["windows"] = [s["scene_index"]]
+        orig = rules._die
+        rules._die = lambda st: 8   # 保证成功档
+        try:
+            s = rules.apply(s, "seat_a", "commit",
+                            {"intent": "explore", "action": "追上那个人",
+                             "target": "npc"})
+            s = rules.apply(s, "seat_b", "commit",
+                            {"intent": "support", "action": "掩护"})
+        finally:
+            rules._die = orig
+        q = self._npc_quest(s)
+        self.assertEqual(q["status"], "resolved")
+        self.assertNotIn(q["question"], s["hooks"])
+        self.assertEqual(s["hooks_resolved"], 1)
+        self.assertTrue(any(q["truth"] in f for f in s["facts"]))
+
+    def test_npc_final_window_missed_locks_forever(self):
+        s = setup_playing(13)
+        self._npc_quest(s)["windows"] = [s["scene_index"]]
+        s = commit(s, "seat_a", "recover")
+        s = commit(s, "seat_b", "recover")
+        self.assertEqual(self._npc_quest(s)["status"], "lost")
+
+    def test_target_rejected_without_npc(self):
+        s = setup_playing(13)
+        with self.assertRaises(rules.IllegalAction):
+            rules.apply(s, "seat_a", "commit",
+                        {"intent": "explore", "action": "追", "target": "npc"})
+
+    def test_stat_quest_auto_resolves(self):
+        s = setup_playing(16)
+        s["wins"]["explore"] = 3
+        s = commit(s, "seat_a", "recover")
+        s = commit(s, "seat_b", "recover")
+        sq = next(q for q in s["side_quests"] if q["unlock_kind"] == "stat")
+        self.assertEqual(sq["status"], "resolved")
+        self.assertNotIn(sq["question"], s["hooks"])
+
+    def test_reveal_includes_side_quests(self):
+        s = setup_playing(14)
+        s = rules.apply(s, "seat_a", "commit", {"intent": "end", "action": ""})
+        s = rules.apply(s, "seat_b", "commit", {"intent": "end", "action": ""})
+        s = feed(s)
+        cr = rules.observe(s, "seat_a")["public_state"]["chronicle_reveal"]
+        self.assertEqual(len(cr["side_quests"]), 2)
+        for q in cr["side_quests"]:
+            self.assertTrue(q["truth"])
+            self.assertIn("status", q)
+
+
+class TestLockAndEndFixes(unittest.TestCase):
+    """v0.3 机械修缮:锁定冻结、单方停笔=静候、幕满强制收卷。"""
+
+    def test_lock_freezes_progress_and_clock(self):
+        s = setup_playing(17)
+        s["main_goal_locked"] = True
+        s["goal_locked_at_scene"] = 1
+        s["progress"] = 10
+        clock0 = s["clock"]
+        s = commit(s, "seat_a", "recover")
+        s = commit(s, "seat_b", "advance")
+        self.assertEqual(s["progress"], 10)
+        self.assertEqual(s["clock"], clock0)
+
+    def test_single_end_is_wait_not_recover(self):
+        s = setup_playing(18)
+        s = rules.apply(s, "seat_a", "commit", {"intent": "end", "action": ""})
+        s = commit(s, "seat_b", "recover", action="喘口气")
+        h = s["history"][0]
+        self.assertEqual(h["slip"]["outcome"]["seat_a"], "wait")
+        self.assertIn("静静等着", "\n".join(h["report"]))
+        self.assertEqual(s["end_proposed_by"], "seat_a")
+
+    def test_weighted_pick_deterministic_and_in_pool(self):
+        for key, pool in rules.POOLS.items():
+            values = [v for v, _ in pool]
+            for seed in range(40):
+                v = rules._pick(seed, key, pool)
+                self.assertIn(v, values)
+                self.assertEqual(v, rules._pick(seed, key, pool))
+
+    def test_three_end_proposals_force_settlement(self):
+        s = setup_playing(21)
+        for i in range(3):
+            s = rules.apply(s, "seat_a", "commit", {"intent": "end", "action": ""})
+            s = rules.apply(s, "seat_b", "commit",
+                            {"intent": "recover", "action": "再撑一幕"})
+            if i < 2:
+                self.assertIsNone(s["ending"])
+                s = feed(s)
+        self.assertEqual(s["stage"], "endinggen")
+        self.assertEqual(s["ending"]["kind"], "TE")
+        self.assertEqual(s["ending"]["reason"], "insist_end")
+
+    def test_end_streak_resets_when_playing_on(self):
+        s = setup_playing(22)
+        s = rules.apply(s, "seat_a", "commit", {"intent": "end", "action": ""})
+        s = commit(s, "seat_b", "recover", action="撑住")
+        s = commit(s, "seat_a", "recover", action="回心转意")   # 断签
+        s = commit(s, "seat_b", "recover", action="继续")
+        self.assertEqual(s["end_streaks"]["seat_a"], 0)
+        self.assertIsNone(s["ending"])
+
+    def test_scene_limit_forces_ending_even_unlocked(self):
+        s = setup_playing(19)
+        s["scene_index"] = rules.MAX_SCENES
+        s = commit(s, "seat_a", "recover")
+        s = rules.apply(s, "seat_b", "commit",
+                        {"intent": "recover", "action": "撑住"})
+        self.assertEqual(s["stage"], "endinggen")
+        self.assertEqual(s["ending"]["kind"], "TE")
+        self.assertEqual(s["ending"]["reason"], "out_of_time")
 
 
 if __name__ == "__main__":

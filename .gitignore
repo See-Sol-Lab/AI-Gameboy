@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 data/gameboy.db*
 data/narrator.json
+data/*.log
+data/narrator_last_error.txt
+*.db
