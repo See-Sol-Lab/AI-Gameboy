@@ -19,6 +19,7 @@ from copy import deepcopy
 
 ACTION_TEXT_MAX = 120
 LINE_MAX = 60
+MAX_SCENES = 10
 INTENTS = ["advance", "explore", "support", "confront", "recover"]
 INTENT_NAMES = {"advance": "推进", "explore": "探索", "support": "支援",
                 "confront": "对抗", "recover": "休整", "end": "停笔"}
@@ -86,6 +87,7 @@ def new_game(seats, seed):
         "scene_index": 0,
         "current_scene": None,
         "clock": 0, "progress": 0, "danger": 0, "synergy": 0,
+        "main_goal_locked": False, "goal_locked_at_scene": None,
         "vitality": {seats[0]: 3, seats[1]: 3},
         "inventory": {seats[0]: [], seats[1]: [], "shared": []},
         "facts": [], "flags": [], "hooks": [],
@@ -192,7 +194,12 @@ def _scene_context(s, last_report):
     cur = _current_milestone(s)
     ms = _milestones(s)
     pacing = None
-    if s["progress"] >= 8 or (cur and ms and cur is ms[-1]):
+    if s.get("main_goal_locked"):
+        remaining = max(0, MAX_SCENES - s["scene_index"])
+        pacing = (f"余波幕:公开目标已经达成,主线结局已锁定。还可行动{remaining}幕;"
+                  "允许玩家自由追查悬事、探索支线、修补代价或改变彼此处境。"
+                  "承认主线成果,不要再制造新的主线门槛。")
+    elif s["progress"] >= 8 or (cur and ms and cur is ms[-1]):
         pacing = "决胜幕:终点已在眼前,本幕危机必须是通往目标的最后一道阻碍,不得新增支线人物或新谜团。"
     elif s["clock"] >= 6:
         pacing = "收束幕:时间无多,收拢已有线索,不再展开新方向。"
@@ -213,6 +220,8 @@ def _scene_context(s, last_report):
         "tracks": {"progress": s["progress"], "danger": s["danger"],
                    "synergy": s["synergy"], "clock": s["clock"],
                    "vitality": dict(s["vitality"])},
+        "main_goal_locked": s.get("main_goal_locked", False),
+        "turns_remaining": max(0, MAX_SCENES - s["scene_index"]),
         "identities": [
             {"name": _identity(s, s["identities"][x])["name"],
              "specialty": _identity(s, s["identities"][x])["specialty"]}
@@ -248,6 +257,8 @@ def observe(full_state, seat_id):
         "tracks": {"progress": s["progress"], "danger": s["danger"],
                    "synergy": s["synergy"], "clock": s["clock"],
                    "vitality": dict(s["vitality"])},
+        "main_goal_locked": s.get("main_goal_locked", False),
+        "goal_locked_at_scene": s.get("goal_locked_at_scene"),
         "scene_index": s["scene_index"],
         "scene": deepcopy(s["current_scene"]) if s["stage"] == "scene" else None,
         "identities": idents_public,
@@ -434,7 +445,12 @@ def _resolve(s):
     if pa["intent"] == "end" and pb["intent"] == "end":
         report.append("两人对视一眼,把故事合上了。")
         _log(s, scene, {a: pa, b: pb}, {}, report)
-        _finish(s, "TE", "mutual_end")
+        alive = [x for x in s["seats"] if s["vitality"][x] > 0]
+        if s.get("main_goal_locked"):
+            _finish(s, "HE" if len(alive) == 2 else "TE",
+                    "goal" if len(alive) == 2 else "sacrifice")
+        else:
+            _finish(s, "TE", "mutual_end")
         return
     for seat, p in ((a, pa), (b, pb)):
         if p["intent"] == "end":
@@ -591,7 +607,7 @@ def _resolve(s):
         if tiers[seat] in ("success", "critical_success") and p["action"]:
             ident = _identity(s, s["identities"][seat])
             s["facts"].append(f"[第{s['scene_index']}幕]{ident['name']}已做到:{p['action'][:50]}")
-    # 里程碑判定:任一玩家本幕成功 → 当前里程碑达成;全部达成 → 立即可结算(§1)
+    # 里程碑判定:任一玩家本幕成功 → 当前里程碑达成;全部达成 → 锁定主线结局
     cur = _current_milestone(s)
     if cur and any(t in ("success", "critical_success") for t in tiers.values()):
         s["milestones_done"].append(cur["id"])
@@ -600,7 +616,10 @@ def _resolve(s):
         report.append(f"◆ 里程碑达成:{cur['text']}(进度+2)")
         if _milestones(s) and not _current_milestone(s):
             s["progress"] = 10
-            report.append("◆ 公开目标全部达成——立即进入结算!")
+            if not s.get("main_goal_locked"):
+                s["main_goal_locked"] = True
+                s["goal_locked_at_scene"] = s["scene_index"]
+                report.append("◆ 公开目标全部达成——主线结局已锁定,余下回合可自由探索支线!")
 
     report.append(f"账本:进度{s['progress']}/10 危险{s['danger']}/10 "
                   f"默契{s['synergy']}/5 时钟{s['clock']}/8 "
@@ -610,13 +629,12 @@ def _resolve(s):
     alive = [x for x in s["seats"] if s["vitality"][x] > 0]
     if len(alive) == 0:
         _finish(s, "BE", "all_down")
-    elif s["danger"] >= 10 and s["progress"] < 10:
+    elif s.get("main_goal_locked") and s["scene_index"] >= MAX_SCENES:
+        _finish(s, "HE" if len(alive) == 2 else "TE",
+                "goal" if len(alive) == 2 else "sacrifice")
+    elif s["danger"] >= 10 and not s.get("main_goal_locked"):
         _finish(s, "BE", "world_lost")
-    elif s["progress"] >= 10 and len(alive) == 2:
-        _finish(s, "HE", "goal")
-    elif s["progress"] >= 10:
-        _finish(s, "TE", "sacrifice")
-    elif s["clock"] >= 8:
+    elif s["clock"] >= 8 and not s.get("main_goal_locked"):
         _finish(s, "TE", "out_of_time")
     else:
         s["stage"] = "scenegen"
@@ -699,6 +717,9 @@ def _finish(s, kind, reason):
             "identities": [_identity(s, s["identities"][x])["name"]
                            for x in s["seats"] if s["identities"][x]],
             "facts": s["facts"][-10:],
+            "main_goal_locked": s.get("main_goal_locked", False),
+            "goal_locked_at_scene": s.get("goal_locked_at_scene"),
+            "unresolved_hooks": list(s["hooks"]),
             "hidden_fired": [th["brief"] for th in
                              (s["world"].get("hidden_threads", []) if s["world"] else [])
                              if th["id"] in s["hidden_fired"]],

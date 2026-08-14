@@ -264,20 +264,43 @@ class TestHiddenAndEndings(unittest.TestCase):
         self.assertEqual(len(cr["chapters"]), 6)
         self.assertIn("悄然归档", cr["original_ending"])
 
-    def test_milestones_force_settlement(self):
-        """两座里程碑连成 → 进度强制10 → 立即结算(公开目标是硬终局条件)。"""
+    def test_milestones_lock_goal_and_leave_sidequest_turns(self):
+        """主线达成后继续到第10幕,余下回合可探索支线。"""
         s = setup_playing(42)
         guard = 0
-        while s["phase"] == "playing" and guard < 20:
+        while not s.get("main_goal_locked") and guard < 20:
             guard += 1
             for seat in SEATS:
-                if s["phase"] != "playing" or s.get("narration_request"):
+                if s.get("narration_request"):
                     break
                 s = rules.apply(s, seat, "commit",
                                 {"intent": "advance", "action": "冲阵"})
             s = feed(s)
-        if s.get("milestones_done") and len(s["milestones_done"]) == 2:
-            self.assertEqual(s["ending"]["kind"], "HE")
+        self.assertTrue(s["main_goal_locked"])
+        self.assertEqual(s["progress"], 10)
+        self.assertEqual(s["phase"], "playing")
+        self.assertIsNone(s["ending"])
+        self.assertLess(s["goal_locked_at_scene"], rules.MAX_SCENES)
+        self.assertIn("余波幕", rules._scene_context(s, None)["pacing"])
+
+        s["scene_index"] = rules.MAX_SCENES
+        s["danger"] = 10
+        s["clock"] = 8
+        s = commit(s, "seat_a", "explore", action="把遗留的岔路走完")
+        s = rules.apply(s, "seat_b", "commit",
+                        {"intent": "support", "action": "替她照亮支路"})
+        self.assertEqual(s["stage"], "endinggen")
+        self.assertEqual(s["ending"]["kind"], "HE")
+
+    def test_mutual_end_after_goal_keeps_locked_ending(self):
+        s = setup_playing(43)
+        s["main_goal_locked"] = True
+        s["goal_locked_at_scene"] = s["scene_index"]
+        s["progress"] = 10
+        s = rules.apply(s, "seat_a", "commit", {"intent": "end", "action": ""})
+        s = rules.apply(s, "seat_b", "commit", {"intent": "end", "action": ""})
+        self.assertEqual(s["ending"]["kind"], "HE")
+        self.assertEqual(s["ending"]["reason"], "goal")
 
     def test_one_end_proposal_not_final(self):
         s = setup_playing(5)
