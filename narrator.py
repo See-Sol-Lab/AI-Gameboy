@@ -104,7 +104,8 @@ def _p_world(ctx):
    "cost_kind":"danger|progress|clock|flag 之一"}}],
  "opening_facts": ["开局已成立的3到5条事实,短句"],
  "hidden_threads": [1到2条,每条 {{"id":"h-英文短名",
-   "required": {{"flag":"found_the_key_truth"}} 或 {{"synergy>=":4}} 或 {{"progress>=":7}} 或 {{"danger>=":6}},
+   "required": 必须逐字采用下面四种写法之一,键名一个字符都不能改:
+     {{"flag": "found_the_key_truth"}} 或 {{"synergy>=": 4}} 或 {{"progress>=": 7}} 或 {{"danger>=": 6}},
    "effect_kind":"truth|ending_modifier",
    "brief":"暗线浮出时向玩家公布的一句话"}}]
 }}
@@ -196,8 +197,25 @@ def _v_world(d):
     for t in d["hidden_threads"]:
         _req(all(k in t for k in ("id", "required", "effect_kind", "brief")), "thread 缺字段")
         r = t["required"]
-        _req(isinstance(r, dict) and any(k in r for k in
-             ("flag", "synergy>=", "progress>=", "danger>=")), "thread 触发条件非法")
+        _req(isinstance(r, dict) and r, "thread 触发条件非法")
+        # 规范化常见变体:synergy/progress/danger 裸键名、flag 给成列表、数字给成字符串
+        fixed = {}
+        for k, v in r.items():
+            key = k.strip()
+            if key in ("synergy", "progress", "danger"):
+                key += ">="
+            if key in ("synergy>=", "progress>=", "danger>="):
+                try:
+                    fixed[key] = int(v)
+                except (TypeError, ValueError):
+                    pass
+            elif key == "flag":
+                if isinstance(v, list) and v:
+                    v = v[0]
+                if isinstance(v, str) and v:
+                    fixed[key] = v
+        _req(fixed, f"thread 触发条件非法:{r}")
+        t["required"] = fixed
         _req(t["effect_kind"] in ("truth", "ending_modifier"), "effect_kind 非法")
 
 
