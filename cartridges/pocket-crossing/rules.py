@@ -82,6 +82,13 @@ POOLS = {
     ],
 }
 
+# NPC 人格池(B期):支线知情人的性格底色,seed 定死,荷官每次登场都得照此写人
+NPC_PERSONAS = [
+    ("腹黑藏锋", 1), ("阳光热心", 1), ("狡猾市侩", 1), ("铁血寡言", 1),
+    ("胆小怕事", 1), ("傲慢毒舌", 1), ("疯癫痴语", 1), ("温吞慢热", 1),
+    ("精明算计", 1), ("天真烂漫", 1), ("阴郁多疑", 1), ("豪爽仗义", 1),
+]
+
 # 剧情规模 → 烈度预算:荷官在此规模下最多写多大的事(注入 worldgen 提示)
 SCOPE_INTENSITY = {
     "鸡毛蒜皮": "烈度1-2:一双鞋、一笔账、一场误会、一件丢失的小物",
@@ -165,6 +172,7 @@ def new_game(seats, seed):
         "narration_request": {"kind": "gen_world", "context": {
             "axes": axes,
             "scope_intensity": SCOPE_INTENSITY.get(axes.get("scope"), ""),
+            "npc_persona": _pick(seed, "npc_persona", NPC_PERSONAS),
         }},
     }
 
@@ -235,6 +243,9 @@ def apply_system(full_state, action_id, payload):
             q["status"] = "open"
             if q["unlock_kind"] == "npc":
                 q["windows"] = _npc_windows(s["seed"])
+                # 人格由引擎抽签定死,不信荷官复读;每次登场都按此写人
+                q.setdefault("npc", {})["persona"] = _pick(
+                    s["seed"], "npc_persona", NPC_PERSONAS)
             quests.append(q)
         s["side_quests"] = quests
         s["hooks"] = [q["question"] for q in quests]
@@ -323,6 +334,7 @@ def _scene_context(s, last_report):
     npc = _npc_due(s, s["scene_index"] + 1)
     return {
         "npc_onstage": ({"name": npc["npc"]["name"], "desc": npc["npc"]["desc"],
+                         "persona": npc["npc"].get("persona", ""),
                          "question": npc["question"]} if npc else None),
         "open_questions": [q["question"] for q in s.get("side_quests") or []
                            if q["status"] == "open"],

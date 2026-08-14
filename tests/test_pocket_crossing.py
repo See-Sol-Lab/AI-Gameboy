@@ -524,6 +524,20 @@ class TestScopeAndAntiEpic(unittest.TestCase):
                "facts": [], "hooks": []}
         self.assertIn("禁止替他们升级", narrator._p_scene(ctx))
 
+    def test_npc_persona_seeded_and_reaches_scene(self):
+        s = setup_playing(23)
+        values = [v for v, _ in rules.NPC_PERSONAS]
+        q = next(q for q in s["side_quests"] if q["unlock_kind"] == "npc")
+        self.assertIn(q["npc"]["persona"], values)
+        # 同种子复现同人格
+        s2 = setup_playing(23)
+        q2 = next(q for q in s2["side_quests"] if q["unlock_kind"] == "npc")
+        self.assertEqual(q["npc"]["persona"], q2["npc"]["persona"])
+        # NPC 窗口幕的场景上下文携带人格,荷官每次登场都得照此写人
+        s["scene_index"] = q["windows"][0] - 1
+        ctx = rules._scene_context(s, [])
+        self.assertEqual(ctx["npc_onstage"]["persona"], q["npc"]["persona"])
+
     def test_ending_prompt_forbids_invention_and_moralizing(self):
         import narrator
         ctx = {"world": {"world_name": "测", "clock_text": ""},

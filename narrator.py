@@ -113,6 +113,8 @@ def call(kind, context):
 
 def _p_world(ctx):
     a = ctx["axes"]
+    persona_hint = (f";此人性格底色已定死={ctx['npc_persona']},名字、做派、说话方式都要贴这个性格"
+                    if ctx.get("npc_persona") else "")
     if "engine" in a:   # 《口袋穿越》新种子:世界生成器 ≠ 任务生成器
         scope = a.get("scope", "街坊门户")
         grand = scope in ("一城一地", "天下大势")
@@ -177,7 +179,7 @@ def _p_world(ctx):
    第1条 {{"id":"sq_npc","question":"一句悬而未决的谜题(玩家视角的问句)",
      "truth":"谜底,≤80字,必须直接回答谜题,且与lore、原典自洽",
      "unlock_kind":"npc",
-     "npc":{{"name":"知晓此事的剧情人物称呼","desc":"他登场时的样子与来意暗示,一句"}}}},
+     "npc":{{"name":"知晓此事的剧情人物称呼","desc":"他登场时的样子与来意暗示,一句{persona_hint}"}}}},
    第2条 {{"id":"sq_stat","question":"另一句谜题","truth":"谜底,≤80字,同上要求",
      "unlock_kind":"stat",
      "stat": 逐字采用其一:{{"synergy>=": 3}} 或 {{"explore_wins>=": 3}} 或 {{"confront_wins>=": 2}}}}],
@@ -224,9 +226,10 @@ def _p_scene(ctx):
     npc = ""
     if ctx.get("npc_onstage"):
         n = ctx["npc_onstage"]
+        persona = f"性格底色={n['persona']},言行必须贴此性格;" if n.get("persona") else ""
         npc = f"""
 【剧情人物登场(必须执行)】{n['name']}:{n['desc']}
-此人知晓「{n['question']}」的内情。把他写进 text 的现场,并放进 objects
+{persona}此人知晓「{n['question']}」的内情。把他写进 text 的现场,并放进 objects
 (该条 id 必须恰好是 "npc")。他只现身、只露暗示,绝不主动全盘托出;
 玩家是否追上去、能不能问出来,由引擎裁决,与你无关。"""
     oq = ctx.get("open_questions") or []
