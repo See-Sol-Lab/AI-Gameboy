@@ -592,6 +592,22 @@ const CART_UI = {
       const ps = v.public_state;
       const t = ps.tracks || {};
       const [a, b] = v.seats;
+      const NARR_NAMES = { gen_world: "正在织一个新世界", gen_identities: "正在写身份卡",
+                           gen_scene: "正在写下一幕", render_ending: "正在写结局" };
+      const axesChips = ps.axes ? Object.values(ps.axes)
+        .map((x) => `<span class="chip prop">${esc(x)}</span>`).join("") : "";
+      const narr = ps.narration_pending ? `
+        <div class="situation">
+          <div class="sit-name">🖋 荷官执笔中 · ${esc(NARR_NAMES[ps.narration_pending] || ps.narration_pending)}</div>
+          <div class="sit-tags">${axesChips}</div>
+          <div class="center" style="margin-top:.4rem">
+            <button class="soft focusable" data-act="pc-narrate">召荷官(可能要等半分钟)</button>
+          </div></div>` : "";
+      if (!ps.world) {
+        return `<div class="sit-name center">世界正在成形…</div>
+          <div class="dim center">种子:</div>
+          <div class="center">${axesChips}</div>${narr}`;
+      }
       const bar = (val, max, cls) => `
         <div class="bar-track"><div class="bar-fill ${cls}"
           style="width:${(val / max) * 100}%"></div></div>`;
@@ -617,9 +633,10 @@ const CART_UI = {
       const endProposed = ps.end_proposed_by
         ? `<div class="warn-note center">${esc(nameOf(v, ps.end_proposed_by))} 提议停笔</div>` : "";
       const endingHtml = ps.ending ? `
-        <div class="situation"><div class="sit-name">【${esc(ps.ending.kind)}】</div>
-          <div class="sit-text">${esc(ps.ending.text)}</div></div>` : "";
+        <div class="situation"><div class="sit-name">【${esc(ps.ending.kind)}】${esc(ps.ending.reason_name || "")}</div>
+          <div class="sit-text">${ps.ending.text ? esc(ps.ending.text) : "(结局成文中……)"}</div></div>` : "";
       return `
+        ${narr}
         <div class="sit-name center">《${esc(ps.world.world_name)}》</div>
         <div class="sit-text center">🎯 ${esc(ps.world.public_goal)}</div>
         <div class="dim">进度 ${t.progress}/10</div>${bar(t.progress, 10, "ok")}
@@ -806,6 +823,14 @@ async function humanDraw(itemId) {
   await humanAct("draw_pick", { item_id: itemId });
 }
 
+async function pcNarrate(btn) {
+  btn.textContent = "荷官执笔中……";
+  btn.disabled = true;
+  const r = await api(`/api/sessions/${S.sid}/narrate`, "POST");
+  if (r.result !== "ok") alert("荷官没接住:" + (r.message || r.reason || r.result));
+  S.lastSnap = "";
+}
+
 async function pcSubmit() {
   if (!S.pc.intent) return;
   const action = (document.getElementById("pc-action")?.value || "").trim();
@@ -902,6 +927,7 @@ function act(el) {
   else if (a === "pc-ident") humanAct("choose_identity", { identity_id: el.dataset.id });
   else if (a === "pc-intent") { S.pc.intent = el.dataset.id; S.lastSnap = ""; redrawSoon(); }
   else if (a === "pc-submit") pcSubmit();
+  else if (a === "pc-narrate") pcNarrate(el);
 }
 
 let redrawTimer = null;

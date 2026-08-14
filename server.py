@@ -148,6 +148,11 @@ async def session_end(request: Request):
     return JSONResponse(host.end_session(request.path_params["sid"]))
 
 
+@mcp.custom_route("/api/sessions/{sid}/narrate", methods=["POST"])
+async def session_narrate(request: Request):
+    return JSONResponse(host.narrate(request.path_params["sid"]))
+
+
 if __name__ == "__main__":
     print(f"AI-Gameboy Stage B 内部纸桌")
     print(f"MCP 入口:http://{HOST}:{PORT}/mcp")

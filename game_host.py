@@ -136,6 +136,61 @@ class GameHost:
             "note": "席位令牌只显示这一次,服务器只保存哈希。",
         }
 
+    def narrate(self, session_id: str) -> dict:
+        """召荷官:处理状态里挂起的 narration_request(蓝图 §14.3)。
+
+        荷官调用发生在事务之外;写回前重读局面核对请求仍在,再以系统动作入账。
+        失败不重试不换模型,原样报错,由人类一键重召。
+        """
+        conn = store.connect(self.db_path)
+        try:
+            srow = store.get_session(conn, session_id)
+        finally:
+            conn.close()
+        if srow is None:
+            return {"result": "not_found"}
+        engine = json.loads(srow["engine_state_json"])
+        state = engine.get("cartridge_state")
+        req = (state or {}).get("narration_request")
+        if not req:
+            return {"result": "rejected", "reason": "没有待办的荷官请求"}
+        import narrator
+        try:
+            data = narrator.call(req["kind"], req["context"])
+        except narrator.NarratorError as e:
+            return {"result": "narrator_error", "message": str(e)}
+        conn = store.connect(self.db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            srow2 = store.get_session(conn, session_id)
+            engine2 = json.loads(srow2["engine_state_json"])
+            state2 = engine2.get("cartridge_state")
+            req2 = (state2 or {}).get("narration_request")
+            if not req2 or req2["kind"] != req["kind"]:
+                conn.execute("ROLLBACK")
+                return {"result": "rejected", "reason": "荷官请求已被处理"}
+            _, rules = self._load_cartridge(srow2["cartridge_id"],
+                                            srow2["cartridge_version"])
+            new_state = rules.apply_system(state2, "narration_result",
+                                           {"kind": req["kind"], "data": data})
+            engine2["cartridge_state"] = new_state
+            self._push_event(engine2, {"kind": "narration", "what": req["kind"]})
+            new_status = ("finished" if new_state.get("phase") == "finished"
+                          else srow2["status"])
+            store.update_session(conn, session_id, new_status,
+                                 srow2["revision"] + 1,
+                                 json.dumps(engine2, ensure_ascii=False), _now())
+            conn.execute("COMMIT")
+            return {"result": "ok", "kind": req["kind"]}
+        except BaseException:
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
+        finally:
+            conn.close()
+
     def list_cartridges(self) -> dict:
         """卡带架真实清单:扫描 cartridges/*/manifest.json(只读)。"""
         out = []
