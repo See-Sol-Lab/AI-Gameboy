@@ -17,6 +17,12 @@ const S = {
   human: null,          // {token, seatId} — 仅在 observe 成功后设置
   picked: null,         // 人类本轮点选中的 item_id(未提交)
   chooseCart: null,     // 插卡后待选模式的卡带
+  bc: { fact: null, stance: null, target: null },  // 盲区同行的三步选择
+};
+
+const targetName = (v, oid) => {
+  const o = (v.public_state.objects || []).find((x) => x.id === oid);
+  return o ? o.name : oid;
 };
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
@@ -145,7 +151,10 @@ async function insertCartridge(cartId, mode) {
 /* ---------------- 牌局(席位 / 游戏) ---------------- */
 
 async function showSession(sid) {
-  if (S.sid !== sid) S.picked = null;
+  if (S.sid !== sid) {
+    S.picked = null;
+    S.bc = { fact: null, stance: null, target: null };
+  }
   S.sid = sid;
   // 人类身份只凭统一 observe 成功确认,不靠 localStorage 猜(校正 #1)
   const stored = localStorage.getItem(humanTokenKey(sid));
@@ -184,7 +193,8 @@ async function showSession(sid) {
   S.timer = setInterval(draw, 3000); // 人类自己的视图刷新,不触碰任何 AI 窗口
 }
 
-const DRAFT_IDS = ["tl-input", "intro-name", "intro-now", "usage-input", "combo-select"];
+const DRAFT_IDS = ["tl-input", "intro-name", "intro-now", "usage-input",
+                   "combo-select", "bc-line"];
 
 function captureDraft() {
   const d = {};
@@ -193,6 +203,7 @@ function captureDraft() {
     if (el) d[id] = el.value;
   }
   d.needs = [...document.querySelectorAll(".need-box:checked")].map((x) => x.value);
+  d.bcEndorse = !!document.getElementById("bc-endorse")?.checked;
   return d;
 }
 function restoreDraft(d) {
@@ -203,6 +214,8 @@ function restoreDraft(d) {
   }
   for (const box of document.querySelectorAll(".need-box"))
     if ((d.needs || []).includes(box.value)) box.checked = true;
+  const be = document.getElementById("bc-endorse");
+  if (be && d.bcEndorse) be.checked = true;
 }
 
 /* ---- 开局席位 ---- */
@@ -471,6 +484,95 @@ const CART_UI = {
     },
   },
 
+  "blind-companions": {
+    felt(v) {
+      const ps = v.public_state;
+      const [a, b] = v.seats;
+      const bar = (val, max, cls) => `
+        <div class="bar-track"><div class="bar-fill ${cls}"
+          style="width:${(val / max) * 100}%"></div></div>`;
+      const omens = `
+        <div class="dim center">余波:${(ps.omens_flipped || [])
+          .map((o) => `<span class="chip risk">${esc(o)}</span>`).join("")}
+          <span class="dim">未翻 ${3 - (ps.omens_flipped || []).length} 张
+          (共 ${(ps.omens_composition || []).join("/")})</span>
+          ${ps.omen_peek ? `<span class="chip prop">👁 下一张:${esc(ps.omen_peek)}</span>` : ""}
+        </div>`;
+      const pinned = (ps.pinned || []).map((p) => `
+        <div class="mem-line">📌 ${p.owner ? esc(nameOf(v, p.owner)) : "世界"}:
+          ${esc(p.text)}</div>`).join("");
+      const lastLog = ps.beats_log && ps.beats_log.length ? `
+        <div class="report">${ps.beats_log[ps.beats_log.length - 1].report
+          .map((l) => `<div>${esc(l)}</div>`).join("")}</div>` : "";
+      const endingHtml = ps.ending ? `
+        <div class="situation"><div class="sit-name">${esc(ps.ending_text || "")}</div>
+          ${ps.memory ? `<div class="sit-text">🕯 ${esc(ps.memory.text)}</div>` : ""}
+        </div>` : "";
+      return `
+        <div class="sit-name center">${esc(ps.scene.name)} · 第 ${ps.beat}/${ps.total_beats} 拍</div>
+        ${ps.beat === 1 && !(ps.beats_log || []).length
+          ? `<div class="sit-text center">${esc(ps.scene.intro)}</div>` : ""}
+        <div class="sit-text center">🎯 ${esc(ps.scene.goal)}</div>
+        <div class="dim">进度 ${ps.progress}/5</div>${bar(ps.progress, 5, "ok")}
+        <div class="dim">压力 ${ps.pressure}/4</div>${bar(ps.pressure, 4, "bad")}
+        ${omens}
+        <div class="dim center">${esc(nameOf(v, a.seat_id))} 持${esc(ps.packet_holders?.[a.seat_id] || "")}
+          · ${esc(nameOf(v, b.seat_id))} 持${esc(ps.packet_holders?.[b.seat_id] || "")}</div>
+        ${pinned ? `<div class="report">${pinned}</div>` : ""}
+        ${lastLog}${endingHtml}`;
+    },
+    myPanel(v, mine) {
+      if (v.status !== "playing" || !mine) return "";
+      const pending = mine.private_state.my_pending;
+      if (pending) {
+        return `<div class="my-panel"><div class="dim center">
+          你已暗投【${esc(pending.stance)}】→「${esc(targetName(v, pending.target_id))}」
+          ${pending.endorse ? "(已背书)" : ""} —— 等对面</div></div>`;
+      }
+      if (!mine.legal_actions.length) return "";
+      const ps = v.public_state;
+      const facts = mine.private_state.facts.map((f) => `
+        <div class="item-card focusable ${S.bc.fact === f.id ? "picked" : ""}"
+             data-act="bc-fact" data-id="${esc(f.id)}">
+          <div class="it-tags">${esc(f.text)}</div>
+        </div>`).join("");
+      const stances = (ps.stances_left[S.human.seatId] || []).map((st) => `
+        <button class="soft focusable ${S.bc.stance === st ? "picked-btn" : ""}"
+          data-act="bc-stance" data-id="${esc(st)}">${esc(st)}</button>`).join(" ");
+      const targets = (ps.objects || []).map((o) => `
+        <button class="soft minor focusable ${S.bc.target === o.id ? "picked-btn" : ""}"
+          data-act="bc-target" data-id="${esc(o.id)}">${esc(o.name)}</button>`).join(" ");
+      const canEndorse = (ps.endorse_left[S.human.seatId] || 0) > 0;
+      const ready = S.bc.fact && S.bc.stance && S.bc.target;
+      return `<div class="my-panel">
+        <div class="dim center">你的${esc(mine.private_state.packet)}(只有你看得见)。
+          三步:钉一条见闻 → 选姿态 → 点目标</div>
+        <div class="hand-row">${facts}</div>
+        <div class="center" style="margin-top:.5rem">${stances}</div>
+        <div class="center" style="margin-top:.4rem">${targets}</div>
+        <div class="confirm-bar">
+          <input id="bc-line" maxlength="40" placeholder="一句公开台词(≤40字,可空)">
+          ${canEndorse ? `<label class="chip need">
+            <input type="checkbox" id="bc-endorse"> 背书本拍(仅1次)</label>` : ""}
+          <button class="soft focusable" data-act="bc-submit"
+            ${ready ? "" : "disabled"}>确认暗投</button>
+        </div></div>`;
+    },
+    memorial(v) {
+      const ps = v.public_state;
+      const rounds = (ps.beats_log || []).map((bt) => `
+        <div class="mem-four">${bt.report
+          .map((l, i) => `<div class="${i === 0 ? "dim" : "mem-line"}">${esc(l)}</div>`)
+          .join("")}</div>`).join("");
+      const champ = ps.ending_text ? esc(ps.ending_text) : "本幕由人类提前收起";
+      const memory = ps.memory ? `
+        <div class="mem-sec"><div class="sec-t">世 界 记 忆</div>
+          <div class="mem-line">🕯 ${esc(ps.memory.text)}</div></div>` : "";
+      return { rounds: rounds + memory, champ,
+               scoreLine: `进度 ${ps.progress}/5 · 压力 ${ps.pressure}/4` };
+    },
+  },
+
   _fallback: {
     felt(v) { return `<div class="dim center">未知卡带 ${esc(v.cartridge.id)}</div>`; },
     myPanel() { return ""; },
@@ -579,6 +681,17 @@ async function humanDraw(itemId) {
   await humanAct("draw_pick", { item_id: itemId });
 }
 
+async function bcSubmit() {
+  if (!S.bc.fact || !S.bc.stance || !S.bc.target) return;
+  const line = (document.getElementById("bc-line")?.value || "").trim();
+  const endorse = !!document.getElementById("bc-endorse")?.checked;
+  const r = await humanAct("commit", {
+    fact_id: S.bc.fact, stance: S.bc.stance, target_id: S.bc.target,
+    line, endorse,
+  });
+  if (r && r.result === "ok") S.bc = { fact: null, stance: null, target: null };
+}
+
 async function endSession() {
   if (!confirm("确定收起这局吗?局面会停在这里。")) return;
   await api(`/api/sessions/${S.sid}/end`, "POST");
@@ -641,6 +754,10 @@ function act(el) {
   else if (a === "hu-endorse") humanJudge("endorse");
   else if (a === "hu-doubt") humanJudge("doubt");
   else if (a === "pick-draw") humanDraw(el.dataset.item);
+  else if (a === "bc-fact") { S.bc.fact = el.dataset.id; S.lastSnap = ""; redrawSoon(); }
+  else if (a === "bc-stance") { S.bc.stance = el.dataset.id; S.lastSnap = ""; redrawSoon(); }
+  else if (a === "bc-target") { S.bc.target = el.dataset.id; S.lastSnap = ""; redrawSoon(); }
+  else if (a === "bc-submit") bcSubmit();
 }
 
 let redrawTimer = null;

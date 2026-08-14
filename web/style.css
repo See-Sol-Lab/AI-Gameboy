@@ -318,6 +318,17 @@ label.chip.need input { accent-color: #d8a736; }
   outline: 2px solid #4c563a;
 }
 
+/* ---------- 盲区同行 ---------- */
+.bar-track {
+  height: 10px; border-radius: 6px; background: rgba(255,255,255,.45);
+  overflow: hidden; margin: .15rem 0 .45rem;
+  box-shadow: inset 0 1px 3px rgba(60,50,20,.3);
+}
+.bar-fill { height: 100%; border-radius: 6px; transition: width .4s ease; }
+.bar-fill.ok { background: linear-gradient(90deg, #5d8a48, #86c96f); }
+.bar-fill.bad { background: linear-gradient(90deg, #a05a4f, #d8a736); }
+.picked-btn { outline: 2px solid #39412c; background: #3c422b !important; }
+
 /* ---------- 按键区 ---------- */
 .controls {
   display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
