@@ -18,6 +18,7 @@ const S = {
   picked: null,         // 人类本轮点选中的 item_id(未提交)
   chooseCart: null,     // 插卡后待选模式的卡带
   bc: { fact: null, stance: null, target: null },  // 盲区同行的三步选择
+  pc: { intent: null },                            // 口袋穿越的意图选择
 };
 
 const targetName = (v, oid) => {
@@ -162,6 +163,7 @@ async function showSession(sid) {
   if (S.sid !== sid) {
     S.picked = null;
     S.bc = { fact: null, stance: null, target: null };
+    S.pc = { intent: null };
   }
   S.sid = sid;
   // 人类身份只凭统一 observe 成功确认,不靠 localStorage 猜(校正 #1)
@@ -202,7 +204,7 @@ async function showSession(sid) {
 }
 
 const DRAFT_IDS = ["tl-input", "intro-name", "intro-now", "usage-input",
-                   "combo-select", "bc-line"];
+                   "combo-select", "bc-line", "pc-action", "pc-item", "pc-line"];
 
 function captureDraft() {
   const d = {};
@@ -585,6 +587,117 @@ const CART_UI = {
     },
   },
 
+  "pocket-crossing": {
+    felt(v) {
+      const ps = v.public_state;
+      const t = ps.tracks || {};
+      const [a, b] = v.seats;
+      const bar = (val, max, cls) => `
+        <div class="bar-track"><div class="bar-fill ${cls}"
+          style="width:${(val / max) * 100}%"></div></div>`;
+      const hearts = (n) => "❤".repeat(n) + "🖤".repeat(Math.max(0, 3 - n));
+      const idents = ps.identities || {};
+      const identLine = (sid) => idents[sid]
+        ? `${esc(nameOf(v, sid))}=${esc(idents[sid].name)}(擅${esc(idents[sid].specialty)})`
+        : `${esc(nameOf(v, sid))} 暗选身份中…`;
+      const sc = ps.scene;
+      const sceneHtml = sc ? `
+        <div class="situation">
+          <div class="sit-name">第 ${ps.scene_index} 幕 · ${esc(sc.title)}</div>
+          <div class="sit-text">${esc(sc.text)}</div>
+          <div class="sit-text">⚡ ${esc(sc.crisis)}</div>
+          <div class="sit-tags">${(sc.objects || []).map((o) =>
+            `<span class="chip" title="${esc(o.hint)}">${esc(o.name)}</span>`).join("")}</div>
+        </div>` : `<div class="sit-text center">${esc(ps.world.premise)}</div>`;
+      const hooks = (ps.hooks || []).length
+        ? `<div class="dim center">悬事:${ps.hooks.map(esc).join(" · ")}</div>` : "";
+      const lastLog = ps.history && ps.history.length ? `
+        <div class="report">${ps.history[ps.history.length - 1].report
+          .map((l) => `<div>${esc(l)}</div>`).join("")}</div>` : "";
+      const endProposed = ps.end_proposed_by
+        ? `<div class="warn-note center">${esc(nameOf(v, ps.end_proposed_by))} 提议停笔</div>` : "";
+      const endingHtml = ps.ending ? `
+        <div class="situation"><div class="sit-name">【${esc(ps.ending.kind)}】</div>
+          <div class="sit-text">${esc(ps.ending.text)}</div></div>` : "";
+      return `
+        <div class="sit-name center">《${esc(ps.world.world_name)}》</div>
+        <div class="sit-text center">🎯 ${esc(ps.world.public_goal)}</div>
+        <div class="dim">进度 ${t.progress}/10</div>${bar(t.progress, 10, "ok")}
+        <div class="dim">危险 ${t.danger}/10</div>${bar(t.danger, 10, "bad")}
+        <div class="dim">时钟 ${t.clock}/8 · 默契 ${"★".repeat(t.synergy || 0) || "—"} ·
+          ${esc(nameOf(v, a.seat_id))} ${hearts(t.vitality?.[a.seat_id] ?? 3)} /
+          ${esc(nameOf(v, b.seat_id))} ${hearts(t.vitality?.[b.seat_id] ?? 3)}</div>
+        <div class="dim center">${identLine(a.seat_id)} · ${identLine(b.seat_id)}</div>
+        ${sceneHtml}${hooks}${endProposed}${lastLog}${endingHtml}`;
+    },
+    myPanel(v, mine) {
+      if (v.status !== "playing" || !mine) return "";
+      const pending = mine.private_state.my_pending;
+      if (pending) {
+        return `<div class="my-panel"><div class="dim center">
+          你已暗投【${esc(pending.intent)}】—— 等对面</div></div>`;
+      }
+      if (!mine.legal_actions.length) return "";
+      const la = mine.legal_actions[0];
+      if (la.action_id === "choose_identity") {
+        const cards = (mine.private_state.identity_offers || []).map((it) => `
+          <div class="item-card focusable" data-act="pc-ident" data-id="${esc(it.id)}">
+            <div class="it-name">${esc(it.name)}</div>
+            <div class="it-tags">${esc(it.origin)}</div>
+            <div class="redeem">擅长:${esc(it.specialty)} · ${esc(it.gift.text)}<br>
+              弱点:${esc(it.flaw.text)}<br>
+              🤫 私密目标:${esc(it.secret_drive.text)}</div>
+          </div>`).join("");
+        return `<div class="my-panel">
+          <div class="dim center">你抽到两张身份(只有你看得见,连私密目标也是)——暗选其一:</div>
+          <div class="hand-row">${cards}</div></div>`;
+      }
+      const intents = [["advance", "推进"], ["explore", "探索"], ["support", "支援"],
+                       ["confront", "对抗"], ["recover", "休整"], ["end", "停笔"]];
+      const btns = intents.map(([k, n]) => `
+        <button class="soft ${k === "end" ? "warn" : ""} focusable
+          ${S.pc.intent === k ? "picked-btn" : ""}"
+          data-act="pc-intent" data-id="${k}">${n}</button>`).join(" ");
+      const items = [...(v.public_state.inventory?.[S.human.seatId] || []),
+                     ...(v.public_state.inventory?.shared || [])];
+      const itemOpts = items.map((i) =>
+        `<option value="${esc(i.id)}">动用:${esc(i.name)}(利于${(i.use || []).join("/")})</option>`).join("");
+      const ready = S.pc.intent && S.pc.intent !== "end";
+      return `<div class="my-panel">
+        <div class="dim center">🤫 你的私密目标:${esc(mine.private_state.secret_drive || "")}</div>
+        <div class="center" style="margin-top:.4rem">${btns}</div>
+        <div class="confirm-bar">
+          <input id="pc-action" maxlength="120"
+            placeholder="必填:这一步你具体怎么做(自由描述)">
+          <select id="pc-item"><option value="">不动用物品</option>${itemOpts}</select>
+          <input id="pc-line" maxlength="60" placeholder="桌边留言(可空)">
+          <button class="soft focusable" data-act="pc-submit"
+            ${S.pc.intent ? "" : "disabled"}>确认暗投</button>
+        </div>
+        ${!ready && S.pc.intent === "end"
+          ? '<div class="dim center">停笔无需描述;双方同幕都选停笔才生效</div>' : ""}
+      </div>`;
+    },
+    memorial(v) {
+      const ps = v.public_state;
+      const rounds = (ps.history || []).map((h) => `
+        <div class="mem-four">${h.report
+          .map((l, i) => `<div class="${i === 0 ? "dim" : "mem-line"}">${esc(l)}</div>`)
+          .join("")}</div>`).join("");
+      const e = ps.ending;
+      const drives = e && e.secret_drives ? Object.entries(e.secret_drives)
+        .map(([sid, d]) => `<div class="mem-line">${d.achieved ? "✅" : "❌"}
+          ${esc(d.identity)}(${esc(nameOf(v, sid))})的私密目标:${esc(d.text)}</div>`)
+        .join("") : "";
+      const memory = e ? `
+        <div class="mem-sec"><div class="sec-t">结 局 · ${esc(e.kind)}</div>
+          <div class="mem-line">${esc(e.text)}</div>${drives}</div>` : "";
+      return { rounds: rounds + memory,
+               champ: e ? `《${esc(e.world_name)}》· 世界种子 ${esc(String(e.seed))} · 孤本` : "本局提前收起",
+               scoreLine: e ? `【${esc(e.kind)}】` : "未完" };
+    },
+  },
+
   _fallback: {
     felt(v) { return `<div class="dim center">未知卡带 ${esc(v.cartridge.id)}</div>`; },
     myPanel() { return ""; },
@@ -693,6 +806,22 @@ async function humanDraw(itemId) {
   await humanAct("draw_pick", { item_id: itemId });
 }
 
+async function pcSubmit() {
+  if (!S.pc.intent) return;
+  const action = (document.getElementById("pc-action")?.value || "").trim();
+  if (S.pc.intent !== "end" && !action) {
+    alert("行动描述必填:说清这一步你具体怎么做");
+    return;
+  }
+  const params = { intent: S.pc.intent, action };
+  const item = document.getElementById("pc-item")?.value || "";
+  if (item) params.item_id = item;
+  const line = (document.getElementById("pc-line")?.value || "").trim();
+  if (line) params.line = line;
+  const r = await humanAct("commit", params);
+  if (r && r.result === "ok") S.pc = { intent: null };
+}
+
 async function bcSubmit() {
   if (!S.bc.fact || !S.bc.stance || !S.bc.target) return;
   const line = (document.getElementById("bc-line")?.value || "").trim();
@@ -770,6 +899,9 @@ function act(el) {
   else if (a === "bc-stance") { S.bc.stance = el.dataset.id; S.lastSnap = ""; redrawSoon(); }
   else if (a === "bc-target") { S.bc.target = el.dataset.id; S.lastSnap = ""; redrawSoon(); }
   else if (a === "bc-submit") bcSubmit();
+  else if (a === "pc-ident") humanAct("choose_identity", { identity_id: el.dataset.id });
+  else if (a === "pc-intent") { S.pc.intent = el.dataset.id; S.lastSnap = ""; redrawSoon(); }
+  else if (a === "pc-submit") pcSubmit();
 }
 
 let redrawTimer = null;

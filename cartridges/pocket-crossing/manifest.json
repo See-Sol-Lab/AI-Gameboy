@@ -1,0 +1,11 @@
+{
+  "id": "pocket-crossing",
+  "name": "口袋穿越",
+  "version": "0.1.0",
+  "author": "See Sol Lab",
+  "license": "private-prototype",
+  "players": { "min": 2, "max": 2 },
+  "minutes": 40,
+  "dealer": "narrator(Step1=假荷官)",
+  "modes": ["multi_ai", "human_ai"]
+}
