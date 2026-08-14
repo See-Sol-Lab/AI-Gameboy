@@ -71,7 +71,12 @@ def _chat(prompt, temperature):
             text = text[start:end + 1]
         # 宽容修复:尾逗号与字符串内裸换行是大模型高发笔误,机械容错不改语义
         text = re.sub(r",\s*([}\]])", r"\1", text)
-        return json.loads(text, strict=False)
+        try:
+            return json.loads(text, strict=False)
+        except json.JSONDecodeError:
+            # 二次自愈:行尾缺逗号(值结尾直接换行接下一个键/元素)
+            healed = re.sub(r'([j"\]}0-9el])\s*\n(\s*["{\[])', r"\1,\n\2", text)
+            return json.loads(healed, strict=False)
     except Exception as e:
         raise NarratorError(f"荷官回文不是合法 JSON:{e}") from e
 
@@ -81,7 +86,8 @@ def _chat(prompt, temperature):
 def call(kind, context):
     """按合同生成并校验。返回校验后的 data;失败抛 NarratorError。"""
     prompt = PROMPTS[kind](context)
-    temp = 1.3 if kind in ("gen_world", "gen_identities") else 1.0
+    # 1.3 高温实测会烧坏 JSON 纪律;1.0 的中文创意已经够野了
+    temp = 1.0 if kind in ("gen_world", "gen_identities") else 0.9
     data = _chat(prompt, temp)
     VALIDATORS[kind](data)
     return data
