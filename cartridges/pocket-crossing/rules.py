@@ -146,12 +146,29 @@ def apply_system(full_state, action_id, payload):
     return s
 
 
+COST_GLOSS = {"danger": "危险+1", "progress": "进度-1",
+              "clock": "时钟+1", "flag": "留下印记", "vitality": "生命受创"}
+
+
+def _law_gloss(law):
+    tk = law["trigger_kind"]
+    if tk.startswith("intent:"):
+        when = f"有人【{INTENT_NAMES.get(tk[7:], tk[7:])}】时"
+    elif tk.startswith("clock>="):
+        when = f"时钟≥{tk[7:]}后每幕"
+    elif tk.startswith("danger>="):
+        when = f"危险≥{tk[8:]}后每幕"
+    else:
+        when = tk
+    return f"{law['text']}(判定:{when} {COST_GLOSS.get(law['cost_kind'], '')})"
+
+
 def _world_brief(s):
     w = s["world"]
     return {"world_name": w["world_name"], "premise": w["premise"],
             "lore": w["lore"], "power_level": w["power_level"],
             "public_goal": w["public_goal"],
-            "laws": [l["text"] for l in w["laws"]]}
+            "laws": [_law_gloss(l) for l in w["laws"]]}
 
 
 def _scene_context(s, last_report):
@@ -209,12 +226,21 @@ def observe(full_state, seat_id):
         "ending": deepcopy(s["ending"]),
     }
     my_ident = s["identities"][seat_id]
+    my_drive = None
+    if my_ident:
+        d = _identity(s, my_ident)["secret_drive"]
+        my_drive = f"{d['text']}(判定:{DRIVE_KINDS.get(d['kind'], d['kind'])})"
+    offers = None
+    if s["stage"] == "identity" and not my_ident:
+        offers = []
+        for i in s["identity_offers"].get(seat_id, []):
+            card = deepcopy(_identity(s, i))
+            card["secret_drive"]["text"] += \
+                f"(判定:{DRIVE_KINDS.get(card['secret_drive']['kind'], '')})"
+            offers.append(card)
     private = {
-        "identity_offers": ([deepcopy(_identity(s, i)) for i in
-                             s["identity_offers"].get(seat_id, [])]
-                            if s["stage"] == "identity" and not my_ident else None),
-        "secret_drive": (_identity(s, my_ident)["secret_drive"]["text"]
-                         if my_ident else None),
+        "identity_offers": offers,
+        "secret_drive": my_drive,
         "my_pending": deepcopy(s["pending"].get(seat_id)),
     }
     legal, waiting = [], []
