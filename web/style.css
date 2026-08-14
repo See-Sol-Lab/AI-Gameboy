@@ -328,6 +328,10 @@ label.chip.need input { accent-color: #d8a736; }
 .bar-fill.ok { background: linear-gradient(90deg, #5d8a48, #86c96f); }
 .bar-fill.bad { background: linear-gradient(90deg, #a05a4f, #d8a736); }
 .picked-btn { outline: 2px solid #39412c; background: #3c422b !important; }
+.item-card .redeem {
+  margin-top: .3rem; font-size: .72rem; color: #4c563a;
+  border-top: 1px dashed #b6ac8b; padding-top: .25rem;
+}
 
 /* ---------- 按键区 ---------- */
 .controls {

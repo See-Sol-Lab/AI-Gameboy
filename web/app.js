@@ -25,6 +25,14 @@ const targetName = (v, oid) => {
   return o ? o.name : oid;
 };
 
+/* 盲区同行的人话翻译层:机制词 → 一眼懂 */
+const BC_STANCE_GLOSS = { 推进: "莽·直接上手", 护持: "稳·护着别出事",
+                          转向: "绕·换个路子", 探明: "看·先弄清楚" };
+const BC_EFFECT_GLOSS = { progress: "进度 +1", pressure: "压力 -1",
+                          shield: "挡下一次坏签", memory: "被世界长久记住" };
+const bcRedeemLine = (v, boost) =>
+  `谁用【${boost.stance}】碰「${targetName(v, boost.target)}」→ ${BC_EFFECT_GLOSS[boost.effect] || boost.effect}`;
+
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
   (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const api = async (path, method = "GET", body = undefined) => {
@@ -492,15 +500,15 @@ const CART_UI = {
         <div class="bar-track"><div class="bar-fill ${cls}"
           style="width:${(val / max) * 100}%"></div></div>`;
       const omens = `
-        <div class="dim center">余波:${(ps.omens_flipped || [])
-          .map((o) => `<span class="chip risk">${esc(o)}</span>`).join("")}
-          <span class="dim">未翻 ${3 - (ps.omens_flipped || []).length} 张
-          (共 ${(ps.omens_composition || []).join("/")})</span>
-          ${ps.omen_peek ? `<span class="chip prop">👁 下一张:${esc(ps.omen_peek)}</span>` : ""}
+        <div class="dim center">🎋 抽签(每拍抽一支):已抽 ${(ps.omens_flipped || [])
+          .map((o) => `<span class="chip risk">${esc(o)}</span>`).join("") || "无"}
+          · 签筒里还剩 ${3 - (ps.omens_flipped || []).length} 支
+          <span class="dim">(整筒是:顺势=好签 / 代价=坏签 / 回声=留念签)</span>
+          ${ps.omen_peek ? `<span class="chip prop">👁 偷看到下一支:${esc(ps.omen_peek)}</span>` : ""}
         </div>`;
       const pinned = (ps.pinned || []).map((p) => `
         <div class="mem-line">📌 ${p.owner ? esc(nameOf(v, p.owner)) : "世界"}:
-          ${esc(p.text)}</div>`).join("");
+          ${esc(p.text)}<span class="dim">(兑现条件:${esc(bcRedeemLine(v, p.boost))})</span></div>`).join("");
       const lastLog = ps.beats_log && ps.beats_log.length ? `
         <div class="report">${ps.beats_log[ps.beats_log.length - 1].report
           .map((l) => `<div>${esc(l)}</div>`).join("")}</div>` : "";
@@ -535,10 +543,13 @@ const CART_UI = {
         <div class="item-card focusable ${S.bc.fact === f.id ? "picked" : ""}"
              data-act="bc-fact" data-id="${esc(f.id)}">
           <div class="it-tags">${esc(f.text)}</div>
+          <div class="redeem">🎫 ${esc(bcRedeemLine(v, f.boost))}</div>
         </div>`).join("");
       const stances = (ps.stances_left[S.human.seatId] || []).map((st) => `
         <button class="soft focusable ${S.bc.stance === st ? "picked-btn" : ""}"
-          data-act="bc-stance" data-id="${esc(st)}">${esc(st)}</button>`).join(" ");
+          data-act="bc-stance" data-id="${esc(st)}"
+          title="${esc(BC_STANCE_GLOSS[st] || "")}">${esc(st)}<br>
+          <span style="font-size:.68rem">${esc(BC_STANCE_GLOSS[st] || "")}</span></button>`).join(" ");
       const targets = (ps.objects || []).map((o) => `
         <button class="soft minor focusable ${S.bc.target === o.id ? "picked-btn" : ""}"
           data-act="bc-target" data-id="${esc(o.id)}">${esc(o.name)}</button>`).join(" ");
@@ -546,7 +557,8 @@ const CART_UI = {
       const ready = S.bc.fact && S.bc.stance && S.bc.target;
       return `<div class="my-panel">
         <div class="dim center">你的${esc(mine.private_state.packet)}(只有你看得见)。
-          三步:钉一条见闻 → 选姿态 → 点目标</div>
+          三步:亮一张情报券 → 选干活风格 → 点下手对象。
+          券亮出来才能兑现;兑现条件印在券面上,谁踩中都算</div>
         <div class="hand-row">${facts}</div>
         <div class="center" style="margin-top:.5rem">${stances}</div>
         <div class="center" style="margin-top:.4rem">${targets}</div>
