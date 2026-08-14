@@ -43,7 +43,7 @@ def _config():
     return json.loads(CONFIG_PATH.read_text("utf-8"))
 
 
-def _chat(prompt, temperature):
+def _chat(prompt, temperature, kind=None):
     cfg = _config()
     req = urllib.request.Request(
         cfg["base_url"].rstrip("/") + "/chat/completions",
@@ -76,8 +76,26 @@ def _chat(prompt, temperature):
         except json.JSONDecodeError:
             # 二次自愈:行尾缺逗号(值结尾直接换行接下一个键/元素)
             healed = re.sub(r'([j"\]}0-9el])\s*\n(\s*["{\[])', r"\1,\n\2", text)
-            return json.loads(healed, strict=False)
+            try:
+                return json.loads(healed, strict=False)
+            except json.JSONDecodeError:
+                # 结局合同只有一个 text 字段:JSON 碎了也能打捞正文
+                if kind == "render_ending":
+                    m = re.search(r'"text"\s*:\s*"(.*)', text, re.S)
+                    if m:
+                        salvage = m.group(1).rstrip()
+                        salvage = re.sub(r'["\s}`]*$', "", salvage)
+                        salvage = (salvage.replace('\\n', '\n')
+                                   .replace('\\"', '"'))
+                        if len(salvage) >= 20:
+                            return {"text": salvage}
+                raise
     except Exception as e:
+        try:  # 失败原稿落盘,便于尸检
+            (BASE / "data" / "narrator_last_error.txt").write_text(
+                body["choices"][0]["message"]["content"], encoding="utf-8")
+        except Exception:
+            pass
         raise NarratorError(f"荷官回文不是合法 JSON:{e}") from e
 
 
@@ -88,7 +106,7 @@ def call(kind, context):
     prompt = PROMPTS[kind](context)
     # 1.3 高温实测会烧坏 JSON 纪律;1.0 的中文创意已经够野了
     temp = 1.0 if kind in ("gen_world", "gen_identities") else 0.9
-    data = _chat(prompt, temp)
+    data = _chat(prompt, temp, kind=kind)
     VALIDATORS[kind](data)
     return data
 
