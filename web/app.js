@@ -680,8 +680,12 @@ const CART_UI = {
       const itemOpts = items.map((i) =>
         `<option value="${esc(i.id)}">动用:${esc(i.name)}(利于${(i.use || []).join("/")})</option>`).join("");
       const ready = S.pc.intent && S.pc.intent !== "end";
+      const prophecies = (mine.private_state.prophecies || []).map((p) =>
+        `<div class="mem-line">📜 ${esc(p)}</div>`).join("");
       return `<div class="my-panel">
         <div class="dim center">🤫 你的私密目标:${esc(mine.private_state.secret_drive || "")}</div>
+        ${prophecies ? `<div class="report">${prophecies}
+          <div class="dim">(先知情报,只有你看得见)</div></div>` : ""}
         <div class="center" style="margin-top:.4rem">${btns}</div>
         <div class="confirm-bar">
           <input id="pc-action" maxlength="120"
@@ -709,7 +713,14 @@ const CART_UI = {
       const memory = e ? `
         <div class="mem-sec"><div class="sec-t">结 局 · ${esc(e.kind)}</div>
           <div class="mem-line">${esc(e.text)}</div>${drives}</div>` : "";
-      return { rounds: rounds + memory,
+      const cr = ps.chronicle_reveal;
+      const chronicle = cr ? `
+        <div class="mem-sec"><div class="sec-t">原 典 揭 晓 · 本 该 发 生 的</div>
+          ${(cr.chapters || []).map((c) => `<div class="mem-line">
+            第${c.chapter}章《${esc(c.title)}》 ${esc(c.event)}</div>`).join("")}
+          <div class="mem-line" style="margin-top:.4rem">📖 原典结局:${esc(cr.original_ending || "")}</div>
+          <div class="dim">—— 而以上,是没有你们的版本。</div></div>` : "";
+      return { rounds: rounds + memory + chronicle,
                champ: e ? `《${esc(e.world_name)}》· 世界种子 ${esc(String(e.seed))} · 孤本` : "本局提前收起",
                scoreLine: e ? `【${esc(e.kind)}】` : "未完" };
     },

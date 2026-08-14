@@ -91,6 +91,8 @@ def new_game(seats, seed):
         "facts": [], "flags": [], "hooks": [],
         "hooks_resolved": 0, "hidden_fired": [],
         "pending": {}, "history": [],
+        "prophecies": {seats[0]: [], seats[1]: []},   # 先知情报:私密撕页
+        "prophecy_i": 0,
         "ending": None, "rolls_used": 0, "end_proposed_by": None,
         "narration_request": {"kind": "gen_world", "context": {"axes": axes}},
     }
@@ -194,12 +196,18 @@ def _scene_context(s, last_report):
         pacing = "决胜幕:终点已在眼前,本幕危机必须是通往目标的最后一道阻碍,不得新增支线人物或新谜团。"
     elif s["clock"] >= 6:
         pacing = "收束幕:时间无多,收拢已有线索,不再展开新方向。"
+    chron = (s["world"] or {}).get("chronicle") or []
+    idx = min(s["scene_index"], len(chron) - 1) if chron else -1
+    chronicle_now = (f"第{chron[idx].get('chapter', idx + 1)}章"
+                     f"《{chron[idx]['title']}》:{chron[idx]['event']}"
+                     if idx >= 0 else None)
     return {
         "pacing": pacing,
         "milestones": [{"text": m["text"],
                         "done": m["id"] in s.get("milestones_done", [])}
                        for m in _milestones(s)],
         "current_milestone": cur["text"] if cur else None,
+        "chronicle_now": chronicle_now,
         "world": _world_brief(s),
         "scene_index": s["scene_index"] + 1,
         "tracks": {"progress": s["progress"], "danger": s["danger"],
@@ -251,6 +259,11 @@ def observe(full_state, seat_id):
         "history": [{"scene_index": h["scene_index"], "title": h["title"],
                      "report": h["report"]} for h in s["history"]],
         "ending": deepcopy(s["ending"]),
+        # 原典只在全书终了时揭晓——这一刻是穿越者的对账时刻
+        "chronicle_reveal": (
+            {"chapters": deepcopy((s["world"] or {}).get("chronicle", [])),
+             "original_ending": (s["world"] or {}).get("original_ending")}
+            if s["phase"] == "finished" and s["world"] else None),
     }
     my_ident = s["identities"][seat_id]
     my_drive = None
@@ -269,6 +282,7 @@ def observe(full_state, seat_id):
         "identity_offers": offers,
         "secret_drive": my_drive,
         "my_pending": deepcopy(s["pending"].get(seat_id)),
+        "prophecies": deepcopy(s.get("prophecies", {}).get(seat_id, [])),
     }
     legal, waiting = [], []
     if s["phase"] == "playing":
@@ -482,6 +496,14 @@ def _resolve(s):
                                 "name": "路上寻获的小物", "use": ["advance"]}
                         slip["items_gained"].append((seat, item))
                         report.append(f"  {name}顺手寻获:{item['name']}")
+                    # 先知情报:撕一页原典,私密塞给探到的人
+                    chron = (s["world"] or {}).get("chronicle") or []
+                    if s["prophecy_i"] < len(chron):
+                        page = chron[s["prophecy_i"]]
+                        s["prophecy_i"] += 1
+                        s["prophecies"][seat].append(
+                            f"原典第{page.get('chapter', '?')}章《{page['title']}》:{page['event']}")
+                        report.append(f"  ◆ {name}瞥见了这个世界原本的样子(私密情报,仅其本人可见)")
             elif it == "confront":
                 slip["progress_delta"] += 1
                 slip["danger_delta"] -= 1
@@ -681,6 +703,9 @@ def _finish(s, kind, reason):
                              (s["world"].get("hidden_threads", []) if s["world"] else [])
                              if th["id"] in s["hidden_fired"]],
             "scene_titles": [h["title"] for h in s["history"]],
+            "original_ending": (s["world"] or {}).get("original_ending"),
+            "chronicle_titles": [c["title"] for c in
+                                 (s["world"] or {}).get("chronicle", [])],
         },
     }
 

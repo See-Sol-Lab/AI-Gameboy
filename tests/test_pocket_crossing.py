@@ -34,6 +34,11 @@ FIX_WORLD = {
         {"id": "m1", "text": "通过第一道断言闸机"},
         {"id": "m2", "text": "抵达城心的绿色对勾"},
     ],
+    "chronicle": [
+        {"chapter": i, "title": f"第{i}章", "event": f"原典密文第{i}节:巡检照常巡逻。"}
+        for i in range(1, 7)
+    ],
+    "original_ending": "原典密文终章:没有人来,测试之城在第八天悄然归档。",
     "hidden_threads": [
         {"id": "h-truth", "required": {"flag": "found_the_key_truth"},
          "effect_kind": "truth", "brief": "这座城是有人测出来的。"},
@@ -236,6 +241,43 @@ class TestHiddenAndEndings(unittest.TestCase):
         s = feed(s)
         self.assertEqual(s["ending"]["kind"], "TE")
         self.assertEqual(s["ending"]["reason"], "mutual_end")
+
+    def test_chronicle_secret_until_finished(self):
+        """原典对局中零可见;终局才揭晓。先知撕页只给撕到的人看。"""
+        s = setup_playing(6)
+        for seat in SEATS:
+            blob = json.dumps(rules.observe(s, seat), ensure_ascii=False)
+            self.assertNotIn("原典密文", blob)          # 底本小说滴水不漏
+        # 先知情报:私密单向
+        s["prophecies"]["seat_a"].append("原典第3章《第3章》:原典密文第3节")
+        oa = rules.observe(s, "seat_a")
+        ob = rules.observe(s, "seat_b")
+        self.assertIn("原典密文第3节",
+                      json.dumps(oa["private_state"]["prophecies"], ensure_ascii=False))
+        self.assertNotIn("原典密文第3节", json.dumps(ob, ensure_ascii=False))
+        # 终局揭晓
+        s = rules.apply(s, "seat_a", "commit", {"intent": "end", "action": ""})
+        s = rules.apply(s, "seat_b", "commit", {"intent": "end", "action": ""})
+        s = feed(s)
+        o = rules.observe(s, "seat_b")
+        cr = o["public_state"]["chronicle_reveal"]
+        self.assertEqual(len(cr["chapters"]), 6)
+        self.assertIn("悄然归档", cr["original_ending"])
+
+    def test_milestones_force_settlement(self):
+        """两座里程碑连成 → 进度强制10 → 立即结算(公开目标是硬终局条件)。"""
+        s = setup_playing(42)
+        guard = 0
+        while s["phase"] == "playing" and guard < 20:
+            guard += 1
+            for seat in SEATS:
+                if s["phase"] != "playing" or s.get("narration_request"):
+                    break
+                s = rules.apply(s, seat, "commit",
+                                {"intent": "advance", "action": "冲阵"})
+            s = feed(s)
+        if s.get("milestones_done") and len(s["milestones_done"]) == 2:
+            self.assertEqual(s["ending"]["kind"], "HE")
 
     def test_one_end_proposal_not_final(self):
         s = setup_playing(5)

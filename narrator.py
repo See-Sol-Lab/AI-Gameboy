@@ -132,9 +132,14 @@ def _p_world(ctx):
    "required": 必须逐字采用下面四种写法之一,键名一个字符都不能改:
      {{"flag": "found_the_key_truth"}} 或 {{"synergy>=": 4}} 或 {{"progress>=": 7}} 或 {{"danger>=": 6}},
    "effect_kind":"truth|ending_modifier",
-   "brief":"暗线浮出时向玩家公布的一句话"}}]
+   "brief":"暗线浮出时向玩家公布的一句话"}}],
+ "chronicle": [恰好8章,这个世界**没有玩家时**本该上演的完整剧情,按时间排序,
+   每章 {{"chapter":1,"title":"≤8字","event":"本章原典事件一句,≤60字"}}——
+   这是只有你和引擎能看到的底本小说,玩家永远看不到,直到终局才揭晓],
+ "original_ending": "原典结局一句:没有任何人干预时,这个世界最后怎么了(≤80字)"
 }}
-要求:法则是给玩家的真实约束与权衡,不是装饰;隐藏线要值得期待;禁止恋爱元素。"""
+要求:法则是给玩家的真实约束与权衡,不是装饰;隐藏线要值得期待;
+原典要是一个自洽的完整故事(玩家不来它也成立);禁止恋爱元素。"""
 
 
 def _p_identities(ctx):
@@ -158,10 +163,18 @@ def _p_scene(ctx):
     ms = "".join(f"\n- [{'✓已达成' if m['done'] else '未达成'}] {m['text']}"
                  for m in ctx.get("milestones", []))
     cur = ctx.get("current_milestone")
+    chron = ""
+    if ctx.get("chronicle_now"):
+        chron = f"""
+【原典推演(玩家不可见的底本)】这个世界没有玩家时,此刻本该发生:
+{ctx['chronicle_now']}
+但两位穿越者已经造成了这些偏移(见既成事实)。你的任务不是编新故事,
+而是**推演**:原典的这一章,被他们的行动扰动之后,现场变成了什么样。
+原典中的人物、事件照常想登场,除非偏移已经改变了它们。"""
     return f"""为《{w['world_name']}》生成第 {ctx['scene_index']} 幕场景。
 世界目标:{w['public_goal']}
 里程碑账本(已达成的绝不能推翻或重考):{ms or "(无)"}
-本幕危机必须服务于当前里程碑:{cur or "全部已达成,收束"}
+本幕危机必须服务于当前里程碑:{cur or "全部已达成,收束"}{chron}
 世界法则:{'; '.join(w['laws'])}
 当前账本:{json.dumps(ctx['tracks'], ensure_ascii=False)}
 在场身份:{json.dumps(ctx['identities'], ensure_ascii=False)}
@@ -194,8 +207,14 @@ def _p_ending(ctx):
 既成事实:{json.dumps(ctx['facts'], ensure_ascii=False)}
 已浮出的暗线:{json.dumps(ctx['hidden_fired'], ensure_ascii=False)}
 
+{f'''【原典对照(必写)】这个世界原本的结局是:{ctx['original_ending']}
+原典各章:{json.dumps(ctx.get('chronicle_titles', []), ensure_ascii=False)}
+结局正文必须包含时间线对照:先用一两句写"本该发生的",再写"因为这两位
+穿越者,实际发生的"——如果他们终究没能改变什么,也如实写,那同样有分量。'''
+ if ctx.get("original_ending") else ""}
+
 只输出这个 JSON:
-{{"text":"不超过350字的结局正文。必须与结局类型相符:HE收束而不腻,BE庄重而不残忍,TE余韵悠长。
+{{"text":"不超过400字的结局正文。必须与结局类型相符:HE收束而不腻,BE庄重而不残忍,TE余韵悠长。
 引用至少一件既成事实;若有暗线,让它在结局里回响;写世界如何继续,不评价玩家。"}}"""
 
 
@@ -236,6 +255,13 @@ def _v_world(d):
         _req(isinstance(m, dict) and m.get("id") and m.get("text"), "milestone 缺字段")
         _req(m["id"] not in mids, "milestone id 重复")
         mids.add(m["id"])
+    _req(isinstance(d.get("chronicle"), list) and 6 <= len(d["chronicle"]) <= 10,
+         "chronicle 须是6到10章的原典")
+    for c in d["chronicle"]:
+        _req(isinstance(c, dict) and c.get("title") and c.get("event"),
+             "chronicle 章节缺字段")
+    _req(isinstance(d.get("original_ending"), str) and d["original_ending"],
+         "缺 original_ending")
     _req(isinstance(d["hidden_threads"], list) and 1 <= len(d["hidden_threads"]) <= 3,
          "hidden_threads 数量不对")
     for t in d["hidden_threads"]:
