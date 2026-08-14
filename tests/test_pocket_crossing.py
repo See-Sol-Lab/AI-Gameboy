@@ -489,5 +489,51 @@ class TestLockAndEndFixes(unittest.TestCase):
         self.assertEqual(s["ending"]["reason"], "out_of_time")
 
 
+class TestScopeAndAntiEpic(unittest.TestCase):
+    """v0.3 规模轴与反史诗纪律:镜头可以很小,世界照样宏大。"""
+
+    def test_scope_axis_present_and_budgeted(self):
+        s = rules.new_game(SEATS, 7)
+        values = [v for v, _ in rules.POOLS["scope"]]
+        self.assertIn(s["axes"]["scope"], values)
+        for v in values:   # 每档规模都必须有烈度预算,漏一档就是哑轴
+            self.assertIn(v, rules.SCOPE_INTENSITY)
+
+    def test_worldgen_context_carries_intensity(self):
+        s = rules.new_game(SEATS, 7)
+        ctx = s["narration_request"]["context"]
+        self.assertEqual(ctx["scope_intensity"],
+                         rules.SCOPE_INTENSITY[s["axes"]["scope"]])
+
+    def test_world_prompt_scale_rules_by_scope(self):
+        import narrator
+        axes = {k: rules.POOLS[k][0][0] for k in rules.POOLS}
+        axes["scope"] = "鸡毛蒜皮"
+        p = narrator._p_world({"axes": axes, "scope_intensity": "烈度1-2"})
+        self.assertIn("规模纪律", p)
+        self.assertIn("烈度1-2", p)
+        axes["scope"] = "天下大势"
+        p = narrator._p_world({"axes": axes, "scope_intensity": ""})
+        self.assertNotIn("规模纪律", p)
+
+    def test_scene_prompt_forbids_escalation(self):
+        import narrator
+        ctx = {"world": {"world_name": "测", "public_goal": "goal",
+                         "laws": [], "clock_text": ""},
+               "scene_index": 1, "tracks": {}, "identities": {},
+               "facts": [], "hooks": []}
+        self.assertIn("禁止替他们升级", narrator._p_scene(ctx))
+
+    def test_ending_prompt_forbids_invention_and_moralizing(self):
+        import narrator
+        ctx = {"world": {"world_name": "测", "clock_text": ""},
+               "kind": "HE", "reason_name": "目标达成", "tracks": {},
+               "identities": {}, "scene_titles": [], "facts": [],
+               "hidden_fired": []}
+        p = narrator._p_ending(ctx)
+        self.assertIn("禁止补写没演出来的新事件", p)
+        self.assertIn("不强制升华", p)
+
+
 if __name__ == "__main__":
     unittest.main()
