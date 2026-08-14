@@ -30,6 +30,10 @@ FIX_WORLD = {
          "trigger_kind": "clock>=5", "cost_kind": "danger"},
     ],
     "opening_facts": ["城门上写着 78 passed。", "巡检从不眨眼。"],
+    "milestones": [
+        {"id": "m1", "text": "通过第一道断言闸机"},
+        {"id": "m2", "text": "抵达城心的绿色对勾"},
+    ],
     "hidden_threads": [
         {"id": "h-truth", "required": {"flag": "found_the_key_truth"},
          "effect_kind": "truth", "brief": "这座城是有人测出来的。"},

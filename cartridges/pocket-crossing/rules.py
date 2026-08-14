@@ -121,6 +121,7 @@ def apply_system(full_state, action_id, payload):
         data = dict(data)
         data["power_level"] = s["axes"]["power"]   # 常量由引擎注入,不劳荷官复读
         s["world"] = data
+        s["milestones_done"] = []
         s["facts"] = list(data["opening_facts"])
         s["narration_request"] = {"kind": "gen_identities",
                                   "context": {"world": _world_brief(s)}}
@@ -171,17 +172,34 @@ def _world_brief(s):
             "laws": [_law_gloss(l) for l in w["laws"]]}
 
 
+def _milestones(s):
+    return (s["world"] or {}).get("milestones", [])
+
+
+def _current_milestone(s):
+    for m in _milestones(s):
+        if m["id"] not in s.get("milestones_done", []):
+            return m
+    return None
+
+
 def _scene_context(s, last_report):
     # 桌边留言是玩家之间的真实闲聊,永远不进荷官的眼(§DS永远不能)
     if last_report:
         last_report = [l for l in last_report if "留言:「" not in l]
+    cur = _current_milestone(s)
+    ms = _milestones(s)
     pacing = None
-    if s["progress"] >= 8:
+    if s["progress"] >= 8 or (cur and ms and cur is ms[-1]):
         pacing = "决胜幕:终点已在眼前,本幕危机必须是通往目标的最后一道阻碍,不得新增支线人物或新谜团。"
     elif s["clock"] >= 6:
         pacing = "收束幕:时间无多,收拢已有线索,不再展开新方向。"
     return {
         "pacing": pacing,
+        "milestones": [{"text": m["text"],
+                        "done": m["id"] in s.get("milestones_done", [])}
+                       for m in _milestones(s)],
+        "current_milestone": cur["text"] if cur else None,
         "world": _world_brief(s),
         "scene_index": s["scene_index"] + 1,
         "tracks": {"progress": s["progress"], "danger": s["danger"],
@@ -545,6 +563,22 @@ def _resolve(s):
             if th.get("effect_kind") == "truth":
                 if "truth_known" not in s["flags"]:
                     s["flags"].append("truth_known")
+
+    # 战果入账:成功即既成事实,荷官不得否认(早期测试报告 §3)
+    for seat, p in ((a, pa), (b, pb)):
+        if tiers[seat] in ("success", "critical_success") and p["action"]:
+            ident = _identity(s, s["identities"][seat])
+            s["facts"].append(f"[第{s['scene_index']}幕]{ident['name']}已做到:{p['action'][:50]}")
+    # 里程碑判定:任一玩家本幕成功 → 当前里程碑达成;全部达成 → 立即可结算(§1)
+    cur = _current_milestone(s)
+    if cur and any(t in ("success", "critical_success") for t in tiers.values()):
+        s["milestones_done"].append(cur["id"])
+        s["progress"] = min(10, s["progress"] + 2)
+        s["facts"].append(f"里程碑达成:{cur['text']}")
+        report.append(f"◆ 里程碑达成:{cur['text']}(进度+2)")
+        if _milestones(s) and not _current_milestone(s):
+            s["progress"] = 10
+            report.append("◆ 公开目标全部达成——立即进入结算!")
 
     report.append(f"账本:进度{s['progress']}/10 危险{s['danger']}/10 "
                   f"默契{s['synergy']}/5 时钟{s['clock']}/8 "

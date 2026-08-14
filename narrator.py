@@ -123,6 +123,7 @@ def _p_world(ctx):
  "lore": "不超过400字的世界背景,三段以内,必须埋入核心变数",
  "power_level": "{a['power']}",
  "public_goal": "本局共同主目标,一句,具体可完成",
+ "milestones": [把主目标拆成2到3步,按先后排序,每步 {{"id":"m1这样的短名","text":"一句可判定的阶段目标,如『通过西境检查站』"}}——玩家每完成一步,引擎当场记账;全部完成即结算,你无权拖延],
  "laws": [2到3条,每条 {{"id":"law_英文短名","text":"玩家能读懂的世界法则",
    "trigger_kind":"只能严格写成以下形式之一(不要照抄占位符):intent:advance / intent:explore / intent:support / intent:confront / intent:recover / clock>=5 这种带具体数字的 / danger>=6 这种带具体数字的",
    "cost_kind":"danger|progress|clock|flag 之一"}}],
@@ -154,8 +155,13 @@ def _p_identities(ctx):
 def _p_scene(ctx):
     w = ctx["world"]
     last = "\n".join(ctx["last_report"]) if ctx.get("last_report") else "(这是第一幕)"
+    ms = "".join(f"\n- [{'✓已达成' if m['done'] else '未达成'}] {m['text']}"
+                 for m in ctx.get("milestones", []))
+    cur = ctx.get("current_milestone")
     return f"""为《{w['world_name']}》生成第 {ctx['scene_index']} 幕场景。
 世界目标:{w['public_goal']}
+里程碑账本(已达成的绝不能推翻或重考):{ms or "(无)"}
+本幕危机必须服务于当前里程碑:{cur or "全部已达成,收束"}
 世界法则:{'; '.join(w['laws'])}
 当前账本:{json.dumps(ctx['tracks'], ensure_ascii=False)}
 在场身份:{json.dumps(ctx['identities'], ensure_ascii=False)}
@@ -223,6 +229,13 @@ def _v_world(d):
         _req(l["cost_kind"] in COST_KINDS, f"cost_kind 非法:{l['cost_kind']}")
     _req(isinstance(d["opening_facts"], list) and 2 <= len(d["opening_facts"]) <= 6,
          "opening_facts 数量不对")
+    _req(isinstance(d.get("milestones"), list) and 2 <= len(d["milestones"]) <= 4,
+         "milestones 须是2到4步")
+    mids = set()
+    for m in d["milestones"]:
+        _req(isinstance(m, dict) and m.get("id") and m.get("text"), "milestone 缺字段")
+        _req(m["id"] not in mids, "milestone id 重复")
+        mids.add(m["id"])
     _req(isinstance(d["hidden_threads"], list) and 1 <= len(d["hidden_threads"]) <= 3,
          "hidden_threads 数量不对")
     for t in d["hidden_threads"]:
