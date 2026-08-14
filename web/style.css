@@ -268,6 +268,24 @@ body {
 }
 .chip.need { background: #4c563a; color: #e6ecd2; }
 .chip.risk { background: #7a4a3c; color: #f3e4dc; }
+.chip.prop { background: #6f7a8a; color: #e9edf3; }
+.chip.fielditem { background: #cfc6a5; }
+.chip.fielditem.spent { text-decoration: line-through; opacity: .55; }
+.field-row { margin-top: .45rem; font-size: .8rem; text-align: center; }
+.report {
+  background: rgba(243,236,216,.65); border-radius: 8px;
+  padding: .5rem .65rem; margin-top: .5rem; font-size: .8rem;
+  text-align: left; color: #4c563a;
+  box-shadow: inset 0 1px 3px rgba(90,80,40,.25);
+}
+.mem-line { font-size: .8rem; color: #55503d; }
+.confirm-bar select {
+  background: rgba(255,255,255,.55); border: 1.5px solid #7d8663;
+  border-radius: 7px; padding: .35rem .45rem; font-size: .85rem;
+  color: #3c422b; font-family: inherit;
+}
+label.chip.need { cursor: pointer; }
+label.chip.need input { accent-color: #d8a736; }
 .four-round, .mem-four {
   font-size: .82rem; color: #4c563a; margin: .3rem 0;
   border-top: 1px dashed rgba(120,110,70,.35); padding-top: .3rem;

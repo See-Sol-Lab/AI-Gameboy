@@ -4,10 +4,11 @@ import importlib.util
 import unittest
 from pathlib import Path
 
+# V1(0.1.0)已归档:旧局纪念卡仍由它渲染,所以它的测试继续跑
 _spec = importlib.util.spec_from_file_location(
-    "four_things_rules",
+    "four_things_rules_v1",
     Path(__file__).resolve().parents[1]
-    / "cartridges" / "four-things-in-my-pocket" / "rules.py")
+    / "cartridges" / "four-things-in-my-pocket" / "versions" / "0.1.0" / "rules.py")
 rules = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(rules)
 

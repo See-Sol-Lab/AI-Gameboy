@@ -69,11 +69,18 @@ class GameHost:
         key = (cartridge_id, version)
         if key not in self._rules_cache:
             manifest = self._load_manifest(cartridge_id)
-            if manifest.get("version") != version:
-                raise CartridgeVersionMissing(f"{cartridge_id}@{version}")
-            path = self.cartridges_dir / cartridge_id / "rules.py"
+            if manifest.get("version") == version:
+                path = self.cartridges_dir / cartridge_id / "rules.py"
+            else:
+                # 旧局钉死的版本:去 versions/ 归档找;找不到才是"缺少本局卡带版本"
+                path = (self.cartridges_dir / cartridge_id / "versions"
+                        / version / "rules.py")
+                if not path.is_file():
+                    raise CartridgeVersionMissing(f"{cartridge_id}@{version}")
+                manifest = dict(manifest, version=version)
             spec = importlib.util.spec_from_file_location(
-                "cartridge_" + cartridge_id.replace("-", "_"), path)
+                "cartridge_" + cartridge_id.replace("-", "_")
+                + "_" + version.replace(".", "_"), path)
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
             self._rules_cache[key] = (manifest, mod)

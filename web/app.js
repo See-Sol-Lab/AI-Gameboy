@@ -39,7 +39,7 @@ const statusText = (s) =>
 
 function route() {
   if (S.timer) { clearInterval(S.timer); S.timer = null; }
-  S.lastSnap = ""; S.focusIdx = 0; S.human = null; S.picked = null;
+  S.lastSnap = ""; S.focusIdx = 0; S.human = null;
   powerLed.classList.remove("busy");
   const mem = location.hash.match(/^#\/m\/(.+)$/);
   const ses = location.hash.match(/^#\/s\/(.+)$/);
@@ -145,6 +145,7 @@ async function insertCartridge(cartId, mode) {
 /* ---------------- 牌局(席位 / 游戏) ---------------- */
 
 async function showSession(sid) {
+  if (S.sid !== sid) S.picked = null;
   S.sid = sid;
   // 人类身份只凭统一 observe 成功确认,不靠 localStorage 猜(校正 #1)
   const stored = localStorage.getItem(humanTokenKey(sid));
@@ -183,20 +184,25 @@ async function showSession(sid) {
   S.timer = setInterval(draw, 3000); // 人类自己的视图刷新,不触碰任何 AI 窗口
 }
 
+const DRAFT_IDS = ["tl-input", "intro-name", "intro-now", "usage-input", "combo-select"];
+
 function captureDraft() {
-  const tl = document.getElementById("tl-input");
-  const nm = document.getElementById("intro-name");
-  const nw = document.getElementById("intro-now");
-  return { tl: tl && tl.value, nm: nm && nm.value, nw: nw && nw.value };
+  const d = {};
+  for (const id of DRAFT_IDS) {
+    const el = document.getElementById(id);
+    if (el) d[id] = el.value;
+  }
+  d.needs = [...document.querySelectorAll(".need-box:checked")].map((x) => x.value);
+  return d;
 }
 function restoreDraft(d) {
   if (!d) return;
-  const tl = document.getElementById("tl-input");
-  const nm = document.getElementById("intro-name");
-  const nw = document.getElementById("intro-now");
-  if (tl && d.tl != null) tl.value = d.tl;
-  if (nm && d.nm != null && d.nm !== "") nm.value = d.nm;
-  if (nw && d.nw != null) nw.value = d.nw;
+  for (const id of DRAFT_IDS) {
+    const el = document.getElementById(id);
+    if (el && d[id] != null && d[id] !== "") el.value = d[id];
+  }
+  for (const box of document.querySelectorAll(".need-box"))
+    if ((d.needs || []).includes(box.value)) box.checked = true;
 }
 
 /* ---- 开局席位 ---- */
@@ -348,43 +354,79 @@ const CART_UI = {
       const ps = v.public_state;
       const [a, b] = v.seats;
       const sit = ps.situation;
+      const props = ((sit && sit.props) || []).map((p) =>
+        `<span class="chip prop">◇ ${esc(p.name)}</span>`).join("");
       const sitHtml = sit ? `
         <div class="situation">
           <div class="sit-name">${esc(sit.name)}</div>
           <div class="sit-text">${esc(sit.text)}</div>
           <div class="sit-tags">
             ${sit.needs.map((n) => `<span class="chip need">${esc(n)}</span>`).join("")}
-            <span class="chip risk">⚠ ${esc(sit.risk)}</span>
+            <span class="chip risk">⚠ ${esc(sit.risk)}</span>${props}
           </div>
         </div>` : "";
-      const rows = (ps.revealed || []).map((r) => `
-        <div class="four-round">
-          <span class="dim">第${r.round}轮 · ${esc(r.situation.name)}</span>
-          <span>${esc(nameOf(v, a.seat_id))}:${esc(r.choices[a.seat_id].name)}
-            (${r.points[a.seat_id] >= 0 ? "+" : ""}${r.points[a.seat_id]})</span>
-          <span>${esc(nameOf(v, b.seat_id))}:${esc(r.choices[b.seat_id].name)}
-            (${r.points[b.seat_id] >= 0 ? "+" : ""}${r.points[b.seat_id]})</span>
-          <span>${r.joint_star ? "★ 共同星" : ""}</span>
-        </div>`).join("");
+      const field = ps.field || [];
+      const fieldHtml = field.length ? `
+        <div class="field-row"><span class="dim">桌面:</span>
+          ${field.map((f) => `<span class="chip fielditem ${f.spent ? "spent" : ""}"
+             title="${esc((f.tags || []).join("、"))}">${esc(f.name)}${f.spent ? "·耗尽" : ""}</span>`).join("")}
+        </div>` : "";
+      const judging = ps.step === "judge" && ps.pending_reveal ? `
+        <div class="report">
+          ${Object.entries(ps.pending_reveal.choices).map(([sid, c]) =>
+            `<div><strong>${esc(nameOf(v, sid))}</strong> 掏出「${esc(c.name)}」:${esc(c.usage)}</div>`).join("")}
+          <div class="dim center">· 有非常规组合,等待对面裁决 ·</div>
+        </div>` : "";
+      const lastReport = ps.revealed && ps.revealed.length ? `
+        <div class="report">${ps.revealed[ps.revealed.length - 1].report
+          .map((l) => `<div>${esc(l)}</div>`).join("")}</div>` : "";
       return `
         <div class="score">${esc(nameOf(v, a.seat_id))} ${ps.scores?.[a.seat_id] ?? 0}
           <span class="colon">:</span>${ps.scores?.[b.seat_id] ?? 0} ${esc(nameOf(v, b.seat_id))}</div>
-        <div class="round-line">第 ${ps.round} / ${ps.total_rounds} 轮 · 共同星 ${"★".repeat(ps.stars || 0) || "—"}</div>
-        ${sitHtml}
-        <div class="rounds-mini">${rows}</div>`;
+        <div class="round-line">第 ${ps.round} / ${ps.total_rounds} 轮 ·
+          共同星 ${"★".repeat(ps.stars || 0) || "—"} ·
+          背书章 ${ps.chips?.[a.seat_id] ?? "-"} / ${ps.chips?.[b.seat_id] ?? "-"}</div>
+        ${sitHtml}${fieldHtml}${judging}${lastReport}`;
     },
     myPanel(v, mine) {
-      if (v.status !== "playing") return "";
+      if (v.status !== "playing" || !mine) return "";
+      const la = mine.legal_actions && mine.legal_actions[0];
       const pending = mine.private_state.my_pending;
-      const hand = mine.private_state.hand || [];
-      if (pending) {
-        const p = hand.find((c) => c.item_id === pending);
-        return `<div class="my-panel">
-          <div class="dim center">你已暗投:${esc(p ? p.name : pending)} —— 等对面翻牌</div>
-        </div>`;
+      if (!la) {
+        if (pending) {
+          const p = (mine.private_state.hand || []).find(
+            (c) => c.item_id === pending.item_id);
+          return `<div class="my-panel"><div class="dim center">
+            你已暗投「${esc(p ? p.name : pending.item_id)}」—— 等对面 / 等裁决</div></div>`;
+        }
+        return "";
       }
-      const myTurn = (mine.waiting_for || []).includes(S.human.seatId);
-      if (!myTurn) return "";
+      if (la.action_id === "draw_pick") {
+        const cards = (mine.private_state.draw_offers || []).map((c) => `
+          <div class="item-card focusable" data-act="pick-draw" data-item="${esc(c.item_id)}">
+            <div class="it-name">${esc(c.name)}</div>
+            <div class="it-tags">${c.tags.map((t) => `<span class="chip">${esc(t)}</span>`).join("")}</div>
+          </div>`).join("");
+        return `<div class="my-panel">
+          <div class="dim center">中场补牌:二选一(只有你看得见)</div>
+          <div class="hand-row">${cards}</div></div>`;
+      }
+      if (la.action_id === "judge") {
+        const pr = ((v.public_state.pending_reveal || {}).proposals || [])
+          .find((p) => p.judge === S.human.seatId && !p.verdict);
+        const needs = (v.public_state.situation || {}).needs || [];
+        return `<div class="my-panel">
+          <div class="dim center">对面的非常规解,由你裁决(你的章还剩 ${mine.private_state.chips_left}):</div>
+          <div class="report">"${esc(pr ? pr.usage : "")}"</div>
+          <div class="confirm-bar">
+            <span class="dim">它真能覆盖哪个需求?</span>
+            ${needs.map((n) => `<label class="chip need"><input type="checkbox"
+               class="need-box" value="${esc(n)}"> ${esc(n)}</label>`).join("")}
+            <button class="soft focusable" data-act="hu-endorse">背书(花 1 章)</button>
+            <button class="soft warn focusable" data-act="hu-doubt">存疑</button>
+          </div></div>`;
+      }
+      const hand = mine.private_state.hand || [];
       const cards = hand.map((c) => `
         <div class="item-card focusable ${S.picked === c.item_id ? "picked" : ""}"
              data-act="pick" data-item="${esc(c.item_id)}">
@@ -392,12 +434,21 @@ const CART_UI = {
           <div class="it-tags">${c.tags.map((t) => `<span class="chip">${esc(t)}</span>`).join("")}</div>
         </div>`).join("");
       const sel = hand.find((c) => c.item_id === S.picked);
+      const fieldOpts = ((v.public_state.field || []).filter((f) => !f.spent))
+        .map((f) => `<option value="field:${esc(f.field_id)}">与桌面的「${esc(f.name)}」组合</option>`)
+        .join("");
       return `<div class="my-panel">
-        <div class="dim center">你的口袋(只有你看得见)——选一件暗投:</div>
+        <div class="dim center">你的口袋(只有你看得见)——选一件、说用法、暗投:</div>
         <div class="hand-row">${cards}</div>
         ${sel ? `<div class="confirm-bar">
-            <span>暗投 <strong>${esc(sel.name)}</strong>?</span>
-            <input id="tl-input" maxlength="120" placeholder="附一句桌边话(可空)">
+            <strong>${esc(sel.name)}</strong>
+            <input id="usage-input" maxlength="80" placeholder="必填:一句具体用法(参与判定!)">
+            <select id="combo-select">
+              <option value="">不组合,单打</option>
+              <option value="partner">赌对面这轮的牌能配上</option>
+              ${fieldOpts}
+            </select>
+            <input id="tl-input" maxlength="120" placeholder="桌边话(可空)">
             <button class="soft focusable" data-act="hu-submit">确认暗投</button>
           </div>` : ""}
       </div>`;
@@ -407,11 +458,9 @@ const CART_UI = {
       const [a, b] = v.seats;
       const rounds = (ps.revealed || []).map((r) => `
         <div class="mem-four">
-          <div class="dim">第${r.round}轮 · ${esc(r.situation.name)} ${r.joint_star ? "· ★" : ""}</div>
-          <div>${esc(nameOf(v, a.seat_id))} 掏出「${esc(r.choices[a.seat_id].name)}」
-            (${r.points[a.seat_id] >= 0 ? "+" : ""}${r.points[a.seat_id]}) ·
-            ${esc(nameOf(v, b.seat_id))} 掏出「${esc(r.choices[b.seat_id].name)}」
-            (${r.points[b.seat_id] >= 0 ? "+" : ""}${r.points[b.seat_id]})</div>
+          ${(r.report || [`第${r.round}轮 · ${r.situation.name}`])
+            .map((l, i) => `<div class="${i === 0 ? "dim" : "mem-line"}">${esc(l)}</div>`)
+            .join("")}
         </div>`).join("");
       const champ = ps.phase === "finished"
         ? `个人分 ${ps.scores?.[a.seat_id] ?? 0} : ${ps.scores?.[b.seat_id] ?? 0} · 共同星 ${"★".repeat(ps.stars || 0) || "无"}`
@@ -487,23 +536,47 @@ async function humanIntroduce() {
   S.lastSnap = "";
 }
 
-async function humanSubmit() {
-  if (!S.picked) return;
-  const line = (document.getElementById("tl-input")?.value || "").trim();
+async function humanAct(action_id, params, table_line = "") {
   const o = await api(`/api/sessions/${S.sid}/observe`, "POST",
                       { seat_token: S.human.token });
-  if (o.result !== "ok") { alert("读不到席位:" + o.result); return; }
+  if (o.result !== "ok") { alert("读不到席位:" + o.result); return null; }
   const r = await api(`/api/sessions/${S.sid}/act`, "POST", {
     seat_token: S.human.token,
     expected_revision: o.revision,
-    action_id: "choose_item",
-    params: { item_id: S.picked },
-    table_line: line,
+    action_id, params, table_line,
   });
-  if (r.result === "ok") S.picked = null;
-  else if (r.result === "stale_revision") { /* 下一轮刷新会带来新局面 */ }
-  else alert("暗投失败:" + (r.reason || r.result));
+  if (r.result !== "ok" && r.result !== "stale_revision")
+    alert("动作失败:" + (r.reason || r.result));
   S.lastSnap = "";
+  return r;
+}
+
+async function humanSubmit() {
+  if (!S.picked) return;
+  const usage = (document.getElementById("usage-input")?.value || "").trim();
+  if (!usage) { alert("用法必填:说一句你打算怎么用它,这句话参与判定"); return; }
+  const combo = document.getElementById("combo-select")?.value || "";
+  const line = (document.getElementById("tl-input")?.value || "").trim();
+  const params = { item_id: S.picked, usage };
+  if (combo) params.combo_target = combo;
+  const r = await humanAct("choose_item", params, line);
+  if (r && r.result === "ok") S.picked = null;
+}
+
+async function humanJudge(verdict) {
+  const needs = [...document.querySelectorAll(".need-box:checked")]
+    .map((x) => x.value);
+  if (verdict === "endorse" && (needs.length < 1 || needs.length > 2)) {
+    alert("背书前先勾选它真正覆盖的需求(1-2 个)");
+    return;
+  }
+  const params = { verdict };
+  if (verdict === "endorse") params.needs = needs;
+  await humanAct("judge", params);
+}
+
+async function humanDraw(itemId) {
+  await humanAct("draw_pick", { item_id: itemId });
 }
 
 async function endSession() {
@@ -565,6 +638,9 @@ function act(el) {
   else if (a === "pick") { S.picked = el.dataset.item; S.lastSnap = ""; redrawSoon(); }
   else if (a === "hu-intro") humanIntroduce();
   else if (a === "hu-submit") humanSubmit();
+  else if (a === "hu-endorse") humanJudge("endorse");
+  else if (a === "hu-doubt") humanJudge("doubt");
+  else if (a === "pick-draw") humanDraw(el.dataset.item);
 }
 
 let redrawTimer = null;
