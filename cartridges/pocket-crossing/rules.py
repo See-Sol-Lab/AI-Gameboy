@@ -172,7 +172,16 @@ def _world_brief(s):
 
 
 def _scene_context(s, last_report):
+    # 桌边留言是玩家之间的真实闲聊,永远不进荷官的眼(§DS永远不能)
+    if last_report:
+        last_report = [l for l in last_report if "留言:「" not in l]
+    pacing = None
+    if s["progress"] >= 8:
+        pacing = "决胜幕:终点已在眼前,本幕危机必须是通往目标的最后一道阻碍,不得新增支线人物或新谜团。"
+    elif s["clock"] >= 6:
+        pacing = "收束幕:时间无多,收拢已有线索,不再展开新方向。"
     return {
+        "pacing": pacing,
         "world": _world_brief(s),
         "scene_index": s["scene_index"] + 1,
         "tracks": {"progress": s["progress"], "danger": s["danger"],
