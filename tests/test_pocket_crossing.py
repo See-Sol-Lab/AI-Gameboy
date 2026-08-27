@@ -210,6 +210,7 @@ class TestNarrationFlow(unittest.TestCase):
         s = setup_playing(3)
         self.assertNotIn("public_goal", s["world"])
         self.assertNotIn("milestones", s["world"])
+        self.assertFalse(s["main_goal_locked"])
         self.assertTrue(all(g["milestones"] for goals in s["player_goals"].values()
                             for g in goals))
 
@@ -283,6 +284,49 @@ class TestDiceAndResolution(unittest.TestCase):
         s = feed(s)
         self.assertEqual(s["scene_index"], 2)
         self.assertEqual(s["stage"], "scene")
+
+    def test_success_advances_only_that_seats_track(self):
+        s = setup_playing(70)
+        rolls = iter([8, 1])
+        orig = rules._die
+        rules._die = lambda st: next(rolls)
+        try:
+            s = rules.apply(s, "seat_a", "commit",
+                            {"intent": "advance", "action": "冲过闸机"})
+            s = rules.apply(s, "seat_b", "commit",
+                            {"intent": "recover", "action": "原地歇脚"})
+        finally:
+            rules._die = orig
+        self.assertEqual(rules._active_goal(s, "seat_a")["milestones_done"], ["m1"])
+        self.assertEqual(rules._active_goal(s, "seat_b")["milestones_done"], [])
+
+    def test_all_seats_must_lock_before_main_goal(self):
+        s = setup_playing(71)
+        for seat in SEATS:
+            goal = rules._active_goal(s, seat)
+            goal["milestones"] = goal["milestones"][:1]
+        orig = rules._die
+        try:
+            rolls = iter([8, 1])
+            rules._die = lambda st: next(rolls)
+            s = rules.apply(s, "seat_a", "commit",
+                            {"intent": "advance", "action": "先过关"})
+            s = rules.apply(s, "seat_b", "commit",
+                            {"intent": "recover", "action": "暂时歇脚"})
+            self.assertTrue(rules._active_goal(s, "seat_a")["goal_locked"])
+            self.assertFalse(rules._active_goal(s, "seat_b")["goal_locked"])
+            self.assertFalse(s["main_goal_locked"])
+            s = feed(s)
+            rolls = iter([1, 8])
+            rules._die = lambda st: next(rolls)
+            s = rules.apply(s, "seat_a", "commit",
+                            {"intent": "recover", "action": "等同伴"})
+            s = rules.apply(s, "seat_b", "commit",
+                            {"intent": "advance", "action": "随后过关"})
+        finally:
+            rules._die = orig
+        self.assertTrue(rules._active_goal(s, "seat_b")["goal_locked"])
+        self.assertTrue(s["main_goal_locked"])
 
 
 class TestHiddenAndEndings(unittest.TestCase):

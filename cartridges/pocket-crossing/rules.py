@@ -386,8 +386,9 @@ def _milestones(s):
     return milestones
 
 
-def _current_milestone(s):
-    for seat in s["seats"]:
+def _current_milestone(s, seat_id=None):
+    seats = [seat_id] if seat_id else s["seats"]
+    for seat in seats:
         goal = _active_goal(s, seat)
         if not goal:
             continue
@@ -1046,25 +1047,29 @@ def _resolve(s):
         if tiers[seat] in ("success", "critical_success") and p["action"]:
             ident = _identity(s, s["identities"][seat])
             s["facts"].append(f"[第{s['scene_index']}幕]{ident['name']}已做到:{p['action'][:50]}")
-    # 里程碑判定:任一玩家本幕成功 → 当前里程碑达成;全部达成 → 锁定主线结局
-    cur = _current_milestone(s)
-    if cur and any(t in ("success", "critical_success") for t in tiers.values()):
-        goal = _active_goal(s, cur["seat"])
+    # 逐席目标:谁本幕成功,谁只推进自己的当前里程碑。
+    for seat in s["seats"]:
+        cur = _current_milestone(s, seat)
+        if not cur or tiers[seat] not in ("success", "critical_success"):
+            continue
+        goal = _active_goal(s, seat)
         goal["milestones_done"].append(cur["id"])
         if len(goal["milestones_done"]) == len(goal["milestones"]):
             goal["goal_locked"] = True
         s["progress"] = min(10, s["progress"] + 2)
-        s["facts"].append(f"里程碑达成:{cur['text']}")
-        report.append(f"◆ 里程碑达成:{cur['text']}(进度+2)")
-        if _milestones(s) and not _current_milestone(s):
-            s["progress"] = 10
-            if not s.get("main_goal_locked"):
-                s["main_goal_locked"] = True
-                s["goal_locked_at_scene"] = s["scene_index"]
-                if any(q["status"] == "open" for q in s.get("side_quests") or []):
-                    report.append("◆ 公开目标全部达成——主线结局已锁定,余下回合可自由探索支线!")
-                else:
-                    report.append("◆ 公开目标全部达成,支线亦已尽数了结——尘埃落定。")
+        ident = _identity(s, s["identities"][seat])["name"]
+        s["facts"].append(f"{ident}的里程碑达成:{cur['text']}")
+        report.append(f"◆ {ident}的里程碑达成:{cur['text']}(进度+2)")
+    goals = [_active_goal(s, seat) for seat in s["seats"]]
+    if goals and all(goal and goal.get("goal_locked") for goal in goals):
+        s["progress"] = 10
+        if not s.get("main_goal_locked"):
+            s["main_goal_locked"] = True
+            s["goal_locked_at_scene"] = s["scene_index"]
+            if any(q["status"] == "open" for q in s.get("side_quests") or []):
+                report.append("◆ 两位玩家的目标全部达成——结局已锁定,余下回合可自由探索支线!")
+            else:
+                report.append("◆ 两位玩家的目标全部达成,支线亦已尽数了结——尘埃落定。")
 
     report.append(f"账本:进度{s['progress']}/10 危险{s['danger']}/10 "
                   f"默契{s['synergy']}/5 时钟{s['clock']}/8 "
