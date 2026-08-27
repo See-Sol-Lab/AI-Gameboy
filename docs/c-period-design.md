@@ -56,7 +56,7 @@ worldgen 后、identities 前插 `landing`:荷官给 3 个降落点
 
 ## 6. 施工顺序(建议3个窗口)
 
-1. **窗口A**:world_thread/player_goal 分家 + gen_milestones 合同(动 rules.py 状态机,最大头)
+1. **窗口A（已落地，v0.4.0）**:world_thread/player_goal 分家 + gen_milestones 合同
 2. **窗口B**:landing 降落点 + 三层 worldgen 合同 + canon_tick
 3. **窗口C**:local_thread 双线 + chronicle_reveal 语义 + 全量回归
 

@@ -1,4 +1,7 @@
-"""《口袋穿越》规则 v0.3(支线暗典版)。
+"""《口袋穿越》规则 v0.4(玩家目标分轨版)。
+
+v0.4 新增:world_thread 仅作背景自走;两席自选 player_goal,荷官现场拆分逐席
+里程碑;可花1时钟换目标;结局按目标成败 × 世界线走向成文。
 
 v0.3.2 新增·B期 NPC响应协议(源自 早期测试记录伪人感验尸,设计提案):
 - target 扩展:除 'npc'(暗典追查)外,可点名本幕任意在场对象正面交涉;
@@ -24,8 +27,8 @@ v0.3 新增(源自 早期测试测试局验尸报告):
 世界、身份池、每一幕场景、结局文本改由叙事荷官(外部 API)按合同生成,
 经宿主校验后以 apply_system() 写回。卡带仍是纯函数,永远碰不到网络与 key。
 
-阶段机:worldgen → identities_gen → identity(玩家暗选)
-        → scenegen → scene(玩家暗投) → …… → endinggen → finished
+阶段机:worldgen → identities_gen → identity(玩家暗选) → goal(玩家选目标)
+        → milestonegen → scenegen → scene(玩家暗投) → …… → endinggen → finished
 narration_request 挂在状态里;宿主在事务外调荷官,回填 narration_result。
 荷官不可用时停在原地,人类一键重召(蓝图 §14.3)。
 
@@ -1208,6 +1211,20 @@ def _finish(s, kind, reason):
             ok = bool(s["hidden_fired"])
         drives[seat] = {"text": d["text"], "achieved": ok,
                         "identity": ident["name"]}
+    goal_results = []
+    for seat in s["seats"]:
+        identity = (_identity(s, s["identities"][seat])["name"]
+                    if s["identities"].get(seat) else None)
+        for goal in (s.get("player_goals") or {}).get(seat, []):
+            goal_results.append({
+                "seat": seat, "identity": identity, "text": goal["text"],
+                "achieved": bool(goal.get("goal_locked")),
+                "abandoned": bool(goal.get("abandoned")),
+            })
+    world_thread = {
+        "text": (s["world"] or {}).get("world_thread", ""),
+        "outcome": (s["world"] or {}).get("original_ending", ""),
+    }
     s["ending"] = {"kind": kind, "reason": reason,
                    "reason_name": REASON_NAMES[kind_reason_key(kind, reason)],
                    "text": None,   # 待荷官成文
@@ -1220,6 +1237,7 @@ def _finish(s, kind, reason):
         "context": {
             "world": _world_brief(s), "kind": kind, "reason": reason,
             "reason_name": REASON_NAMES[kind_reason_key(kind, reason)],
+            "player_goals": goal_results, "world_thread": world_thread,
             "tracks": {"progress": s["progress"], "danger": s["danger"],
                        "synergy": s["synergy"], "clock": s["clock"],
                        "vitality": dict(s["vitality"])},

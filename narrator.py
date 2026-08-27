@@ -358,6 +358,20 @@ def _p_ending(ctx):
                 lines.append(f"- 未解开({how}):「{q['question']}」——玩家至终不知道答案。"
                              "结局里**禁止**揭示或暗示谜底,只可写这个谜随他们一同留在了那个世界")
         sq = "\n【支线对账(纪律)】过程中没挣到的答案,结局无权补发:\n" + "\n".join(lines)
+    matrix = ""
+    if ctx.get("player_goals") is not None and ctx.get("world_thread"):
+        matrix = f"""
+【玩家目标 × 世界背景线(逐席结算)】
+玩家目标:{json.dumps(ctx['player_goals'], ensure_ascii=False)}
+世界背景线与原典自走结果:{json.dumps(ctx['world_thread'], ensure_ascii=False)}
+abandoned=true 的旧目标只作引擎备查,正文禁止提及、惩罚或评价。
+将每席未放弃目标的 achieved 与既成事实对照原典自走结果,按以下四象限落笔:
+- 目标达成、世界照原典走:你们做成了自己的事,世界照旧转;
+- 目标达成、世界被扰动:你们做成了,且留下了痕迹;
+- 目标未成、世界照原典走:没做成,世界也没在意;
+- 目标未成、世界被扰动:没做成,但世界因你们歪了一点。
+“目标失败但世界照旧”本身就是完整结局,绝不是 BE;本表只管成文措辞,
+不得改写引擎已经给出的结局 kind。"""
     return f"""为《{w['world_name']}》写终局。结局类型:{ctx['kind']}({ctx['reason_name']})。{sq}
 时钟含义:{w.get('clock_text') or "时钟走满,这段故事就到站"}
 (若结局因"时钟走完"或"三辞而别"而来,按时钟含义与散伙的分量写,不必强行升级成灾难。)
@@ -366,6 +380,7 @@ def _p_ending(ctx):
 走过的地方:{json.dumps(ctx['scene_titles'], ensure_ascii=False)}
 既成事实:{json.dumps(ctx['facts'], ensure_ascii=False)}
 已浮出的暗线:{json.dumps(ctx['hidden_fired'], ensure_ascii=False)}
+{matrix}
 
 {f'''【原典对照(必写)】这个世界原本的结局是:{ctx['original_ending']}
 原典各章:{json.dumps(ctx.get('chronicle_titles', []), ensure_ascii=False)}

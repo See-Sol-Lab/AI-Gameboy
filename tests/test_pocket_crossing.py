@@ -392,6 +392,29 @@ class TestHiddenAndEndings(unittest.TestCase):
         self.assertEqual(s["ending"]["kind"], "TE")
         self.assertEqual(s["ending"]["reason"], "mutual_end")
 
+    def test_ending_context_has_goal_world_matrix_fields(self):
+        import narrator
+        s = setup_playing(75)
+        s = rules.apply(s, "seat_a", "switch_goal",
+                        {"custom_text": "替巡检补好旧制服"})
+        s = feed(s)
+        rules._active_goal(s, "seat_a")["goal_locked"] = True
+        rules._finish(s, "HE", "goal")
+        ctx = s["narration_request"]["context"]
+        self.assertEqual(s["ending"]["kind"], "HE")
+        self.assertEqual(set(ctx["world_thread"]), {"text", "outcome"})
+        self.assertEqual(ctx["world_thread"]["text"], FIX_WORLD["world_thread"])
+        self.assertEqual(ctx["world_thread"]["outcome"], FIX_WORLD["original_ending"])
+        self.assertTrue(any(g["abandoned"] for g in ctx["player_goals"]))
+        for goal in ctx["player_goals"]:
+            self.assertEqual(set(goal),
+                             {"seat", "identity", "text", "achieved", "abandoned"})
+        prompt = narrator._p_ending(ctx)
+        for wording in ("做成了自己的事,世界照旧转", "做成了,且留下了痕迹",
+                        "没做成,世界也没在意", "没做成,但世界因你们歪了一点"):
+            self.assertIn(wording, prompt)
+        self.assertIn("正文禁止提及、惩罚或评价", prompt)
+
     def test_chronicle_secret_until_finished(self):
         """原典对局中零可见;终局才揭晓。先知撕页只给撕到的人看。"""
         s = setup_playing(6)
