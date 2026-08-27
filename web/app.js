@@ -488,6 +488,8 @@ const CART_UI = {
           <div>硬币 <strong>${ps.coins}</strong> · 声望 <strong>${ps.reputation}</strong> ·
             店铺 ${ps.shop_level}级 · 库存 ${(ps.inventory || []).length}/${ps.capacity}</div>
         </div>
+        ${ps.resting ? `<div class="night-resting">本周歇业 · 存档安全<br>
+          <span>店主下次回来会从第 ${ps.day} 日 ${esc(ps.shift)}重新开门。</span></div>` : ""}
         ${week ? `<div class="night-week">第 ${week.week} 周账 · 经过第${week.through_day}日 ·
           成交${week.deals}次 · 硬币${week.coins} · 声望${week.reputation}</div>` : ""}
         <div class="night-goal">店主眼下想做:${esc(ps.current_goal)}</div>
@@ -511,6 +513,8 @@ const CART_UI = {
     },
     myPanel(v, mine) {
       if (v.status !== "playing" || !mine) return "";
+      if (v.public_state.resting) return `<div class="my-panel"><div class="dim center">
+        店主已经歇业。店铺、客人和未完成目标都保存在这里。</div></div>`;
       const knock = (mine.legal_actions || []).find((x) => x.action_id === "knock");
       if (knock) return `<div class="my-panel">
         <div class="dim center">你不知道门外是什么。夜铺不会等你，也不会因此停下。</div>

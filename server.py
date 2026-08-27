@@ -71,8 +71,8 @@ def game_act(session_id: str, seat_token: str, expected_revision: int,
     《口袋电路》中人类已经先锁牌且不能更改;你应先提交 play_card,
     等工具返回本轮揭示后再谈刚才的牌与理由,避免提前自曝策略。
     《口袋夜铺》中引擎会自动把行动与结果展示给观看者;沉默是正常玩法。
-    mood/public_line 不是作业,只有真有反应时才写。每次工具返回后可继续下一班,
-    一天打烊或任何时刻都可自然停下。
+    mood/public_line 不是作业,只有真有反应时才写。每次工具返回后可继续下一班;
+    一天打烊后的黄昏可用 close_for_now 明确歇业存档,下次用 reopen_shop 继续。
     """
     return host.act(session_id, seat_token, expected_revision,
                     action_id, params, table_line)

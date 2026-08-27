@@ -217,6 +217,12 @@ body {
   background: rgba(111,122,138,.18); color: #4f5a68; font-size: .76rem;
   text-align: center;
 }
+.night-resting {
+  margin-top: .55rem; padding: .65rem .75rem; border-radius: 10px;
+  background: #ded4b6; border: 2px solid #8d805c; text-align: center;
+  color: #4c563a; font-weight: 800;
+}
+.night-resting span { font-size: .76rem; font-weight: 400; }
 .night-goal {
   margin-top: .55rem; padding: .5rem .65rem; border-left: 4px solid #7d8663;
   background: rgba(243,236,216,.62); border-radius: 4px 9px 9px 4px;

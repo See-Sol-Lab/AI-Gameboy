@@ -136,7 +136,7 @@ def new_game(seats, seed):
         "history": [], "diary": [],
         "door_signal": None, "door_count": 0, "door_history": [],
         "customer": None, "customer_count": 0, "customer_book": {},
-        "weekly": [],
+        "weekly": [], "resting": False, "last_checkpoint": None,
     }
     for index in range(3):
         state["item_counter"] += 1
@@ -151,6 +151,8 @@ def _ensure_state(s):
     s.setdefault("customer_count", 0)
     s.setdefault("customer_book", {})
     s.setdefault("weekly", [])
+    s.setdefault("resting", False)
+    s.setdefault("last_checkpoint", None)
     for item in s.get("inventory", []):
         code = item["id"].rsplit("_", 1)[0]
         item.setdefault("kind", ITEM_KINDS.get(code, "奇物"))
@@ -217,6 +219,8 @@ def observe(full_state, seat_id):
         "customer": _public_customer(s["customer"]),
         "customer_book": deepcopy(list(s["customer_book"].values())),
         "weekly": deepcopy(s["weekly"][-8:]),
+        "resting": s["resting"],
+        "last_checkpoint": deepcopy(s["last_checkpoint"]),
         "current_goal": s["current_goal"],
         "recent_history": deepcopy(s["history"][-10:]),
         "diary": deepcopy(s["diary"][-8:]),
@@ -229,12 +233,17 @@ def observe(full_state, seat_id):
             "coins": s["coins"], "goal": s["current_goal"],
             "last_events": [x["text"] for x in s["history"][-3:]],
         }}
-        legal = [{"action_id": "work_shift", "params": _legal_hint(s)}]
+        if s["resting"]:
+            legal = [{"action_id": "reopen_shop", "params": {}}]
+        else:
+            legal = [{"action_id": "work_shift", "params": _legal_hint(s)}]
+            if s["shift_index"] == 0:
+                legal.append({"action_id": "close_for_now", "params": {}})
     else:
         private = {"role": "observer"}
         legal = ([{"action_id": "knock", "params": {}}]
                  if s["door_signal"] is not None else [])
-    waiting = [s["shopkeeper"]]
+    waiting = [] if s["resting"] else [s["shopkeeper"]]
     if s["door_signal"] is not None:
         waiting.append(s["observer"])
     return {"public_state": public, "private_state": private,
@@ -252,7 +261,26 @@ def apply(full_state, seat_id, action_id, params):
     if action_id == "work_shift":
         if seat_id != s["shopkeeper"]:
             raise IllegalAction("观看者不能替店主经营")
+        if s["resting"]:
+            raise IllegalAction("夜铺已经歇业,先重新开门")
         _work_shift(s, params)
+    elif action_id == "close_for_now":
+        if seat_id != s["shopkeeper"]:
+            raise IllegalAction("只有店主能决定歇业")
+        if s["shift_index"] != 0:
+            raise IllegalAction("请在一天打烊后的黄昏存档点歇业")
+        s["resting"] = True
+        s["last_checkpoint"] = {
+            "day": s["day"], "coins": s["coins"],
+            "reputation": s["reputation"], "goal": s["current_goal"],
+            "week": (s["weekly"][-1]["week"] if s["weekly"] else None),
+        }
+    elif action_id == "reopen_shop":
+        if seat_id != s["shopkeeper"]:
+            raise IllegalAction("只有店主能重新开门")
+        if not s["resting"]:
+            raise IllegalAction("夜铺并未歇业")
+        s["resting"] = False
     elif action_id == "knock":
         if seat_id != s["observer"]:
             raise IllegalAction("店主不能替窗外的人按门铃")

@@ -187,6 +187,24 @@ class TestNightShop(unittest.TestCase):
         self.assertEqual(rules.observe(s, "seat_a")["legal_actions"][0]["action_id"],
                          "work_shift")
 
+    def test_week_checkpoint_can_close_and_reopen_without_ending_save(self):
+        s = rules.new_game(SEATS, 31)
+        for _ in range(14):
+            s = work(s)
+        self.assertEqual(s["day"], 8)
+        s = rules.apply(s, "seat_a", "close_for_now", {})
+        self.assertTrue(s["resting"])
+        self.assertEqual(s["phase"], "playing")
+        self.assertEqual(s["last_checkpoint"]["week"], 1)
+        ob = rules.observe(s, "seat_a")
+        self.assertEqual(ob["legal_actions"], [{"action_id": "reopen_shop", "params": {}}])
+        with self.assertRaises(rules.IllegalAction):
+            rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"})
+        s = rules.apply(s, "seat_a", "reopen_shop", {})
+        self.assertFalse(s["resting"])
+        self.assertEqual(rules.observe(s, "seat_a")["legal_actions"][0]["action_id"],
+                         "work_shift")
+
     def test_invalid_public_self_report_rejected_without_mutation(self):
         s = rules.new_game(SEATS, 4)
         with self.assertRaises(rules.IllegalAction):
