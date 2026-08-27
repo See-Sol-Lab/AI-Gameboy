@@ -328,6 +328,34 @@ class TestDiceAndResolution(unittest.TestCase):
         self.assertTrue(rules._active_goal(s, "seat_b")["goal_locked"])
         self.assertTrue(s["main_goal_locked"])
 
+    def test_switch_goal_costs_clock_and_preserves_old_track(self):
+        s = setup_playing(72)
+        old = rules._active_goal(s, "seat_a")
+        old_milestones = list(old["milestones"])
+        clock = s["clock"]
+        other = rules._active_goal(s, "seat_b")
+        s = rules.apply(s, "seat_a", "switch_goal",
+                        {"custom_text": "替闸机找回遗失的铰链"})
+        self.assertEqual(s["clock"], clock + 1)
+        self.assertTrue(old["abandoned"] is False)  # apply() 保持输入 state 不变
+        abandoned = s["player_goals"]["seat_a"][0]
+        self.assertTrue(abandoned["abandoned"])
+        self.assertEqual(abandoned["milestones"], old_milestones)
+        self.assertEqual(s["stage"], "milestonegen")
+        goals = s["narration_request"]["context"]["goals"]
+        self.assertEqual([g["seat"] for g in goals], ["seat_a"])
+        s = feed(s)
+        self.assertEqual(s["stage"], "scene")
+        self.assertEqual(rules._active_goal(s, "seat_a")["text"],
+                         "替闸机找回遗失的铰链")
+        self.assertEqual(rules._active_goal(s, "seat_b"), other)
+
+    def test_switch_goal_rejected_after_lock(self):
+        s = setup_playing(73)
+        s["main_goal_locked"] = True
+        with self.assertRaises(rules.IllegalAction):
+            rules.apply(s, "seat_a", "switch_goal", {"goal_id": "help_patrol"})
+
 
 class TestHiddenAndEndings(unittest.TestCase):
     def test_hidden_thread(self):

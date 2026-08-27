@@ -300,9 +300,13 @@ def apply_system(full_state, action_id, payload):
             goal["milestones"] = deepcopy(track["milestones"])
             goal["milestones_done"] = []
             goal["goal_locked"] = False
-        s["stage"] = "scenegen"
-        s["narration_request"] = {"kind": "gen_scene",
-                                  "context": _scene_context(s, None)}
+        if s["current_scene"] is None:
+            s["stage"] = "scenegen"
+            s["narration_request"] = {"kind": "gen_scene",
+                                      "context": _scene_context(s, None)}
+        else:
+            s["stage"] = "scene"
+            s["narration_request"] = None
     elif kind == "gen_scene":
         new_idx = s["scene_index"] + 1
         # NPC响应入账:荷官清偿的回应债成为既成事实,后续幕与结局都看得见
@@ -599,6 +603,12 @@ def observe(full_state, seat_id):
                         "直指此谜——判定成功即逼问一次,两次(卓越算两次)谜底必出:"
                         f"{s['hooks']}")
                 legal = [{"action_id": "commit", "params": commit_params}]
+                if not s.get("main_goal_locked") and not s["pending"]:
+                    menu = [g["id"] for g in (s["world"] or {}).get("goal_menu", [])]
+                    legal.append({"action_id": "switch_goal", "params": {
+                        "goal_id": f"从菜单选一个:{menu}",
+                        "custom_text": "或自定义一个可判定目标(≤40字)",
+                    }})
     return {"public_state": public, "private_state": private,
             "legal_actions": legal, "waiting_for": waiting}
 
@@ -618,6 +628,8 @@ def apply(full_state, seat_id, action_id, params):
         _apply_identity(s, seat_id, params)
     elif action_id == "choose_goal":
         _apply_goal(s, seat_id, params)
+    elif action_id == "switch_goal":
+        _apply_switch_goal(s, seat_id, params)
     elif action_id == "commit":
         _apply_commit(s, seat_id, params)
     else:
@@ -641,11 +653,7 @@ def _apply_identity(s, seat_id, params):
         s["stage"] = "goal"
 
 
-def _apply_goal(s, seat_id, params):
-    if s["stage"] != "goal":
-        raise IllegalAction("现在不是选择目标的时候")
-    if _active_goal(s, seat_id):
-        raise IllegalAction("你已经选过目标了")
+def _goal_record(s, seat_id, params):
     goal_id = params.get("goal_id")
     custom = params.get("custom_text")
     if bool(goal_id) == bool(custom):
@@ -661,12 +669,37 @@ def _apply_goal(s, seat_id, params):
             raise IllegalAction("custom_text 须是1到40字")
         text = custom.strip()
         goal_id = f"custom_{len(s['player_goals'][seat_id]) + 1}"
-    s["player_goals"][seat_id].append({
+    return {
         "id": goal_id, "text": text, "abandoned": False,
         "goal_locked": False, "milestones": [], "milestones_done": [],
-    })
+    }
+
+
+def _apply_goal(s, seat_id, params):
+    if s["stage"] != "goal":
+        raise IllegalAction("现在不是选择目标的时候")
+    if _active_goal(s, seat_id):
+        raise IllegalAction("你已经选过目标了")
+    s["player_goals"][seat_id].append(_goal_record(s, seat_id, params))
     if all(_active_goal(s, seat) for seat in s["seats"]):
         _request_milestones(s, s["seats"])
+
+
+def _apply_switch_goal(s, seat_id, params):
+    if s["stage"] != "scene":
+        raise IllegalAction("现在不能更换目标")
+    if s.get("main_goal_locked"):
+        raise IllegalAction("结局已经锁定,不能更换目标")
+    if s["pending"]:
+        raise IllegalAction("本幕已有行动提交,请在下一幕开始时更换目标")
+    old = _active_goal(s, seat_id)
+    if not old:
+        raise IllegalAction("当前没有可更换的目标")
+    new_goal = _goal_record(s, seat_id, params)
+    old["abandoned"] = True
+    s["player_goals"][seat_id].append(new_goal)
+    s["clock"] += 1
+    _request_milestones(s, [seat_id])
 
 
 def _apply_commit(s, seat_id, params):
