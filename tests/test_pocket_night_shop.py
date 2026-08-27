@@ -15,8 +15,12 @@ _spec.loader.exec_module(rules)
 SEATS = ["seat_a", "seat_b"]
 
 
-def work(s, focus="tidy", item_id=None, line="今晚先把手边的事做好。", **extra):
-    params = {"focus": focus, "mood": "专注", "public_line": line, **extra}
+def work(s, focus="tidy", item_id=None, line=None, mood=None, **extra):
+    params = {"focus": focus, **extra}
+    if line is not None:
+        params["public_line"] = line
+    if mood is not None:
+        params["mood"] = mood
     if item_id:
         params["item_id"] = item_id
     return rules.apply(s, "seat_a", "work_shift", params)
@@ -31,8 +35,9 @@ class TestNightShop(unittest.TestCase):
         public = rules.observe(s, "seat_b")["public_state"]
         self.assertEqual(public["coins"], 12)
         self.assertEqual(len(public["inventory"]), 3)
-        self.assertIn("mood", public)
-        self.assertIn("public_line", public)
+        self.assertNotIn("mood", public)
+        self.assertNotIn("public_line", public)
+        self.assertNotIn("_secret", json.dumps(public, ensure_ascii=False))
 
     def test_only_ai_operates_and_human_only_knocks(self):
         s = rules.new_game(SEATS, 5)
@@ -45,17 +50,21 @@ class TestNightShop(unittest.TestCase):
                          "work_shift")
         self.assertEqual(rules.observe(s, "seat_b")["legal_actions"], [])
 
-    def test_shift_updates_public_self_report_and_day_diary(self):
+    def test_shift_allows_optional_reaction_and_engine_day_diary(self):
         s = rules.new_game(SEATS, 8)
-        s = work(s, line="先攒下第一枚不急着花的钱。", goal="把店铺扩建到二级")
+        s = work(s, line="先攒下第一枚不急着花的钱。", mood="专注",
+                 goal="把店铺扩建到二级")
         self.assertEqual(s["shift_index"], 1)
         self.assertEqual(s["history"][-1]["seq"], 1)
         self.assertEqual(s["current_goal"], "把店铺扩建到二级")
         self.assertEqual(s["public_line"], "先攒下第一枚不急着花的钱。")
-        s = work(s, line="今天没有发财,但柜台终于像样了。")
+        self.assertEqual(s["history"][-1]["reaction"],
+                         {"mood": "专注", "text": "先攒下第一枚不急着花的钱。"})
+        s = work(s)
         self.assertEqual(s["day"], 2)
         self.assertEqual(len(s["diary"]), 1)
-        self.assertEqual(s["diary"][0]["text"], "今天没有发财,但柜台终于像样了。")
+        self.assertIn("打烊时硬币", s["diary"][0]["text"])
+        self.assertIsNone(s["history"][-1]["reaction"])
         self.assertEqual(s["history"][-1]["seq"], 2)
         self.assertIn("打烊维护应付3枚", s["history"][-1]["text"])
         self.assertEqual(s["history"][-1]["coins_delta"], -2)
@@ -66,7 +75,7 @@ class TestNightShop(unittest.TestCase):
         old_value = damaged["value"]
         s = work(s, "repair", damaged["id"])
         repaired = next(item for item in s["inventory"] if item["id"] == damaged["id"])
-        self.assertEqual(repaired["value"], old_value + 2)
+        self.assertGreaterEqual(repaired["value"], old_value + 2)
         s = work(s, "curate", repaired["id"])
         self.assertTrue(next(x for x in s["inventory"]
                              if x["id"] == repaired["id"])["displayed"])
@@ -78,6 +87,19 @@ class TestNightShop(unittest.TestCase):
         s = work(s, "sell", sell_id)
         self.assertGreater(s["coins"], coins)
         self.assertNotIn(sell_id, [x["id"] for x in s["inventory"]])
+
+    def test_completed_repair_reveals_engine_secret_only_after_completion(self):
+        s = rules.new_game(SEATS, 14)
+        item = s["inventory"][0]
+        hidden_text = item["_secret"]
+        before = json.dumps(rules.observe(s, "seat_a"), ensure_ascii=False)
+        self.assertNotIn(hidden_text, before)
+        while next(x for x in s["inventory"] if x["id"] == item["id"])["condition"] < 3:
+            s = work(s, "repair", item["id"])
+        public_item = next(x for x in rules.observe(s, "seat_a")["public_state"]["inventory"]
+                           if x["id"] == item["id"])
+        self.assertEqual(public_item["secret"], hidden_text)
+        self.assertIn("完全修复后才发现", s["history"][-1]["text"])
 
     def test_door_event_hidden_until_blind_click(self):
         hit = None

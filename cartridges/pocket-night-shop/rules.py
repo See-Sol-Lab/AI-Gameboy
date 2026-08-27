@@ -14,22 +14,38 @@ MOODS = ["期待", "专注", "犹豫", "烦躁", "眷恋", "疲惫", "得意"]
 MAX_SHOP_LEVEL = 3
 
 ITEMS = [
-    ("watch", "停在四点的怀表", "表盖内侧刻着一句没写完的道歉。", 2, 6),
-    ("key", "认错门的黄铜钥匙", "它总在靠近陌生门锁时微微发热。", 3, 5),
-    ("scarf", "雨天发暖的旧围巾", "线头很多,却还留着淡淡的皂香。", 2, 4),
-    ("bird", "缺一片翅膀的机械鸟", "上紧发条后,它会朝北边叫一声。", 1, 8),
-    ("letter", "写到一半的辞职信", "最后一行只有一个被反复涂掉的名字。", 3, 3),
-    ("teacup", "有细裂纹的蓝茶杯", "杯底画着一座不存在的车站。", 2, 4),
-    ("camera", "只拍到背影的相机", "剩余胶片数始终显示为七。", 1, 9),
-    ("bell", "没有声音的小铃", "摇动时,附近的灰尘会轻轻离地。", 2, 6),
-    ("shoe", "走过很远路的单只皮鞋", "鞋底夹着一张褪色车票。", 1, 5),
-    ("seedbox", "生锈的种子铁盒", "盒盖写着:不要在晴天打开。", 2, 7),
-    ("lamp", "怕黑的袖珍灯", "熄灯后反而会自己亮起。", 3, 5),
-    ("musicbox", "少一节旋律的八音盒", "每逢整点,空缺的那节会从远处传来。", 1, 8),
-    ("glove", "沾着银粉的旧手套", "指尖磨损得像曾经反复触碰星图。", 2, 5),
-    ("notebook", "页码倒着长的账本", "越往后翻,日期反而越早。", 3, 6),
-    ("buttonjar", "装满陌生纽扣的玻璃罐", "每一枚都像从不同年代的衣服上拆下。", 2, 4),
-    ("tinwhale", "会叹气的铁皮鲸", "腹中藏着一小撮海盐。", 1, 7),
+    ("watch", "停在四点的怀表", "表盖内侧刻着一句没写完的道歉。", 2, 6,
+     "秒针重新走动时,每天只会在四点替某个人多停一分钟。"),
+    ("key", "认错门的黄铜钥匙", "它总在靠近陌生门锁时微微发热。", 2, 5,
+     "它真正认得的不是门,而是曾经被人认真称作家的地方。"),
+    ("scarf", "雨天发暖的旧围巾", "线头很多,却还留着淡淡的皂香。", 2, 4,
+     "补好最后一个线头后,围巾会记住最近一次拥抱的温度。"),
+    ("bird", "缺一片翅膀的机械鸟", "上紧发条后,它会朝北边叫一声。", 1, 8,
+     "新翅膀装好后,机械鸟唱出的其实是一串很旧的返航坐标。"),
+    ("letter", "写到一半的辞职信", "最后一行只有一个被反复涂掉的名字。", 2, 3,
+     "纸张修复后,被涂掉的名字浮了回来,却不是写信人的上司。"),
+    ("teacup", "有细裂纹的蓝茶杯", "杯底画着一座不存在的车站。", 2, 4,
+     "裂纹补齐后,杯底车站的钟会显示下一班错过的列车。"),
+    ("camera", "只拍到背影的相机", "剩余胶片数始终显示为七。", 1, 9,
+     "镜头修复后拍出的第七张背影,会转过头看向拍摄者。"),
+    ("bell", "没有声音的小铃", "摇动时,附近的灰尘会轻轻离地。", 2, 6,
+     "铃舌复原后仍没有声音,但所有遗失物会同时朝它偏一下。"),
+    ("shoe", "走过很远路的单只皮鞋", "鞋底夹着一张褪色车票。", 1, 5,
+     "鞋底补好后,它会在门边自动转向另一只鞋所在的方向。"),
+    ("seedbox", "生锈的种子铁盒", "盒盖写着:不要在晴天打开。", 2, 7,
+     "锈锁修开后,盒里只有一粒会在雨声中发芽的玻璃种子。"),
+    ("lamp", "怕黑的袖珍灯", "熄灯后反而会自己亮起。", 2, 5,
+     "线路接好后才发现,它照亮的是房间里最久没人碰过的东西。"),
+    ("musicbox", "少一节旋律的八音盒", "每逢整点,空缺的那节会从远处传来。", 1, 8,
+     "簧片补齐后,远处的缺拍也同时消失,像两只盒子终于合奏。"),
+    ("glove", "沾着银粉的旧手套", "指尖磨损得像曾经反复触碰星图。", 2, 5,
+     "缝好指尖后,银粉会在桌面落成一幅每天缓慢变化的星图。"),
+    ("notebook", "页码倒着长的账本", "越往后翻,日期反而越早。", 2, 6,
+     "书脊复原后,空白首页出现了店主明天才会记下的一笔支出。"),
+    ("buttonjar", "装满陌生纽扣的玻璃罐", "每一枚都像从不同年代的衣服上拆下。", 2, 4,
+     "罐口修好后,其中一枚纽扣会在旧主人经过门外时轻敲玻璃。"),
+    ("tinwhale", "会叹气的铁皮鲸", "腹中藏着一小撮海盐。", 1, 7,
+     "发条完全顺开后,铁皮鲸第一次没有叹气,而是唱出一小段潮声。"),
 ]
 
 AMBIENT = [
@@ -70,10 +86,11 @@ def _capacity(s):
 
 def _make_item(seed, serial, salt):
     template = ITEMS[_number(seed, salt, serial) % len(ITEMS)]
-    code, name, story, condition, value = template
+    code, name, story, condition, value, secret = template
     return {
         "id": f"{code}_{serial}", "name": name, "story": story,
         "condition": condition, "value": value, "displayed": False,
+        "secret": None, "_secret": secret,
     }
 
 
@@ -87,8 +104,8 @@ def new_game(seats, seed):
         "shop_level": 1, "extra_capacity": 0,
         "inventory": [], "item_counter": 0,
         "shift_count": 0,
-        "mood": "期待", "current_goal": "先让这间店安稳开过第一个夜晚",
-        "public_line": "先把灯点起来,看看今晚会有什么走进门。",
+        "mood": None, "current_goal": "先让这间店安稳开过第一个夜晚",
+        "public_line": None,
         "history": [], "diary": [],
         "door_signal": None, "door_count": 0, "door_history": [],
     }
@@ -103,6 +120,14 @@ def _item(s, item_id):
     return next((item for item in s["inventory"] if item["id"] == item_id), None)
 
 
+def _public_item(item):
+    public = {key: deepcopy(item[key]) for key in
+              ("id", "name", "story", "condition", "value", "displayed")}
+    if item.get("secret"):
+        public["secret"] = item["secret"]
+    return public
+
+
 def _legal_hint(s):
     items = [{"id": item["id"], "name": item["name"],
               "condition": item["condition"], "value": item["value"],
@@ -110,8 +135,8 @@ def _legal_hint(s):
     return {
         "focus": f"必填:{FOCI} 之一",
         "item_id": f"sell/repair/curate 时必填,从库存选:{items}",
-        "mood": f"必填:{MOODS} 之一,这是给观看者看的公开心情灯",
-        "public_line": "必填:店主此刻愿意公开的一句话(1-80字,不是隐藏思维链)",
+        "mood": f"可选:{MOODS} 之一;真有感受时才更新公开心情灯",
+        "public_line": "可选:店主真想公开说时写一句(1-80字);沉默完全合法",
         "goal": "可选:更新一个公开经营目标(1-60字)",
     }
 
@@ -124,9 +149,8 @@ def observe(full_state, seat_id):
         "phase": s["phase"], "day": s["day"], "shift": SHIFTS[s["shift_index"]],
         "coins": s["coins"], "reputation": s["reputation"],
         "shop_level": s["shop_level"], "capacity": _capacity(s),
-        "inventory": deepcopy(s["inventory"]),
-        "mood": s["mood"], "current_goal": s["current_goal"],
-        "public_line": s["public_line"],
+        "inventory": [_public_item(item) for item in s["inventory"]],
+        "current_goal": s["current_goal"],
         "recent_history": deepcopy(s["history"][-10:]),
         "diary": deepcopy(s["diary"][-8:]),
         "door_waiting": s["door_signal"] is not None,
@@ -177,9 +201,10 @@ def _work_shift(s, params):
     goal = params.get("goal")
     if focus not in FOCI:
         raise IllegalAction(f"focus 须是 {FOCI} 之一")
-    if mood not in MOODS:
+    if mood is not None and mood not in MOODS:
         raise IllegalAction(f"mood 须是 {MOODS} 之一")
-    if not isinstance(line, str) or not 1 <= len(line.strip()) <= 80:
+    if line is not None and (not isinstance(line, str)
+                             or not 1 <= len(line.strip()) <= 80):
         raise IllegalAction("public_line 须是1到80字")
     if goal is not None and (not isinstance(goal, str)
                              or not 1 <= len(goal.strip()) <= 60):
@@ -189,8 +214,10 @@ def _work_shift(s, params):
     report = _do_focus(s, focus, params.get("item_id"))
     ambient = AMBIENT[_number(s["seed"], "ambient", s["day"],
                               s["shift_index"]) % len(AMBIENT)]
-    s["mood"] = mood
-    s["public_line"] = line.strip()
+    if mood is not None:
+        s["mood"] = mood
+    if line is not None:
+        s["public_line"] = line.strip()
     if goal is not None:
         s["current_goal"] = goal.strip()
     entry_day = s["day"]
@@ -205,6 +232,8 @@ def _work_shift(s, params):
         "focus": focus, "text": report, "ambient": ambient,
         "coins_delta": s["coins"] - before["coins"],
         "reputation_delta": s["reputation"] - before["reputation"],
+        "reaction": ({"mood": mood, "text": line.strip() if line else None}
+                     if mood is not None or line is not None else None),
     })
 
 
@@ -226,7 +255,12 @@ def _do_focus(s, focus, item_id):
         s["coins"] -= 1
         item["condition"] += 1
         item["value"] += 2
-        return f"「{item['name']}」被修好了一些,旧伤没有消失,却又能继续使用。"
+        result = f"「{item['name']}」被修好了一些,旧伤没有消失,却又能继续使用。"
+        if item["condition"] == 3 and item.get("_secret") and not item.get("secret"):
+            item["secret"] = item["_secret"]
+            item["value"] += 3
+            result += f" 完全修复后才发现:{item['secret']}"
+        return result
     if focus == "scavenge":
         if len(s["inventory"]) >= _capacity(s):
             raise IllegalAction("店里已经放不下更多旧物")
@@ -279,8 +313,10 @@ def _advance_time(s):
     s["coins"] -= paid
     if paid < upkeep:
         s["reputation"] = max(0, s["reputation"] - 1)
-    s["diary"].append({"day": s["day"], "mood": s["mood"],
-                       "text": s["public_line"], "upkeep": paid})
+    s["diary"].append({
+        "day": s["day"], "text": f"打烊时硬币{s['coins']}枚,声望{s['reputation']}。",
+        "upkeep": paid,
+    })
     s["day"] += 1
     s["shift_index"] = 0
     return {"due": upkeep, "paid": paid}

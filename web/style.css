@@ -212,7 +212,7 @@ body {
   color: #4c563a; flex-wrap: wrap;
 }
 .night-day { font-size: 1.15rem; font-weight: 800; }
-.night-self {
+.night-goal {
   margin-top: .55rem; padding: .5rem .65rem; border-left: 4px solid #7d8663;
   background: rgba(243,236,216,.62); border-radius: 4px 9px 9px 4px;
   font-size: .84rem; color: #4c563a;
@@ -226,6 +226,10 @@ body {
 .night-replay-label { font-size: .72rem; color: #7a6a45; letter-spacing: .08em; }
 .night-action { margin-top: .35rem; font-size: .98rem; font-weight: 700; color: #3c422b; }
 .night-ambient { margin-top: .3rem; font-size: .8rem; color: #6d7554; }
+.night-reaction {
+  margin-top: .45rem; padding-top: .4rem; border-top: 1px dashed #b7aa84;
+  color: #4c563a; font-style: italic;
+}
 .night-deltas { margin-top: .35rem; }
 .night-section-title {
   margin-top: .75rem; font-size: .75rem; letter-spacing: .2em;
@@ -237,6 +241,10 @@ body {
 }
 .night-item { width: auto; cursor: default; }
 .night-item.displayed { border-color: #6c774f; background: #e9e0c2; }
+.night-secret {
+  margin-top: .4rem; padding-top: .35rem; border-top: 1px dashed #b7aa84;
+  color: #6b552e; font-size: .76rem;
+}
 .night-history {
   margin-top: .65rem; padding: .45rem .6rem; border-radius: 8px;
   background: rgba(243,236,216,.42); color: #5d6647; font-size: .78rem;

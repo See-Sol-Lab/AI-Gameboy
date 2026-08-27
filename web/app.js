@@ -452,6 +452,7 @@ const CART_UI = {
             <span class="chip">估值 ${item.value}</span>
           </div>
           <div class="dim">${esc(item.story)}</div>
+          ${item.secret ? `<div class="night-secret">✦ ${esc(item.secret)}</div>` : ""}
         </div>`).join("");
       const active = S.night.active || (ps.recent_history || []).slice(-1)[0];
       const newest = (ps.recent_history || []).slice(-1)[0];
@@ -474,17 +475,16 @@ const CART_UI = {
           <div>硬币 <strong>${ps.coins}</strong> · 声望 <strong>${ps.reputation}</strong> ·
             店铺 ${ps.shop_level}级 · 库存 ${(ps.inventory || []).length}/${ps.capacity}</div>
         </div>
-        <div class="night-self">
-          <div><strong>心情灯 · ${esc(ps.mood)}</strong></div>
-          <div>眼下想做:${esc(ps.current_goal)}</div>
-          <div>“${esc(ps.public_line)}”</div>
-        </div>
+        <div class="night-goal">店主眼下想做:${esc(ps.current_goal)}</div>
         ${active ? `<div class="night-spotlight">
           <div class="night-replay-label">${replaying ? "显示器正在回放" : "本班刚刚发生"} ·
             第${active.day}日 ${esc(active.shift)}
             ${S.night.queue.length ? ` · 后面还有 ${S.night.queue.length} 段` : ""}</div>
           <div class="night-action">${esc(active.text)}</div>
           <div class="night-ambient">${esc(active.ambient)}</div>${delta}
+          ${active.reaction ? `<div class="night-reaction">
+            ${active.reaction.mood ? `心情灯 · ${esc(active.reaction.mood)} ` : ""}
+            ${active.reaction.text ? `“${esc(active.reaction.text)}”` : ""}</div>` : ""}
         </div>` : '<div class="night-spotlight dim">店主刚刚点亮招牌。</div>'}
         <div class="night-section-title">橱窗与货架</div>
         <div class="night-inventory">${inventory || '<div class="empty-hint">货架空了</div>'}</div>
@@ -505,7 +505,7 @@ const CART_UI = {
     memorial(v) {
       const ps = v.public_state;
       const diary = (ps.diary || []).map((entry) => `
-        <div class="mem-round"><span class="dim">第${entry.day}日 · ${esc(entry.mood)}</span>
+        <div class="mem-round"><span class="dim">第${entry.day}日</span>
           <span>${esc(entry.text)}</span></div>`).join("");
       return {
         rounds: diary,

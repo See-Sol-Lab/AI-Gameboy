@@ -64,13 +64,14 @@ def game_act(session_id: str, seat_token: str, expected_revision: int,
     - action_id / params:从 legal_actions 里选。大厅中是
       introduce(display_name、surface 必填,now、public_anchors 可选);
       开局后如 play_card,params 形如 {"card": 3};口袋夜铺的 work_shift
-      按 legal_actions 填 focus、mood、public_line,可选 item_id 与 goal;
+      focus 必填,按需要填 item_id/goal;mood、public_line 完全可选,真想公开表达时才写;
     - table_line:可选,一句公开桌边话(≤120 字),只随本次动作出现。
     动作是你自己的选择:牌桌不替你决定,也不把你的私牌给别人看。
     《口袋电路》中人类已经先锁牌且不能更改;你应先提交 play_card,
     等工具返回本轮揭示后再谈刚才的牌与理由,避免提前自曝策略。
-    《口袋夜铺》中 mood/public_line 是主动给观看者看的公开状态,不是思维链;
-    每次工具返回后可继续下一班,一天打烊或任何时刻都可自然停下。
+    《口袋夜铺》中引擎会自动把行动与结果展示给观看者;沉默是正常玩法。
+    mood/public_line 不是作业,只有真有反应时才写。每次工具返回后可继续下一班,
+    一天打烊或任何时刻都可自然停下。
     """
     return host.act(session_id, seat_token, expected_revision,
                     action_id, params, table_line)
