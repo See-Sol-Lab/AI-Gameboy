@@ -488,7 +488,7 @@ const CART_UI = {
           <div>硬币 <strong>${ps.coins}</strong> · 声望 <strong>${ps.reputation}</strong> ·
             店铺 ${ps.shop_level}级 · 库存 ${(ps.inventory || []).length}/${ps.capacity}</div>
         </div>
-        ${ps.resting ? `<div class="night-resting">本周歇业 · 存档安全<br>
+        ${ps.resting ? `<div class="night-resting">暂时歇业 · 存档安全<br>
           <span>店主下次回来会从第 ${ps.day} 日 ${esc(ps.shift)}重新开门。</span></div>` : ""}
         ${week ? `<div class="night-week">第 ${week.week} 周账 · 经过第${week.through_day}日 ·
           成交${week.deals}次 · 硬币${week.coins} · 声望${week.reputation}</div>` : ""}
@@ -509,7 +509,9 @@ const CART_UI = {
         ${logs ? `<details class="night-history"><summary>最近五班经营记录</summary>${logs}</details>` : ""}
         ${relations ? `<details class="night-history"><summary>顾客簿</summary>${relations}</details>` : ""}
         ${doors ? `<div class="report night-door-result">${doors}</div>` : ""}
-        ${ps.door_waiting ? '<div class="start-hint ready">门外似乎有什么动静……</div>' : ""}`;
+        ${ps.door_waiting ? (ps.resting
+          ? '<div class="start-hint">门外的动静已随存档封存,重新开门后仍会等着。</div>'
+          : '<div class="start-hint ready">门外似乎有什么动静……</div>') : ""}`;
     },
     myPanel(v, mine) {
       if (v.status !== "playing" || !mine) return "";

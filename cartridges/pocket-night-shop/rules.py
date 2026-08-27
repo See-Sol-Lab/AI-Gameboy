@@ -242,9 +242,9 @@ def observe(full_state, seat_id):
     else:
         private = {"role": "observer"}
         legal = ([{"action_id": "knock", "params": {}}]
-                 if s["door_signal"] is not None else [])
+                 if s["door_signal"] is not None and not s["resting"] else [])
     waiting = [] if s["resting"] else [s["shopkeeper"]]
-    if s["door_signal"] is not None:
+    if s["door_signal"] is not None and not s["resting"]:
         waiting.append(s["observer"])
     return {"public_state": public, "private_state": private,
             "legal_actions": legal, "waiting_for": waiting}

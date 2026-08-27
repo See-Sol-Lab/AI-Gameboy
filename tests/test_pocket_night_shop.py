@@ -192,18 +192,24 @@ class TestNightShop(unittest.TestCase):
         for _ in range(14):
             s = work(s)
         self.assertEqual(s["day"], 8)
+        s["door_signal"] = {"id": "door_test", "event": "leaf"}
         s = rules.apply(s, "seat_a", "close_for_now", {})
         self.assertTrue(s["resting"])
         self.assertEqual(s["phase"], "playing")
         self.assertEqual(s["last_checkpoint"]["week"], 1)
         ob = rules.observe(s, "seat_a")
         self.assertEqual(ob["legal_actions"], [{"action_id": "reopen_shop", "params": {}}])
+        human = rules.observe(s, "seat_b")
+        self.assertEqual(human["legal_actions"], [])
+        self.assertEqual(human["waiting_for"], [])
         with self.assertRaises(rules.IllegalAction):
             rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"})
         s = rules.apply(s, "seat_a", "reopen_shop", {})
         self.assertFalse(s["resting"])
         self.assertEqual(rules.observe(s, "seat_a")["legal_actions"][0]["action_id"],
                          "work_shift")
+        self.assertEqual(rules.observe(s, "seat_b")["legal_actions"],
+                         [{"action_id": "knock", "params": {}}])
 
     def test_invalid_public_self_report_rejected_without_mutation(self):
         s = rules.new_game(SEATS, 4)
