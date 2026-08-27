@@ -22,7 +22,12 @@ FIX_WORLD = {
     "premise": "你们醒在一座用于测试的城里。",
     "lore": "这座城为验收而生。它的每条街都通向断言。",
     "power_level": "低武",
-    "public_goal": "在时钟走完前通过全部断言。",
+    "world_thread": "测试总署正在远方逐区复核整座城市。",
+    "public_goal": "在时钟走完前通过全部断言。",  # 经典跑团测试共用此固定样本
+    "goal_menu": [
+        {"id": "clear_assertions", "text": "通过本街区的全部断言"},
+        {"id": "help_patrol", "text": "查明巡检不眨眼的原因"},
+    ],
     "laws": [
         {"id": "law_confront", "text": "对抗会惊动巡检(危险+1)。",
          "trigger_kind": "intent:confront", "cost_kind": "danger"},
@@ -699,6 +704,10 @@ class TestScopeAndAntiEpic(unittest.TestCase):
         p = narrator._p_world({"axes": axes, "scope_intensity": "烈度1-2"})
         self.assertIn("规模纪律", p)
         self.assertIn("烈度1-2", p)
+        self.assertIn('"world_thread"', p)
+        self.assertIn('"goal_menu"', p)
+        self.assertNotIn('"public_goal"', p)
+        self.assertNotIn('"milestones"', p)
         axes["scope"] = "天下大势"
         p = narrator._p_world({"axes": axes, "scope_intensity": ""})
         self.assertNotIn("规模纪律", p)

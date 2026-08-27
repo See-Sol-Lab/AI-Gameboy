@@ -145,7 +145,8 @@ def _p_world(ctx):
   世间常事,世界不需要摇摇欲坠,鸡毛蒜皮也能有好故事;{scale_rules}
 - 特色元素为(无特别元素)时不要硬塞超凡设定;
 - 进入方式决定两位玩家与这个世界的关系(穿书成配角=他们是原典里的路人)。"""
-        goal_desc = "本局共同主目标:由故事发动机引出的一件具体可完成的事,规模不得超出剧情规模"
+        goal_block = f''' "world_thread": "世界正在发生什么,一句。它是默认远离玩家的背景大事,禁止写成‘你们必须去阻止它’,没有里程碑也不参与结算",
+ "goal_menu": [2到4个本地事件,每个 {{"id":"英文短名","text":"玩家可以选择去做的一件具体可判定的事,不超过40字"}}。规模不得超过剧情规模={scope},每项都是选择而非指派],'''
         clock_desc = ("时钟在这局代表什么、走满了会发生什么,一句"
                       "——不必是灾难,可以只是'商队出发了''大典落幕了'")
         chron_desc = ("恰好8章,**本局这段小章节**没有玩家时本该怎么走——只写玩家落点"
@@ -154,7 +155,8 @@ def _p_world(ctx):
     else:               # 《口袋跑团》经典种子:危机跑团,直给
         seed_block = f"""世界种子(必须全部体现):
 题材={a['form']},力量等级={a['power']},冒险类型={a['kind']},情绪基调={a['mood']},核心变数={a['variable']}。"""
-        goal_desc = "本局共同主目标,一句,具体可完成"
+        goal_block = ''' "public_goal": "本局共同主目标,一句,具体可完成",
+ "milestones": [把主目标拆成2到3步,按先后排序,每步 {"id":"m1这样的短名","text":"一句可判定的阶段目标,如‘通过西境检查站’"}——玩家每完成一步,引擎当场记账;全部完成即结算,你无权拖延。每步只许一个可验收的结果,禁止用‘或’并列备选],'''
         clock_desc = "时钟走满会发生什么,一句(危机跑团:通常是大祸临头)"
         chron_desc = ("恰好8章,这个世界**没有玩家时**本该上演的完整剧情,按时间排序")
         orig_desc = "原典结局一句:没有任何人干预时,这个世界最后怎么了(≤80字)"
@@ -166,9 +168,8 @@ def _p_world(ctx):
  "premise": "一句话说明两位玩家来到了哪里",
  "lore": "不超过400字的世界背景,三段以内,必须埋入核心变数",
  "power_level": "{a['power']}",
- "public_goal": "{goal_desc}",
+{goal_block}
  "clock_text": "{clock_desc}",
- "milestones": [把主目标拆成2到3步,按先后排序,每步 {{"id":"m1这样的短名","text":"一句可判定的阶段目标,如『通过西境检查站』"}}——玩家每完成一步,引擎当场记账;全部完成即结算,你无权拖延。每步只许一个可验收的结果,禁止用『或』并列备选(『找到遗稿或信物』这种写法会让引擎替玩家宣布假胜利)],
  "laws": [2到3条,每条 {{"id":"law_英文短名","text":"玩家能读懂的世界法则",
    "trigger_kind":"只能严格写成以下形式之一(不要照抄占位符):intent:advance / intent:explore / intent:support / intent:confront / intent:recover / clock>=5 这种带具体数字的 / danger>=6 这种带具体数字的",
    "cost_kind":"danger|progress|clock|flag 之一"}}],
@@ -278,8 +279,9 @@ kind 只能是:answered(如实作答)/lied(按此人立场撒谎)/refused(拒答
 本幕若再把其中任何一位写进 objects,该条必须附 "change" 字段:一句他相对上次的
 状态变化(说了新话/做了新事/处境变了)。没有新变化就别让他出场——
 反复渲染同一个神秘姿势("他似乎知道些什么")是禁手,人物每次露面都要往前走一步。"""
+    thread = w.get("world_thread", w.get("public_goal", ""))
     return f"""为《{w['world_name']}》生成第 {ctx['scene_index']} 幕场景。
-世界目标:{w['public_goal']}
+世界背景线:{thread}
 里程碑账本(已达成的绝不能推翻或重考):{ms or "(无)"}
 本幕危机必须服务于当前里程碑:{cur or "全部已达成,收束"}{chron}{npc}{inter}{recur}
 世界法则:{'; '.join(w['laws'])}
@@ -367,8 +369,12 @@ def _req(cond, msg):
 
 def _v_world(d, ctx=None):
     _req(isinstance(d, dict), "世界卡须是对象")
-    for k in ("world_name", "premise", "lore", "public_goal",
-              "laws", "opening_facts", "hidden_threads"):
+    crossing = "engine" in ((ctx or {}).get("axes") or {}) or \
+        "world_thread" in d or "goal_menu" in d
+    target_fields = ("world_thread", "goal_menu") if crossing else \
+        ("public_goal", "milestones")
+    for k in ("world_name", "premise", "lore", "laws",
+              "opening_facts", "hidden_threads", *target_fields):
         _req(k in d, f"缺字段 {k}")
     _req(len(d["world_name"]) <= 16, "world_name 过长")
     _req(len(d["lore"]) <= 600, "lore 过长")
@@ -384,15 +390,29 @@ def _v_world(d, ctx=None):
         _req(l["cost_kind"] in COST_KINDS, f"cost_kind 非法:{l['cost_kind']}")
     _req(isinstance(d["opening_facts"], list) and 2 <= len(d["opening_facts"]) <= 6,
          "opening_facts 数量不对")
-    _req(isinstance(d.get("milestones"), list) and 2 <= len(d["milestones"]) <= 4,
-         "milestones 须是2到4步")
-    mids = set()
-    for m in d["milestones"]:
-        _req(isinstance(m, dict) and m.get("id") and m.get("text"), "milestone 缺字段")
-        _req(m["id"] not in mids, "milestone id 重复")
-        mids.add(m["id"])
-        # 禁析取:『找到遗稿或信物』会让引擎按宽的判,玩家按窄的玩,目标脱钩
-        _req("或" not in m["text"], f"milestone 含备选写法『或』:{m['text']}")
+    if crossing:
+        _req(isinstance(d["world_thread"], str) and d["world_thread"].strip(),
+             "world_thread 须是一句话")
+        _req(isinstance(d["goal_menu"], list) and 2 <= len(d["goal_menu"]) <= 4,
+             "goal_menu 须是2到4项")
+        goal_ids = set()
+        for goal in d["goal_menu"]:
+            _req(isinstance(goal, dict) and goal.get("id") and goal.get("text"),
+                 "goal_menu 项缺字段")
+            _req(goal["id"] not in goal_ids, "goal_menu id 重复")
+            _req(isinstance(goal["text"], str) and len(goal["text"]) <= 40,
+                 "goal_menu text 须不超过40字")
+            goal_ids.add(goal["id"])
+    else:
+        _req(isinstance(d["milestones"], list) and 2 <= len(d["milestones"]) <= 4,
+             "milestones 须是2到4步")
+        mids = set()
+        for m in d["milestones"]:
+            _req(isinstance(m, dict) and m.get("id") and m.get("text"),
+                 "milestone 缺字段")
+            _req(m["id"] not in mids, "milestone id 重复")
+            mids.add(m["id"])
+            _req("或" not in m["text"], f"milestone 含备选写法『或』:{m['text']}")
     _req(isinstance(d.get("chronicle"), list) and 6 <= len(d["chronicle"]) <= 10,
          "chronicle 须是6到10章的原典")
     for c in d["chronicle"]:

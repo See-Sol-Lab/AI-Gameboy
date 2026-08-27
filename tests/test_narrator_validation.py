@@ -13,28 +13,32 @@ from test_pocket_crossing import FIX_WORLD, FIX_IDENTITIES, fix_scene  # noqa: E
 
 class TestValidators(unittest.TestCase):
     def test_good_samples_pass(self):
-        narrator.VALIDATORS["gen_world"](copy.deepcopy(FIX_WORLD))
+        world = copy.deepcopy(FIX_WORLD)
+        world.pop("public_goal")
+        world.pop("milestones")
+        narrator.VALIDATORS["gen_world"](
+            world, {"axes": {"engine": "误入秘境"}})
         narrator.VALIDATORS["gen_identities"](copy.deepcopy(FIX_IDENTITIES))
         narrator.VALIDATORS["gen_scene"](fix_scene(1))
         narrator.VALIDATORS["render_ending"]({"text": "结局" * 20})
 
-    def bad(self, kind, data):
+    def bad(self, kind, data, ctx=None):
         with self.assertRaises(narrator.NarratorError):
-            narrator.VALIDATORS[kind](data)
+            narrator.VALIDATORS[kind](data, ctx)
 
     def test_world_rejects(self):
         w = copy.deepcopy(FIX_WORLD)
         del w["laws"]
-        self.bad("gen_world", w)                       # 缺字段
+        self.bad("gen_world", w, {"axes": {"engine": "误入秘境"}})  # 缺字段
         w = copy.deepcopy(FIX_WORLD)
         w["laws"][0]["trigger_kind"] = "whenever_i_want"
-        self.bad("gen_world", w)                       # 法则触发不可判
+        self.bad("gen_world", w, {"axes": {"engine": "误入秘境"}})  # 法则触发不可判
         w = copy.deepcopy(FIX_WORLD)
         w["hidden_threads"][0]["required"] = {"vibes": "good"}
-        self.bad("gen_world", w)                       # 暗线条件不结构化
+        self.bad("gen_world", w, {"axes": {"engine": "误入秘境"}})  # 暗线条件不结构化
         w = copy.deepcopy(FIX_WORLD)
-        w["milestones"][0]["text"] = "找到纸翁的遗稿或信物"
-        self.bad("gen_world", w)                       # 里程碑禁『或』字后门(早期测试局验尸)
+        w["goal_menu"][0]["text"] = "长" * 41
+        self.bad("gen_world", w, {"axes": {"engine": "误入秘境"}})  # 目标菜单过长
         # power_level 已改为引擎按种子注入,荷官不写不算错
 
     def test_identities_reject_off_menu(self):

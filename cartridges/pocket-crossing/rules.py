@@ -349,7 +349,7 @@ def _world_brief(s):
     w = s["world"]
     return {"world_name": w["world_name"], "premise": w["premise"],
             "lore": w["lore"], "power_level": w["power_level"],
-            "public_goal": w["public_goal"],
+            "world_thread": w["world_thread"],
             "clock_text": w.get("clock_text"),
             "laws": [_law_gloss(l) for l in w["laws"]]}
 
