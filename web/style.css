@@ -172,9 +172,16 @@ body {
 .conn-note { font-size: .74rem; color: #7c6f52; margin-top: .5rem; }
 .start-hint { text-align: center; margin: .8rem 0 .2rem; font-size: .88rem; color: #5d6647; }
 .start-hint.ready { color: #3c422b; font-weight: 700; animation: blink-focus 1.2s steps(2) infinite; }
+.night-lobby { max-width: 560px; margin: .7rem auto 0; }
+.night-keeper { min-height: 125px; text-align: center; }
+.night-observer-note {
+  margin-top: .7rem; padding: .65rem .8rem; border-radius: 10px;
+  background: rgba(243,236,216,.48); text-align: center; color: #4c563a;
+}
 
 /* ---------- 正在游戏 ---------- */
 .table-top { display: grid; grid-template-columns: 1fr 2fr 1fr; gap: .7rem; align-items: stretch; }
+.table-top.solo-table { display: block; }
 .side-seat {
   border-radius: 10px; padding: .55rem .6rem; background: rgba(243,236,216,.5);
   text-align: center; position: relative; min-height: 108px;
@@ -194,6 +201,50 @@ body {
 .felt .score { font-size: 1.7rem; font-weight: 800; letter-spacing: .05em; }
 .felt .score .colon { color: #77815c; margin: 0 .3rem; }
 .felt .round-line { font-size: .8rem; color: #5d6647; letter-spacing: .2em; margin-top: .1rem; }
+.solo-table .felt { padding: .75rem .85rem 1rem; text-align: left; }
+.night-owner {
+  text-align: center; font-size: 1.05rem; font-weight: 800;
+  letter-spacing: .15em; color: #3c422b; margin-bottom: .35rem;
+}
+.night-dashboard {
+  display: flex; justify-content: space-between; gap: .7rem; align-items: baseline;
+  padding: .45rem .65rem; border-radius: 9px; background: rgba(243,236,216,.48);
+  color: #4c563a; flex-wrap: wrap;
+}
+.night-day { font-size: 1.15rem; font-weight: 800; }
+.night-self {
+  margin-top: .55rem; padding: .5rem .65rem; border-left: 4px solid #7d8663;
+  background: rgba(243,236,216,.62); border-radius: 4px 9px 9px 4px;
+  font-size: .84rem; color: #4c563a;
+}
+.night-spotlight {
+  margin-top: .65rem; padding: .75rem .8rem; border-radius: 11px;
+  background: #eee5c9; border: 2px solid #9a8f6d;
+  box-shadow: 0 3px 0 rgba(70,60,35,.25); animation: night-arrive .35s ease-out;
+}
+@keyframes night-arrive { from { opacity: .25; transform: translateY(5px); } }
+.night-replay-label { font-size: .72rem; color: #7a6a45; letter-spacing: .08em; }
+.night-action { margin-top: .35rem; font-size: .98rem; font-weight: 700; color: #3c422b; }
+.night-ambient { margin-top: .3rem; font-size: .8rem; color: #6d7554; }
+.night-deltas { margin-top: .35rem; }
+.night-section-title {
+  margin-top: .75rem; font-size: .75rem; letter-spacing: .2em;
+  color: #6d7554; text-align: center;
+}
+.night-inventory {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: .55rem; margin-top: .4rem;
+}
+.night-item { width: auto; cursor: default; }
+.night-item.displayed { border-color: #6c774f; background: #e9e0c2; }
+.night-history {
+  margin-top: .65rem; padding: .45rem .6rem; border-radius: 8px;
+  background: rgba(243,236,216,.42); color: #5d6647; font-size: .78rem;
+}
+.night-history summary { cursor: pointer; font-weight: 700; text-align: center; }
+.night-log { display: grid; grid-template-columns: 92px 1fr; gap: .4rem; margin-top: .35rem; }
+.night-log.active { color: #3c422b; font-weight: 700; }
+.night-door-result { border-left: 4px solid #b28b36; }
 .cards-row { display: flex; justify-content: center; gap: .45rem; margin-top: .55rem; flex-wrap: wrap; }
 .pcard {
   width: 34px; height: 48px; border-radius: 5px; background: #f3ecd8;

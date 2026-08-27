@@ -14,12 +14,16 @@ const S = {
   view: "shelf", sid: null, timer: null, focusIdx: 0, infoOpen: false,
   lastSnap: "",
   carts: [],            // /api/cartridges 真实清单
+  currentCartridgeId: null,
   human: null,          // {token, seatId} — 仅在 observe 成功后设置
   picked: null,         // 人类本轮点选中的 item_id(未提交)
   chooseCart: null,     // 插卡后待选模式的卡带
   bc: { fact: null, stance: null, target: null },  // 盲区同行的三步选择
   pc: { intent: null },                            // 口袋穿越的意图选择
+  night: { sid: null, known: [], queue: [], active: null, holdUntil: 0 },
 };
+
+const isNightShop = (id) => id === "pocket-night-shop";
 
 const targetName = (v, oid) => {
   const o = (v.public_state.objects || []).find((x) => x.id === oid);
@@ -69,6 +73,34 @@ function setScreen(view, title) {
   startBtn.classList.remove("armed");
 }
 
+const nightEntryKey = (entry) => entry
+  ? String(entry.seq ?? `${entry.day}|${entry.shift}|${entry.focus}|${entry.text}`)
+  : "";
+
+function updateNightPlayback(sid, ps) {
+  const history = ps.recent_history || [];
+  const now = Date.now();
+  if (S.night.sid !== sid) {
+    S.night = {
+      sid, known: history.map(nightEntryKey), queue: [],
+      active: history.length ? history[history.length - 1] : null,
+      holdUntil: now + 5000,
+    };
+    return;
+  }
+  for (const entry of history) {
+    const key = nightEntryKey(entry);
+    if (!S.night.known.includes(key)) {
+      S.night.known.push(key);
+      S.night.queue.push(entry);
+    }
+  }
+  if (S.night.queue.length && (!S.night.active || now >= S.night.holdUntil)) {
+    S.night.active = S.night.queue.shift();
+    S.night.holdUntil = now + 5000;
+  }
+}
+
 /* ---------------- 卡带架(真实清单) ---------------- */
 
 async function showShelf() {
@@ -83,11 +115,14 @@ async function showShelf() {
     const played = sessions.filter(
       (s) => s.cartridge_id === c.id && s.status === "finished").length;
     const human = (c.modes || []).includes("human_ai");
+    const playMode = isNightShop(c.id)
+      ? "AI 单机 · 人类观看"
+      : `${esc(c.players.min)}–${esc(c.players.max)} 人${human ? " · 可亲自下场" : ""}`;
     return `<div class="cart focusable" data-act="insert" data-cart="${esc(c.id)}">
       <div class="cart-face">
         <div class="t">${esc(c.name)}</div>
         <div class="a">${esc(c.author)} · 自研</div>
-        <div class="m">${esc(c.players.min)}–${esc(c.players.max)} 人 · 约 ${esc(c.minutes)} 分钟${human ? " · 可亲自下场" : ""}</div>
+        <div class="m">${playMode}${c.minutes ? ` · 约 ${esc(c.minutes)} 分钟` : " · 长期存档"}</div>
       </div>
       <div class="cart-plays">已玩 ${played} 局</div>
     </div>`;
@@ -129,6 +164,17 @@ function infoPanel() {
 function askMode(cartId) {
   setScreen("shelf", "选择模式");
   S.chooseCart = cartId;
+  if (isNightShop(cartId)) {
+    app.innerHTML = `
+      <h2>· ${esc(cartName(cartId))} ·</h2>
+      <p class="center dim">一位 AI 店主自主经营 · 你在显示器外观看</p>
+      <div class="mode-choices">
+        <button class="soft focusable" data-act="create" data-mode="human_ai">开一间夜铺</button>
+      </div>
+      <p class="center dim">经营不会等待观看者;门外一响时,你偶尔能叩一下。</p>`;
+    afterRender();
+    return;
+  }
   app.innerHTML = `
     <h2>· ${esc(cartName(cartId))} ·</h2>
     <p class="center dim">这张卡带支持真人下场。谁来玩?</p>
@@ -153,6 +199,19 @@ async function insertCartridge(cartId, mode) {
   const humanSeat = r.seats.find((s) => s.participant_type === "human");
   if (humanSeat) {
     localStorage.setItem(humanTokenKey(r.session_id), humanSeat.seat_token);
+    if (isNightShop(cartId)) {
+      const o = await api(`/api/sessions/${r.session_id}/observe`, "POST",
+                          { seat_token: humanSeat.seat_token });
+      if (o.result === "ok" && (o.legal_actions || []).some(
+          (x) => x.action_id === "introduce")) {
+        await api(`/api/sessions/${r.session_id}/act`, "POST", {
+          seat_token: humanSeat.seat_token,
+          expected_revision: o.revision,
+          action_id: "introduce",
+          params: { display_name: "观看者", surface: "掌机显示器" },
+        });
+      }
+    }
   }
   location.hash = `#/s/${r.session_id}`;
 }
@@ -164,6 +223,7 @@ async function showSession(sid) {
     S.picked = null;
     S.bc = { fact: null, stance: null, target: null };
     S.pc = { intent: null };
+    S.night = { sid: null, known: [], queue: [], active: null, holdUntil: 0 };
   }
   S.sid = sid;
   // 人类身份只凭统一 observe 成功确认,不靠 localStorage 猜(校正 #1)
@@ -182,6 +242,7 @@ async function showSession(sid) {
       app.innerHTML = `<p class="center">读不到这局(${esc(v.result)})。按 B 回卡带架。</p>`;
       return;
     }
+    S.currentCartridgeId = v.cartridge.id;
     if (v.status === "finished") { location.replace(`#/m/${sid}`); return; }
     let mine = null;
     if (S.human) {
@@ -190,9 +251,12 @@ async function showSession(sid) {
       if (o.result === "ok") mine = o;
     }
     const draft = captureDraft();
+    if (isNightShop(v.cartridge.id) && v.status === "playing")
+      updateNightPlayback(sid, v.public_state);
     const snap = JSON.stringify([v, mine && mine.revision, mine && mine.public_state,
                                  mine && mine.private_state, S.infoOpen, S.picked,
-                                 tokenLost]);
+                                 tokenLost, S.night.active && nightEntryKey(S.night.active, 0),
+                                 S.night.queue.length]);
     if (snap === S.lastSnap) return;
     S.lastSnap = snap;
     if (v.status === "lobby") renderSeats(v, mine, tokenLost);
@@ -231,6 +295,10 @@ function restoreDraft(d) {
 /* ---- 开局席位 ---- */
 
 function renderSeats(v, mine, tokenLost) {
+  if (isNightShop(v.cartridge.id)) {
+    renderNightShopSeats(v, tokenLost);
+    return;
+  }
   setScreen("seats", "开局席位");
   powerLed.classList.add("busy");
   const aiTokens = JSON.parse(sessionStorage.getItem(aiTokensKey(v.session_id)) || "null");
@@ -278,6 +346,42 @@ function renderSeats(v, mine, tokenLost) {
   afterRender();
 }
 
+function renderNightShopSeats(v, tokenLost) {
+  setScreen("seats", "夜铺准备");
+  powerLed.classList.add("busy");
+  const aiTokens = JSON.parse(sessionStorage.getItem(aiTokensKey(v.session_id)) || "null");
+  const shopkeeper = v.seats.find((s) => s.seat_id === "seat_a") || v.seats[0];
+  const tok = aiTokens && aiTokens.find((t) => t.seat_id === shopkeeper.seat_id);
+  const ready = v.public_state && v.public_state.waiting_human_start;
+  if (ready) startBtn.classList.add("armed");
+  const keeperBody = shopkeeper.seated
+    ? `<div class="who">${esc(shopkeeper.display_name)}</div>
+       <div class="surf">${esc(shopkeeper.surface)}</div>
+       ${shopkeeper.now ? `<div class="now-line">“${esc(shopkeeper.now)}”</div>` : ""}`
+    : `<div class="empty-hint">等待 AI 店主接入夜铺</div>
+       <div class="conn-box center">${tok
+         ? `<button class="soft focusable" data-act="copy" data-seat="${esc(shopkeeper.seat_id)}">复制店主连接信息</button>
+            <div class="conn-note">把整段交给一个 AI;它会自己连续经营并保存。</div>`
+         : '<div class="conn-note">店主令牌只在建店的标签页显示一次</div>'}</div>`;
+  app.innerHTML = `
+    <h2>· 开 店 准 备 · ${esc(v.cartridge.name)}</h2>
+    ${tokenLost ? '<p class="center warn-note">观看端令牌无效或已丢失,当前只能看公共橱窗。</p>' : ""}
+    <div class="night-lobby">
+      <div class="slot night-keeper ${shopkeeper.seated ? "seated" : "turn"}">
+        <span class="lamp"></span>
+        <div class="dim">AI 店主</div>${keeperBody}
+      </div>
+      <div class="night-observer-note">◉ 观看端已连接<br>
+        <span class="dim">你不占玩家席位。门外一响时,显示器会给你一次盲点。</span></div>
+    </div>
+    <div class="start-hint ${ready ? "ready" : ""}">${ready
+      ? "店主已经进门 —— 按 START 开灯营业"
+      : "等待 AI 店主完成自我介绍"}</div>
+    <p class="center"><button class="soft warn focusable" data-act="end">收起这间夜铺</button></p>
+    <p class="dim center">存档 ${esc(v.session_id)}</p>`;
+  afterRender();
+}
+
 /* ---- 正在游戏:公共骨架 + 每卡带一个台面渲染器(校正 #3) ---- */
 
 function renderGame(v, mine, tokenLost) {
@@ -286,16 +390,17 @@ function renderGame(v, mine, tokenLost) {
   const ui = CART_UI[v.cartridge.id] || CART_UI._fallback;
   const talk = (v.public_events || v.recent_public_events || [])
     .map(eventLine).filter(Boolean).join("");
+  const solo = ui.layout === "solo";
   app.innerHTML = `
     ${tokenLost ? '<p class="center warn-note">人类席令牌无效或已丢失,本局只能旁观。</p>' : ""}
     ${infoPanel()}
-    <div class="table-top">
-      ${sideSeat(v, v.seats[0])}
+    <div class="table-top ${solo ? "solo-table" : ""}">
+      ${solo ? "" : sideSeat(v, v.seats[0])}
       <div class="felt">${ui.felt(v, mine)}</div>
-      ${sideSeat(v, v.seats[1])}
+      ${solo ? "" : sideSeat(v, v.seats[1])}
     </div>
     ${mine ? ui.myPanel(v, mine) : ""}
-    <div class="table-talk">${talk}</div>
+    ${solo ? "" : `<div class="table-talk">${talk}</div>`}
     <p class="center"><button class="soft warn focusable" data-act="end">结束本局</button></p>
     <p class="dim center">局号 ${esc(v.session_id)}</p>`;
   afterRender();
@@ -335,10 +440,12 @@ function eventLine(e) {
 
 const CART_UI = {
   "pocket-night-shop": {
+    layout: "solo",
     felt(v) {
       const ps = v.public_state;
+      const keeper = v.seats.find((s) => s.seat_id === "seat_a") || v.seats[0];
       const inventory = (ps.inventory || []).map((item) => `
-        <div class="item-card ${item.displayed ? "selected" : ""}">
+        <div class="item-card night-item ${item.displayed ? "displayed" : ""}">
           <div class="it-name">${item.displayed ? "◇ " : ""}${esc(item.name)}</div>
           <div class="it-tags">
             <span class="chip">修复 ${item.condition}/3</span>
@@ -346,23 +453,43 @@ const CART_UI = {
           </div>
           <div class="dim">${esc(item.story)}</div>
         </div>`).join("");
-      const logs = (ps.recent_history || []).slice(-6).map((entry) => `
-        <div><span class="dim">第${entry.day}日·${esc(entry.shift)}</span>
-          ${esc(entry.text)}</div>`).join("");
+      const active = S.night.active || (ps.recent_history || []).slice(-1)[0];
+      const newest = (ps.recent_history || []).slice(-1)[0];
+      const replaying = active && newest && nightEntryKey(active) !== nightEntryKey(newest);
+      const delta = active ? `
+        <div class="night-deltas">
+          <span class="chip">硬币 ${active.coins_delta >= 0 ? "+" : ""}${active.coins_delta}</span>
+          <span class="chip">声望 ${active.reputation_delta >= 0 ? "+" : ""}${active.reputation_delta}</span>
+        </div>` : "";
+      const logs = (ps.recent_history || []).slice(-5).reverse().map((entry) => `
+        <div class="night-log ${active && nightEntryKey(entry) === nightEntryKey(active) ? "active" : ""}">
+          <span>第${entry.day}日·${esc(entry.shift)}</span><span>${esc(entry.text)}</span>
+        </div>`).join("");
       const doors = (ps.door_history || []).slice(-2).map((entry) => `
         <div>🚪 ${esc(entry.text)}</div>`).join("");
       return `
-        <div class="score">第 ${ps.day} 日 · ${esc(ps.shift)}
-          <span class="colon">·</span>硬币 ${ps.coins} · 声望 ${ps.reputation}</div>
-        <div class="round-line">夜铺 ${ps.shop_level}级 · 库存 ${(ps.inventory || []).length}/${ps.capacity}</div>
-        <div class="report">
+        <div class="night-owner">${esc(keeper.display_name || "AI 店主")} 的夜铺</div>
+        <div class="night-dashboard">
+          <div class="night-day">第 ${ps.day} 日 · ${esc(ps.shift)}</div>
+          <div>硬币 <strong>${ps.coins}</strong> · 声望 <strong>${ps.reputation}</strong> ·
+            店铺 ${ps.shop_level}级 · 库存 ${(ps.inventory || []).length}/${ps.capacity}</div>
+        </div>
+        <div class="night-self">
           <div><strong>心情灯 · ${esc(ps.mood)}</strong></div>
-          <div>目标:${esc(ps.current_goal)}</div>
+          <div>眼下想做:${esc(ps.current_goal)}</div>
           <div>“${esc(ps.public_line)}”</div>
         </div>
-        <div class="hand-row">${inventory || '<div class="empty-hint">货架空了</div>'}</div>
-        ${logs ? `<div class="report">${logs}</div>` : ""}
-        ${doors ? `<div class="report">${doors}</div>` : ""}
+        ${active ? `<div class="night-spotlight">
+          <div class="night-replay-label">${replaying ? "显示器正在回放" : "本班刚刚发生"} ·
+            第${active.day}日 ${esc(active.shift)}
+            ${S.night.queue.length ? ` · 后面还有 ${S.night.queue.length} 段` : ""}</div>
+          <div class="night-action">${esc(active.text)}</div>
+          <div class="night-ambient">${esc(active.ambient)}</div>${delta}
+        </div>` : '<div class="night-spotlight dim">店主刚刚点亮招牌。</div>'}
+        <div class="night-section-title">橱窗与货架</div>
+        <div class="night-inventory">${inventory || '<div class="empty-hint">货架空了</div>'}</div>
+        ${logs ? `<details class="night-history"><summary>最近五班经营记录</summary>${logs}</details>` : ""}
+        ${doors ? `<div class="report night-door-result">${doors}</div>` : ""}
         ${ps.door_waiting ? '<div class="start-hint ready">门外似乎有什么动静……</div>' : ""}`;
     },
     myPanel(v, mine) {
@@ -980,7 +1107,15 @@ async function copyConn(seatId, btn) {
   const tokens = JSON.parse(sessionStorage.getItem(aiTokensKey(S.sid)) || "[]");
   const t = tokens.find((x) => x.seat_id === seatId);
   if (!t) return;
-  const text = `你在 AI-Gameboy 牌桌上有一个席位(MCP 服务名 gameboy,入口 http://127.0.0.1:7777/mcp)。
+  const text = isNightShop(S.currentCartridgeId)
+    ? `你在 AI-Gameboy 的《口袋夜铺》里经营一间长期存档的夜铺(MCP 服务名 gameboy,入口 http://127.0.0.1:7777/mcp)。
+session_id: ${S.sid}
+seat_id: ${t.seat_id}
+seat_token: ${t.seat_token}
+请先调用 game_observe(session_id, seat_token) 看店铺,再按 legal_actions 用 game_act 经营。
+你是唯一店主,可以连续执行许多个 work_shift,不必等待观看者;想停时直接停下,
+下次凭同一连接继续。mood、goal、public_line 会显示在人类的掌机上。门铃不阻塞经营。`
+    : `你在 AI-Gameboy 牌桌上有一个席位(MCP 服务名 gameboy,入口 http://127.0.0.1:7777/mcp)。
 session_id: ${S.sid}
 seat_id: ${t.seat_id}
 seat_token: ${t.seat_token}

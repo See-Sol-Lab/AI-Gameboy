@@ -86,6 +86,7 @@ def new_game(seats, seed):
         "day": 1, "shift_index": 0, "coins": 12, "reputation": 0,
         "shop_level": 1, "extra_capacity": 0,
         "inventory": [], "item_counter": 0,
+        "shift_count": 0,
         "mood": "期待", "current_goal": "先让这间店安稳开过第一个夜晚",
         "public_line": "先把灯点起来,看看今晚会有什么走进门。",
         "history": [], "diary": [],
@@ -192,15 +193,19 @@ def _work_shift(s, params):
     s["public_line"] = line.strip()
     if goal is not None:
         s["current_goal"] = goal.strip()
-    entry = {
-        "day": s["day"], "shift": SHIFTS[s["shift_index"]], "focus": focus,
-        "text": report, "ambient": ambient,
+    entry_day = s["day"]
+    entry_shift = SHIFTS[s["shift_index"]]
+    _maybe_spawn_door(s)
+    closing = _advance_time(s)
+    if closing:
+        report += f" 打烊维护应付{closing['due']}枚,实际付了{closing['paid']}枚。"
+    s["shift_count"] = s.get("shift_count", len(s["history"])) + 1
+    s["history"].append({
+        "seq": s["shift_count"], "day": entry_day, "shift": entry_shift,
+        "focus": focus, "text": report, "ambient": ambient,
         "coins_delta": s["coins"] - before["coins"],
         "reputation_delta": s["reputation"] - before["reputation"],
-    }
-    s["history"].append(entry)
-    _maybe_spawn_door(s)
-    _advance_time(s)
+    })
 
 
 def _do_focus(s, focus, item_id):
@@ -268,7 +273,7 @@ def _maybe_spawn_door(s):
 def _advance_time(s):
     if s["shift_index"] == 0:
         s["shift_index"] = 1
-        return
+        return None
     upkeep = 2 + s["shop_level"]
     paid = min(s["coins"], upkeep)
     s["coins"] -= paid
@@ -278,6 +283,7 @@ def _advance_time(s):
                        "text": s["public_line"], "upkeep": paid})
     s["day"] += 1
     s["shift_index"] = 0
+    return {"due": upkeep, "paid": paid}
 
 
 def _knock(s):

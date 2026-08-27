@@ -49,12 +49,16 @@ class TestNightShop(unittest.TestCase):
         s = rules.new_game(SEATS, 8)
         s = work(s, line="先攒下第一枚不急着花的钱。", goal="把店铺扩建到二级")
         self.assertEqual(s["shift_index"], 1)
+        self.assertEqual(s["history"][-1]["seq"], 1)
         self.assertEqual(s["current_goal"], "把店铺扩建到二级")
         self.assertEqual(s["public_line"], "先攒下第一枚不急着花的钱。")
         s = work(s, line="今天没有发财,但柜台终于像样了。")
         self.assertEqual(s["day"], 2)
         self.assertEqual(len(s["diary"]), 1)
         self.assertEqual(s["diary"][0]["text"], "今天没有发财,但柜台终于像样了。")
+        self.assertEqual(s["history"][-1]["seq"], 2)
+        self.assertIn("打烊维护应付3枚", s["history"][-1]["text"])
+        self.assertEqual(s["history"][-1]["coins_delta"], -2)
 
     def test_sell_repair_scavenge_and_curate(self):
         s = rules.new_game(SEATS, 9)
