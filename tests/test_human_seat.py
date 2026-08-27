@@ -78,9 +78,50 @@ class TestHumanSeat(unittest.TestCase):
 
     def test_mode_validation(self):
         r = self.host.create_session("pocket-circuit", "human_ai")
-        self.assertEqual(r["result"], "rejected")   # 口袋电路不支持人类席
+        self.assertEqual(r["result"], "ok")         # v0.2 起支持人类先锁牌
         r = self.host.create_session("four-things-in-my-pocket", "solo")
         self.assertEqual(r["result"], "rejected")
+
+    def test_pocket_circuit_human_locks_before_ai(self):
+        c = self.host.create_session("pocket-circuit", "human_ai")
+        sid = c["session_id"]
+        t_ai = c["seats"][0]["seat_token"]
+        t_hu = c["seats"][1]["seat_token"]
+        self.assertEqual(self.host.act(
+            sid, t_ai, 0, "introduce",
+            {"display_name": "AI 玩家", "surface": "Codex Desktop"})["result"], "ok")
+        self.assertEqual(self.host.act(
+            sid, t_hu, 1, "introduce",
+            {"display_name": "项目作者", "surface": "掌机 UI"})["result"], "ok")
+        self.assertEqual(self.host.start_game(sid)["result"], "ok")
+
+        ai_before = self.host.observe(sid, t_ai)
+        human = self.host.observe(sid, t_hu)
+        self.assertEqual(ai_before["legal_actions"], [])
+        self.assertEqual(human["waiting_for"], ["seat_b"])
+        human_card = human["private_state"]["hand"][0]
+        locked = self.host.act(sid, t_hu, human["revision"], "play_card",
+                               {"card": human_card})
+        self.assertEqual(locked["result"], "ok")
+        self.assertEqual(locked["private_state"]["my_pending"], human_card)
+
+        ai = self.host.observe(sid, t_ai)
+        self.assertTrue(ai["public_state"]["submitted"]["seat_b"])
+        self.assertEqual(ai["public_state"]["revealed"], [])
+        self.assertIsNone(ai["private_state"]["my_pending"])
+        self.assertEqual(ai["legal_actions"][0]["action_id"], "play_card")
+        ai_card = ai["private_state"]["hand"][-1]
+        resolved = self.host.act(sid, t_ai, ai["revision"], "play_card",
+                                 {"card": ai_card})
+        self.assertEqual(resolved["result"], "ok")
+        self.assertEqual(len(resolved["public_state"]["revealed"]), 1)
+        self.assertEqual(resolved["public_state"]["revealed"][0]["cards"],
+                         {"seat_a": ai_card, "seat_b": human_card})
+
+    def test_pocket_circuit_v010_archive_loads(self):
+        manifest, rules = self.host._load_cartridge("pocket-circuit", "0.1.0")
+        self.assertEqual(manifest["version"], "0.1.0")
+        self.assertEqual(rules.TOTAL_ROUNDS, 3)
 
     def test_human_sees_own_hand(self):
         o = self.obs(self.t_hu)

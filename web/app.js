@@ -340,32 +340,52 @@ const CART_UI = {
       const [a, b] = v.seats;
       const rows = (ps.revealed || []).map((r) => `
         <div class="mem-round">
-          <span class="dim">第${r.round}轮</span>
+          <span class="dim">节点 ${r.node} · 电荷 ${r.stake}</span>
           <span class="pcard ${r.winner === a.seat_id ? "win" : ""}">${r.cards[a.seat_id]}</span>
           <span class="dim">vs</span>
           <span class="pcard ${r.winner === b.seat_id ? "win" : ""}">${r.cards[b.seat_id]}</span>
-          <span class="w">${esc(nameOf(v, r.winner))} 得分</span>
+          <span class="w">${r.winner
+            ? `${esc(nameOf(v, r.winner))} 接走 ${r.points}`
+            : "平局 · 电荷滚存"}</span>
         </div>`).join("");
       return `
         <div class="score">${esc(nameOf(v, a.seat_id))} ${ps.scores?.[a.seat_id] ?? 0}
           <span class="colon">:</span>${ps.scores?.[b.seat_id] ?? 0} ${esc(nameOf(v, b.seat_id))}</div>
-        <div class="round-line">第 ${ps.round} / ${ps.total_rounds} 轮</div>
+        <div class="round-line">第 ${ps.round} / ${ps.total_rounds} 轮 ·
+          当前节点 ${ps.current_node} · 可争电荷 ${ps.stake}</div>
         <div class="rounds-mini">${rows}</div>`;
     },
-    myPanel() { return ""; },   // 口袋电路暂无人类席模式
+    myPanel(v, mine) {
+      if (v.status !== "playing" || !mine) return "";
+      const pending = mine.private_state.my_pending;
+      if (pending !== null && pending !== undefined) {
+        return `<div class="my-panel"><div class="dim center">
+          你已锁定电压 <strong>${pending}</strong>。牌面不会交给 AI，提醒它落子即可。</div></div>`;
+      }
+      const la = mine.legal_actions && mine.legal_actions[0];
+      if (!la) return `<div class="my-panel"><div class="dim center">等待对面落子……</div></div>`;
+      const cards = (mine.private_state.hand || []).map((card) => `
+        <button class="pcard focusable" data-act="circuit-card" data-card="${card}">${card}</button>`).join("");
+      return `<div class="my-panel">
+        <div class="dim center">你先锁牌 · 对面只能看见“已提交”，不能看见数字</div>
+        <div class="hand-row">${cards}</div>
+        <input id="circuit-line" maxlength="60" placeholder="桌边话(可空，不要写自己的牌)">
+      </div>`;
+    },
     memorial(v) {
       const ps = v.public_state;
       const [a, b] = v.seats;
       const rounds = (ps.revealed || []).map((r) => `
         <div class="mem-round">
-          <span class="dim">第${r.round}轮</span>
+          <span class="dim">节点 ${r.node} · 电荷 ${r.stake}</span>
           <span class="pcard ${r.winner === a.seat_id ? "win" : ""}">${r.cards[a.seat_id]}</span>
           <span class="dim">vs</span>
           <span class="pcard ${r.winner === b.seat_id ? "win" : ""}">${r.cards[b.seat_id]}</span>
-          <span class="w">${esc(nameOf(v, r.winner))}</span>
+          <span class="w">${r.winner ? esc(nameOf(v, r.winner)) : "平局滚存"}</span>
         </div>`).join("");
       const champ = ps.phase === "finished" && ps.winner
-        ? `胜者 · ${esc(nameOf(v, ps.winner))} 🏆` : "本局由人类提前收起";
+        ? `胜者 · ${esc(nameOf(v, ps.winner))} 🏆`
+        : ps.phase === "finished" ? "平局 · 电路未分胜负" : "本局由人类提前收起";
       return { rounds, champ,
                scoreLine: `${esc(nameOf(v, a.seat_id))} ${ps.scores?.[a.seat_id] ?? 0}
                  : ${ps.scores?.[b.seat_id] ?? 0} ${esc(nameOf(v, b.seat_id))}` };
@@ -851,6 +871,12 @@ async function humanDraw(itemId) {
   await humanAct("draw_pick", { item_id: itemId });
 }
 
+async function circuitPlay(card) {
+  if (!confirm(`锁定电压 ${card}？本轮不能更改。`)) return;
+  const line = (document.getElementById("circuit-line")?.value || "").trim();
+  await humanAct("play_card", { card }, line);
+}
+
 async function pcNarrate(btn) {
   btn.textContent = "荷官执笔中……";
   btn.disabled = true;
@@ -949,6 +975,7 @@ function act(el) {
   else if (a === "hu-endorse") humanJudge("endorse");
   else if (a === "hu-doubt") humanJudge("doubt");
   else if (a === "pick-draw") humanDraw(el.dataset.item);
+  else if (a === "circuit-card") circuitPlay(Number(el.dataset.card));
   else if (a === "bc-fact") { S.bc.fact = el.dataset.id; S.lastSnap = ""; redrawSoon(); }
   else if (a === "bc-stance") { S.bc.stance = el.dataset.id; S.lastSnap = ""; redrawSoon(); }
   else if (a === "bc-target") { S.bc.target = el.dataset.id; S.lastSnap = ""; redrawSoon(); }

@@ -30,22 +30,6 @@ def setup_playing(host):
     return sid, ta, tb
 
 
-def ints_in(obj):
-    """递归收集结构里出现的所有 int(不含 bool)。"""
-    out = []
-    if isinstance(obj, bool):
-        return out
-    if isinstance(obj, int):
-        return [obj]
-    if isinstance(obj, dict):
-        for v in obj.values():
-            out += ints_in(v)
-    elif isinstance(obj, list):
-        for v in obj:
-            out += ints_in(v)
-    return out
-
-
 class TestSeatPrivacy(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -60,37 +44,28 @@ class TestSeatPrivacy(unittest.TestCase):
         self.assertEqual(r["result"], "ok")
         return r
 
-    def test_hands_disjoint_and_no_hands_key_in_public(self):
+    def test_hands_symmetric_and_no_hands_key_in_public(self):
         a = self.obs(self.ta)
         b = self.obs(self.tb)
         ha = set(a["private_state"]["hand"])
         hb = set(b["private_state"]["hand"])
-        self.assertEqual(len(ha), 3)
-        self.assertEqual(len(hb), 3)
-        self.assertEqual(ha & hb, set())
+        self.assertEqual(ha, {1, 2, 3, 4, 5, 6})
+        self.assertEqual(hb, ha)
         self.assertNotIn("hands", a["public_state"])
         self.assertNotIn("pending", a["public_state"])
 
     def test_opponent_pending_card_invisible_until_reveal(self):
-        # 洗牌是随机 3/3 切分,谁摸到 6 谁来暗投——6 必在某人手里,
-        # 且不与轮次/比分数字相撞,泄露检查不会误报
         card = 6
-        actor = self.ta if card in self.obs(self.ta)["private_state"]["hand"] \
-            else self.tb
-        viewer = self.tb if actor is self.ta else self.ta
-        actor_seat = "seat_a" if actor is self.ta else "seat_b"
+        actor, viewer, actor_seat = self.tb, self.ta, "seat_b"
         r = self.host.act(self.sid, actor, self.obs(actor)["revision"],
                           "play_card", {"card": card})
         self.assertEqual(r["result"], "ok")
         a = self.obs(viewer)
         # 公开面只见"对方已暗投",不见牌面
         self.assertTrue(a["public_state"]["submitted"][actor_seat])
-        body = {"public_state": a["public_state"],
-                "private_state": a["private_state"],
-                "legal_actions": a["legal_actions"]}
-        leaked = [n for n in ints_in(body)
-                  if n == card and n not in a["private_state"]["hand"]]
-        self.assertEqual(leaked, [], f"暗投牌 {card} 泄露进对家的观察:{body}")
+        self.assertEqual(a["public_state"]["revealed"], [])
+        self.assertNotIn("pending", a["public_state"])
+        self.assertIsNone(a["private_state"]["my_pending"])
         # 自己能看到自己的暗投
         self.assertEqual(self.obs(actor)["private_state"]["my_pending"], card)
 

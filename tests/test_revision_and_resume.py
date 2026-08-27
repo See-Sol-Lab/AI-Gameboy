@@ -83,61 +83,59 @@ class TestRevisionAndResume(unittest.TestCase):
         return self.host.observe(self.sid, token)
 
     def test_stale_revision_second_writer_loses(self):
-        rev = self.obs(self.ta)["revision"]
+        rev = self.obs(self.tb)["revision"]
         ca = self.obs(self.ta)["private_state"]["hand"][0]
         cb = self.obs(self.tb)["private_state"]["hand"][0]
-        r1 = self.host.act(self.sid, self.ta, rev, "play_card", {"card": ca})
+        r1 = self.host.act(self.sid, self.tb, rev, "play_card", {"card": cb})
         self.assertEqual(r1["result"], "ok")
-        # 乙基于同一 revision 提交:得到 stale_revision 与新观察
-        r2 = self.host.act(self.sid, self.tb, rev, "play_card", {"card": cb})
+        # 后手基于同一 revision 提交:得到 stale_revision 与新观察
+        r2 = self.host.act(self.sid, self.ta, rev, "play_card", {"card": ca})
         self.assertEqual(r2["result"], "stale_revision")
         self.assertEqual(r2["revision"], r1["revision"])
         self.assertIn("legal_actions", r2)
         # 按新 revision 重交成功,两牌同时揭示
-        r3 = self.host.act(self.sid, self.tb, r2["revision"], "play_card",
-                           {"card": cb})
+        r3 = self.host.act(self.sid, self.ta, r2["revision"], "play_card",
+                           {"card": ca})
         self.assertEqual(r3["result"], "ok")
         self.assertEqual(len(r3["public_state"]["revealed"]), 1)
 
     def test_rejected_keeps_state(self):
-        rev = self.obs(self.ta)["revision"]
-        hand_b = self.obs(self.tb)["private_state"]["hand"]
-        r = self.host.act(self.sid, self.ta, rev, "play_card",
-                          {"card": hand_b[0]})  # 别人的牌
+        rev = self.obs(self.tb)["revision"]
+        r = self.host.act(self.sid, self.tb, rev, "play_card", {"card": 7})
         self.assertEqual(r["result"], "rejected")
-        self.assertEqual(self.obs(self.ta)["revision"], rev)
-        ca = self.obs(self.ta)["private_state"]["hand"][0]
-        self.assertEqual(self.host.act(self.sid, self.ta, rev, "play_card",
-                                       {"card": ca})["result"], "ok")
+        self.assertEqual(self.obs(self.tb)["revision"], rev)
+        cb = self.obs(self.tb)["private_state"]["hand"][0]
+        self.assertEqual(self.host.act(self.sid, self.tb, rev, "play_card",
+                                       {"card": cb})["result"], "ok")
         # 同轮重复暗投被拒
-        r = self.host.act(self.sid, self.ta, rev + 1, "play_card",
-                          {"card": self.obs(self.ta)["private_state"]["hand"][0]})
+        r = self.host.act(self.sid, self.tb, rev + 1, "play_card",
+                          {"card": self.obs(self.tb)["private_state"]["hand"][0]})
         self.assertEqual(r["result"], "rejected")
 
     def test_resume_after_disconnect(self):
         """断开没有持久连接状态:凭原令牌再 observe 就回到原局(§16)。"""
-        ca = self.obs(self.ta)["private_state"]["hand"][0]
-        self.host.act(self.sid, self.ta, self.obs(self.ta)["revision"],
-                      "play_card", {"card": ca})
-        again = self.obs(self.ta)  # 模拟窗口关闭后重来
+        cb = self.obs(self.tb)["private_state"]["hand"][0]
+        self.host.act(self.sid, self.tb, self.obs(self.tb)["revision"],
+                      "play_card", {"card": cb})
+        again = self.obs(self.tb)  # 模拟窗口关闭后重来
         self.assertEqual(again["result"], "ok")
-        self.assertEqual(again["private_state"]["my_pending"], ca)
+        self.assertEqual(again["private_state"]["my_pending"], cb)
         self.assertEqual(again["status"], "playing")
-        self.assertNotIn("seat_a", again["waiting_for"])
+        self.assertEqual(again["waiting_for"], ["seat_a"])
 
     def test_full_game_to_finish(self):
-        for _ in range(3):
-            for tok in (self.ta, self.tb):
+        for _ in range(6):
+            for tok in (self.tb, self.ta):
                 o = self.obs(tok)
                 self.host.act(self.sid, tok, o["revision"], "play_card",
                               {"card": o["private_state"]["hand"][0]},
                               table_line="出了")
         final = self.obs(self.ta)
         self.assertEqual(final["status"], "finished")
-        self.assertEqual(len(final["public_state"]["revealed"]), 3)
+        self.assertEqual(len(final["public_state"]["revealed"]), 6)
         scores = final["public_state"]["scores"]
-        self.assertEqual(scores["seat_a"] + scores["seat_b"], 3)
-        self.assertIn(final["public_state"]["winner"], ("seat_a", "seat_b"))
+        self.assertLessEqual(scores["seat_a"] + scores["seat_b"], 21)
+        self.assertIn(final["public_state"]["winner"], ("seat_a", "seat_b", None))
         self.assertEqual(final["legal_actions"], [])
         # 结束后动作被拒
         r = self.host.act(self.sid, self.ta, final["revision"], "play_card",

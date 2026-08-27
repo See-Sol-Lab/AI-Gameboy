@@ -30,7 +30,8 @@ mcp = MCPServer(
     instructions=(
         "AI-Gameboy 牌桌。你需要人类交给你的 session_id 与 seat_token 才能入座。"
         "先 game_observe 看自己的桌面,再按 legal_actions 用 game_act 行动;"
-        "第一步通常是 introduce 自我介绍。"
+        "第一步通常是 introduce 自我介绍。口袋电路对抗局中,人类会先锁牌;"
+        "轮到你 play_card 时先调用 game_act,提交前不要在聊天里说出牌号或具体策略。"
     ),
 )
 
@@ -63,6 +64,8 @@ def game_act(session_id: str, seat_token: str, expected_revision: int,
       开局后如 play_card,params 形如 {"card": 3};
     - table_line:可选,一句公开桌边话(≤120 字),只随本次动作出现。
     动作是你自己的选择:牌桌不替你决定,也不把你的私牌给别人看。
+    《口袋电路》中人类已经先锁牌且不能更改;你应先提交 play_card,
+    等工具返回本轮揭示后再谈刚才的牌与理由,避免提前自曝策略。
     """
     return host.act(session_id, seat_token, expected_revision,
                     action_id, params, table_line)

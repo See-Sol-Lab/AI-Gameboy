@@ -1,11 +1,11 @@
 {
   "id": "pocket-circuit",
   "name": "口袋电路",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "See Sol Lab",
   "license": "private-prototype",
   "players": { "min": 2, "max": 2 },
-  "minutes": 5,
+  "minutes": 10,
   "dealer": "none",
-  "modes": ["multi_ai"]
+  "modes": ["multi_ai", "human_ai"]
 }
