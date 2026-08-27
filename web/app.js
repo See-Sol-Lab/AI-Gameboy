@@ -334,6 +334,59 @@ function eventLine(e) {
 /* ---------------- CART_UI:唯一的卡带渲染映射 ---------------- */
 
 const CART_UI = {
+  "pocket-night-shop": {
+    felt(v) {
+      const ps = v.public_state;
+      const inventory = (ps.inventory || []).map((item) => `
+        <div class="item-card ${item.displayed ? "selected" : ""}">
+          <div class="it-name">${item.displayed ? "◇ " : ""}${esc(item.name)}</div>
+          <div class="it-tags">
+            <span class="chip">修复 ${item.condition}/3</span>
+            <span class="chip">估值 ${item.value}</span>
+          </div>
+          <div class="dim">${esc(item.story)}</div>
+        </div>`).join("");
+      const logs = (ps.recent_history || []).slice(-6).map((entry) => `
+        <div><span class="dim">第${entry.day}日·${esc(entry.shift)}</span>
+          ${esc(entry.text)}</div>`).join("");
+      const doors = (ps.door_history || []).slice(-2).map((entry) => `
+        <div>🚪 ${esc(entry.text)}</div>`).join("");
+      return `
+        <div class="score">第 ${ps.day} 日 · ${esc(ps.shift)}
+          <span class="colon">·</span>硬币 ${ps.coins} · 声望 ${ps.reputation}</div>
+        <div class="round-line">夜铺 ${ps.shop_level}级 · 库存 ${(ps.inventory || []).length}/${ps.capacity}</div>
+        <div class="report">
+          <div><strong>心情灯 · ${esc(ps.mood)}</strong></div>
+          <div>目标:${esc(ps.current_goal)}</div>
+          <div>“${esc(ps.public_line)}”</div>
+        </div>
+        <div class="hand-row">${inventory || '<div class="empty-hint">货架空了</div>'}</div>
+        ${logs ? `<div class="report">${logs}</div>` : ""}
+        ${doors ? `<div class="report">${doors}</div>` : ""}
+        ${ps.door_waiting ? '<div class="start-hint ready">门外似乎有什么动静……</div>' : ""}`;
+    },
+    myPanel(v, mine) {
+      if (v.status !== "playing" || !mine) return "";
+      const knock = (mine.legal_actions || []).find((x) => x.action_id === "knock");
+      if (knock) return `<div class="my-panel">
+        <div class="dim center">你不知道门外是什么。夜铺不会等你，也不会因此停下。</div>
+        <button class="soft focusable" data-act="night-knock">门外一响 · 叩一下</button>
+      </div>`;
+      return `<div class="my-panel"><div class="dim center">
+        今晚由店主自己经营。偶尔门外会响一下。</div></div>`;
+    },
+    memorial(v) {
+      const ps = v.public_state;
+      const diary = (ps.diary || []).map((entry) => `
+        <div class="mem-round"><span class="dim">第${entry.day}日 · ${esc(entry.mood)}</span>
+          <span>${esc(entry.text)}</span></div>`).join("");
+      return {
+        rounds: diary,
+        champ: `夜铺停在第 ${ps.day} 日 · 硬币 ${ps.coins} · 声望 ${ps.reputation}`,
+        scoreLine: `店铺 ${ps.shop_level}级 · 库存 ${(ps.inventory || []).length}/${ps.capacity}`,
+      };
+    },
+  },
   "pocket-circuit": {
     felt(v) {
       const ps = v.public_state;
@@ -877,6 +930,10 @@ async function circuitPlay(card) {
   await humanAct("play_card", { card }, line);
 }
 
+async function nightKnock() {
+  await humanAct("knock", {});
+}
+
 async function pcNarrate(btn) {
   btn.textContent = "荷官执笔中……";
   btn.disabled = true;
@@ -976,6 +1033,7 @@ function act(el) {
   else if (a === "hu-doubt") humanJudge("doubt");
   else if (a === "pick-draw") humanDraw(el.dataset.item);
   else if (a === "circuit-card") circuitPlay(Number(el.dataset.card));
+  else if (a === "night-knock") nightKnock();
   else if (a === "bc-fact") { S.bc.fact = el.dataset.id; S.lastSnap = ""; redrawSoon(); }
   else if (a === "bc-stance") { S.bc.stance = el.dataset.id; S.lastSnap = ""; redrawSoon(); }
   else if (a === "bc-target") { S.bc.target = el.dataset.id; S.lastSnap = ""; redrawSoon(); }

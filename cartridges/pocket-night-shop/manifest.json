@@ -1,0 +1,11 @@
+{
+  "id": "pocket-night-shop",
+  "name": "口袋夜铺",
+  "version": "0.1.0",
+  "author": "See Sol Lab",
+  "license": "private-prototype",
+  "players": { "min": 2, "max": 2 },
+  "minutes": 0,
+  "dealer": "none",
+  "modes": ["human_ai"]
+}

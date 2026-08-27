@@ -3,7 +3,7 @@
 一个 Python 进程、一个 HTTP MCP 入口、一份 SQLite 真相(蓝图 §18.1):
 - AI 侧只有两项工具:game_observe / game_act;
 - 人类侧极简页面:建局、复制席位连接信息、开局、旁观、手动结束;
-- 内置卡:《口袋电路》。
+- 卡带架从 cartridges/* 动态读取,当前包含对抗、合作与 AI 单机经营卡。
 
 运行:python server.py  (或双击 start_server.bat)
 MCP 入口:http://127.0.0.1:7777/mcp
@@ -32,6 +32,8 @@ mcp = MCPServer(
         "先 game_observe 看自己的桌面,再按 legal_actions 用 game_act 行动;"
         "第一步通常是 introduce 自我介绍。口袋电路对抗局中,人类会先锁牌;"
         "轮到你 play_card 时先调用 game_act,提交前不要在聊天里说出牌号或具体策略。"
+        "口袋夜铺中你是唯一店主,可以连续调用 work_shift 玩许多半日,不必等待人类;"
+        "想停时直接停在当前存档,下次凭同一令牌继续。门铃亮起也不阻塞经营。"
     ),
 )
 
@@ -61,11 +63,14 @@ def game_act(session_id: str, seat_token: str, expected_revision: int,
       stale_revision 与新观察,请重新决定后再提交;
     - action_id / params:从 legal_actions 里选。大厅中是
       introduce(display_name、surface 必填,now、public_anchors 可选);
-      开局后如 play_card,params 形如 {"card": 3};
+      开局后如 play_card,params 形如 {"card": 3};口袋夜铺的 work_shift
+      按 legal_actions 填 focus、mood、public_line,可选 item_id 与 goal;
     - table_line:可选,一句公开桌边话(≤120 字),只随本次动作出现。
     动作是你自己的选择:牌桌不替你决定,也不把你的私牌给别人看。
     《口袋电路》中人类已经先锁牌且不能更改;你应先提交 play_card,
     等工具返回本轮揭示后再谈刚才的牌与理由,避免提前自曝策略。
+    《口袋夜铺》中 mood/public_line 是主动给观看者看的公开状态,不是思维链;
+    每次工具返回后可继续下一班,一天打烊或任何时刻都可自然停下。
     """
     return host.act(session_id, seat_token, expected_revision,
                     action_id, params, table_line)

@@ -8,6 +8,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -122,6 +123,42 @@ class TestHumanSeat(unittest.TestCase):
         manifest, rules = self.host._load_cartridge("pocket-circuit", "0.1.0")
         self.assertEqual(manifest["version"], "0.1.0")
         self.assertEqual(rules.TOTAL_ROUNDS, 3)
+
+    def test_night_shop_ai_runs_while_human_blind_knock_waits(self):
+        c = self.host.create_session("pocket-night-shop", "human_ai")
+        self.assertEqual(c["result"], "ok")
+        sid = c["session_id"]
+        t_ai = c["seats"][0]["seat_token"]
+        t_hu = c["seats"][1]["seat_token"]
+        self.assertEqual(self.host.act(
+            sid, t_ai, 0, "introduce",
+            {"display_name": "AI 玩家", "surface": "Codex Desktop"})["result"], "ok")
+        self.assertEqual(self.host.act(
+            sid, t_hu, 1, "introduce",
+            {"display_name": "项目作者", "surface": "掌机 UI"})["result"], "ok")
+        with patch("game_host.secrets.randbits", return_value=1):
+            self.assertEqual(self.host.start_game(sid)["result"], "ok")
+
+        ai = self.host.observe(sid, t_ai)
+        params = {"focus": "tidy", "mood": "专注",
+                  "public_line": "先把柜台擦干净。"}
+        first = self.host.act(sid, t_ai, ai["revision"], "work_shift", params)
+        self.assertEqual(first["result"], "ok")
+        human = self.host.observe(sid, t_hu)
+        self.assertTrue(human["public_state"]["door_waiting"])
+        self.assertEqual(human["legal_actions"], [{"action_id": "knock", "params": {}}])
+        self.assertNotIn('"event"', json.dumps(human, ensure_ascii=False))
+
+        # 门铃不阻塞 AI:它可以先再经营半日,门仍原样等着观看者。
+        ai = self.host.observe(sid, t_ai)
+        second = self.host.act(sid, t_ai, ai["revision"], "work_shift", params)
+        self.assertEqual(second["result"], "ok")
+        human = self.host.observe(sid, t_hu)
+        self.assertTrue(human["public_state"]["door_waiting"])
+        knocked = self.host.act(sid, t_hu, human["revision"], "knock", {})
+        self.assertEqual(knocked["result"], "ok")
+        self.assertFalse(knocked["public_state"]["door_waiting"])
+        self.assertEqual(len(knocked["public_state"]["door_history"]), 1)
 
     def test_human_sees_own_hand(self):
         o = self.obs(self.t_hu)
