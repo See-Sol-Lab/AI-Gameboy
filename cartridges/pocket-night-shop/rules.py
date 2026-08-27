@@ -48,6 +48,32 @@ ITEMS = [
      "发条完全顺开后,铁皮鲸第一次没有叹气,而是唱出一小段潮声。"),
 ]
 
+ITEM_KINDS = {
+    "watch": "时间", "key": "归处", "scarf": "陪伴", "bird": "机械",
+    "letter": "记忆", "teacup": "日常", "camera": "记忆", "bell": "寻物",
+    "shoe": "远行", "seedbox": "生长", "lamp": "照明", "musicbox": "音乐",
+    "glove": "星图", "notebook": "账目", "buttonjar": "旧衣", "tinwhale": "机械",
+}
+
+CUSTOMERS = [
+    ("courier", "赶末班车的邮差", "想找一件能陪人走远路的旧物。",
+     "他把一张折过很多次的车票攥得很紧。", ["远行", "时间", "归处"], 10),
+    ("teacher", "退休的夜校老师", "想买一件还能留住声音或记忆的东西。",
+     "她问价前先数了三遍零钱,但没有嫌任何东西贵。", ["记忆", "音乐"], 8),
+    ("mechanic", "袖口沾油的修理工", "想看看这店里有没有真正古怪的机械。",
+     "他不爱寒暄,检查齿轮时却非常耐心。", ["机械", "寻物"], 13),
+    ("widow", "总带两把伞的老妇人", "想找一件适合空房间的日常旧物。",
+     "她只问东西修好后会不会太吵。", ["日常", "陪伴", "照明"], 9),
+    ("student", "住在阁楼的学生", "需要能帮自己记账、照明或继续生长的东西。",
+     "口袋里有奖学金信,鞋底却已经磨穿。", ["账目", "照明", "生长"], 7),
+    ("tailor", "戴圆眼镜的裁缝", "专门寻找与旧衣和手工有关的小东西。",
+     "他摸过布料边缘后,往往愿意为真正的旧工艺多付一点。", ["旧衣", "陪伴"], 11),
+    ("sailor", "很久没见海的水手", "想买一件能证明远方仍然存在的旧物。",
+     "他身上的硬币不多,却带着一枚可以抵价的银扣。", ["远行", "机械", "星图"], 9),
+    ("clerk", "从档案馆晚归的职员", "想找与时间、记录或失物有关的东西。",
+     "她知道旧物行情,但会为准确回答问题的店主放宽预算。", ["时间", "账目", "寻物"], 12),
+]
+
 AMBIENT = [
     "雨水顺着招牌滴成一条细线,有路人在橱窗前停了很久。",
     "街灯坏了一盏,今晚进门的客人都比平常更沉默。",
@@ -90,6 +116,7 @@ def _make_item(seed, serial, salt):
     return {
         "id": f"{code}_{serial}", "name": name, "story": story,
         "condition": condition, "value": value, "displayed": False,
+        "kind": ITEM_KINDS[code],
         "secret": None, "_secret": secret,
     }
 
@@ -108,12 +135,42 @@ def new_game(seats, seed):
         "public_line": None,
         "history": [], "diary": [],
         "door_signal": None, "door_count": 0, "door_history": [],
+        "customer": None, "customer_count": 0, "customer_book": {},
+        "weekly": [],
     }
     for index in range(3):
         state["item_counter"] += 1
         state["inventory"].append(
             _make_item(seed, state["item_counter"], f"start{index}"))
+    _ensure_state(state)
     return state
+
+
+def _ensure_state(s):
+    s.setdefault("customer", None)
+    s.setdefault("customer_count", 0)
+    s.setdefault("customer_book", {})
+    s.setdefault("weekly", [])
+    for item in s.get("inventory", []):
+        code = item["id"].rsplit("_", 1)[0]
+        item.setdefault("kind", ITEM_KINDS.get(code, "奇物"))
+    if s["customer"] is None:
+        _spawn_customer(s)
+
+
+def _spawn_customer(s):
+    n = _number(s["seed"], "customer", s["customer_count"], s["day"])
+    cid, name, request, clue, wants, base_budget = CUSTOMERS[n % len(CUSTOMERS)]
+    book = s["customer_book"].setdefault(
+        cid, {"id": cid, "name": name, "visits": 0, "deals": 0, "trust": 0})
+    book["visits"] += 1
+    budget = base_budget + (n // len(CUSTOMERS)) % 4 - 1 + book["trust"]
+    s["customer_count"] += 1
+    s["customer"] = {
+        "id": cid, "name": name, "request": request, "clue": clue,
+        "visits": book["visits"], "patience": 2,
+        "_wants": list(wants), "_budget": max(3, budget),
+    }
 
 
 def _item(s, item_id):
@@ -122,19 +179,25 @@ def _item(s, item_id):
 
 def _public_item(item):
     public = {key: deepcopy(item[key]) for key in
-              ("id", "name", "story", "condition", "value", "displayed")}
+              ("id", "name", "story", "condition", "value", "displayed", "kind")}
     if item.get("secret"):
         public["secret"] = item["secret"]
     return public
 
 
+def _public_customer(customer):
+    return {key: deepcopy(customer[key]) for key in
+            ("id", "name", "request", "clue", "visits", "patience")}
+
+
 def _legal_hint(s):
     items = [{"id": item["id"], "name": item["name"],
-              "condition": item["condition"], "value": item["value"],
+              "kind": item["kind"], "condition": item["condition"], "value": item["value"],
               "displayed": item["displayed"]} for item in s["inventory"]]
     return {
         "focus": f"必填:{FOCI} 之一",
         "item_id": f"sell/repair/curate 时必填,从库存选:{items}",
+        "asking_price": "sell 时必填:店主自己报一个正整数价格;客人的真实预算不可见",
         "mood": f"可选:{MOODS} 之一;真有感受时才更新公开心情灯",
         "public_line": "可选:店主真想公开说时写一句(1-80字);沉默完全合法",
         "goal": "可选:更新一个公开经营目标(1-60字)",
@@ -142,14 +205,18 @@ def _legal_hint(s):
 
 
 def observe(full_state, seat_id):
-    s = full_state
+    s = deepcopy(full_state)
     if seat_id not in s["seats"]:
         raise ValueError("未知席位")
+    _ensure_state(s)
     public = {
         "phase": s["phase"], "day": s["day"], "shift": SHIFTS[s["shift_index"]],
         "coins": s["coins"], "reputation": s["reputation"],
         "shop_level": s["shop_level"], "capacity": _capacity(s),
         "inventory": [_public_item(item) for item in s["inventory"]],
+        "customer": _public_customer(s["customer"]),
+        "customer_book": deepcopy(list(s["customer_book"].values())),
+        "weekly": deepcopy(s["weekly"][-8:]),
         "current_goal": s["current_goal"],
         "recent_history": deepcopy(s["history"][-10:]),
         "diary": deepcopy(s["diary"][-8:]),
@@ -180,6 +247,7 @@ def apply(full_state, seat_id, action_id, params):
         raise IllegalAction("未知席位")
     if s["phase"] != "playing":
         raise IllegalAction("本局已结束")
+    _ensure_state(s)
     params = params if isinstance(params, dict) else {}
     if action_id == "work_shift":
         if seat_id != s["shopkeeper"]:
@@ -211,7 +279,9 @@ def _work_shift(s, params):
         raise IllegalAction("goal 须是1到60字")
 
     before = {"coins": s["coins"], "reputation": s["reputation"]}
-    report = _do_focus(s, focus, params.get("item_id"))
+    report = _do_focus(s, focus, params.get("item_id"), params.get("asking_price"))
+    if s["customer"] is None:
+        _spawn_customer(s)
     ambient = AMBIENT[_number(s["seed"], "ambient", s["day"],
                               s["shift_index"]) % len(AMBIENT)]
     if mood is not None:
@@ -237,16 +307,45 @@ def _work_shift(s, params):
     })
 
 
-def _do_focus(s, focus, item_id):
+def _do_focus(s, focus, item_id, asking_price):
     item = _item(s, item_id)
     if focus in ("sell", "repair", "curate") and not item:
         raise IllegalAction(f"{focus} 须给出库存中的 item_id")
     if focus == "sell":
-        price = item["value"] + item["condition"] + s["shop_level"]
-        s["coins"] += price
-        s["reputation"] += 1
-        s["inventory"].remove(item)
-        return f"店主把「{item['name']}」交给了今晚的新主人,收入{price}枚硬币。"
+        if isinstance(asking_price, bool) or not isinstance(asking_price, int) \
+                or asking_price <= 0:
+            raise IllegalAction("sell 须给出正整数 asking_price")
+        customer = s["customer"]
+        book = s["customer_book"][customer["id"]]
+        if item["kind"] not in customer["_wants"]:
+            customer["patience"] -= 1
+            result = (f"{customer['name']}认真看过「{item['name']}」,说这不是自己在找的"
+                      f"那类东西。")
+            if customer["patience"] <= 0:
+                result += " 对方礼貌告辞,这次没有成交。"
+                s["customer"] = None
+            return result
+        if asking_price <= customer["_budget"]:
+            s["coins"] += asking_price
+            s["reputation"] += 1
+            s["inventory"].remove(item)
+            book["deals"] += 1
+            book["trust"] = min(5, book["trust"] + 1)
+            s["customer"] = None
+            result = (f"{customer['name']}接受了{asking_price}枚硬币的报价,"
+                      f"带走「{item['name']}」。")
+            if book["deals"] == 3:
+                result += " 这位客人已经把夜铺当成会再来的地方。"
+            return result
+        customer["patience"] -= 1
+        result = (f"{customer['name']}听完{asking_price}枚的报价后沉默了一会,"
+                  "东西是对的,价钱却还没谈拢。")
+        if customer["patience"] <= 0:
+            result += " 对方最终离开了夜铺。"
+            s["customer"] = None
+        else:
+            result += " 对方没有走,店主还有一次重新报价的机会。"
+        return result
     if focus == "repair":
         if item["condition"] >= 3:
             raise IllegalAction("这件旧物已经修到最好")
@@ -317,6 +416,13 @@ def _advance_time(s):
         "day": s["day"], "text": f"打烊时硬币{s['coins']}枚,声望{s['reputation']}。",
         "upkeep": paid,
     })
+    if s["day"] % 7 == 0:
+        s["weekly"].append({
+            "week": s["day"] // 7, "through_day": s["day"],
+            "coins": s["coins"], "reputation": s["reputation"],
+            "shop_level": s["shop_level"], "inventory": len(s["inventory"]),
+            "deals": sum(row["deals"] for row in s["customer_book"].values()),
+        })
     s["day"] += 1
     s["shift_index"] = 0
     return {"due": upkeep, "paid": paid}

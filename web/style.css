@@ -212,11 +212,22 @@ body {
   color: #4c563a; flex-wrap: wrap;
 }
 .night-day { font-size: 1.15rem; font-weight: 800; }
+.night-week {
+  margin-top: .45rem; padding: .35rem .55rem; border-radius: 7px;
+  background: rgba(111,122,138,.18); color: #4f5a68; font-size: .76rem;
+  text-align: center;
+}
 .night-goal {
   margin-top: .55rem; padding: .5rem .65rem; border-left: 4px solid #7d8663;
   background: rgba(243,236,216,.62); border-radius: 4px 9px 9px 4px;
   font-size: .84rem; color: #4c563a;
 }
+.night-customer {
+  margin-top: .55rem; padding: .6rem .7rem; border-radius: 10px;
+  background: rgba(226,216,184,.82); border: 1.5px solid #9a8f6d;
+  color: #4c563a; font-size: .84rem;
+}
+.night-customer-name { font-weight: 800; margin-bottom: .25rem; }
 .night-spotlight {
   margin-top: .65rem; padding: .75rem .8rem; border-radius: 11px;
   background: #eee5c9; border: 2px solid #9a8f6d;

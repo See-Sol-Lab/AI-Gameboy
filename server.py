@@ -64,7 +64,8 @@ def game_act(session_id: str, seat_token: str, expected_revision: int,
     - action_id / params:从 legal_actions 里选。大厅中是
       introduce(display_name、surface 必填,now、public_anchors 可选);
       开局后如 play_card,params 形如 {"card": 3};口袋夜铺的 work_shift
-      focus 必填,按需要填 item_id/goal;mood、public_line 完全可选,真想公开表达时才写;
+      focus 必填,按需要填 item_id/goal;sell 必须由店主填写 asking_price;
+      mood、public_line 完全可选,真想公开表达时才写;
     - table_line:可选,一句公开桌边话(≤120 字),只随本次动作出现。
     动作是你自己的选择:牌桌不替你决定,也不把你的私牌给别人看。
     《口袋电路》中人类已经先锁牌且不能更改;你应先提交 play_card,

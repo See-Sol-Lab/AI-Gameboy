@@ -38,6 +38,9 @@ class TestNightShop(unittest.TestCase):
         self.assertNotIn("mood", public)
         self.assertNotIn("public_line", public)
         self.assertNotIn("_secret", json.dumps(public, ensure_ascii=False))
+        self.assertTrue(public["customer"]["request"])
+        self.assertNotIn("_budget", json.dumps(public, ensure_ascii=False))
+        self.assertNotIn("_wants", json.dumps(public, ensure_ascii=False))
 
     def test_only_ai_operates_and_human_only_knocks(self):
         s = rules.new_game(SEATS, 5)
@@ -69,7 +72,7 @@ class TestNightShop(unittest.TestCase):
         self.assertIn("打烊维护应付3枚", s["history"][-1]["text"])
         self.assertEqual(s["history"][-1]["coins_delta"], -2)
 
-    def test_sell_repair_scavenge_and_curate(self):
+    def test_repair_scavenge_and_curate(self):
         s = rules.new_game(SEATS, 9)
         damaged = next(item for item in s["inventory"] if item["condition"] < 3)
         old_value = damaged["value"]
@@ -82,11 +85,39 @@ class TestNightShop(unittest.TestCase):
         count = len(s["inventory"])
         s = work(s, "scavenge")
         self.assertEqual(len(s["inventory"]), count + 1)
-        sell_id = next(x["id"] for x in s["inventory"] if not x["displayed"])
+
+    @staticmethod
+    def _state_with_matching_item():
+        for seed in range(100):
+            s = rules.new_game(SEATS, seed)
+            match = next((item for item in s["inventory"]
+                          if item["kind"] in s["customer"]["_wants"]), None)
+            if match:
+                return s, match
+        raise AssertionError("100个种子里没有顾客与初始旧物匹配")
+
+    def test_customer_hidden_budget_accepts_fair_offer_and_builds_trust(self):
+        s, item = self._state_with_matching_item()
+        customer_id = s["customer"]["id"]
         coins = s["coins"]
-        s = work(s, "sell", sell_id)
-        self.assertGreater(s["coins"], coins)
-        self.assertNotIn(sell_id, [x["id"] for x in s["inventory"]])
+        s = work(s, "sell", item["id"], asking_price=1)
+        self.assertEqual(s["coins"], coins + 1)
+        self.assertNotIn(item["id"], [x["id"] for x in s["inventory"]])
+        self.assertEqual(s["customer_book"][customer_id]["deals"], 1)
+        self.assertEqual(s["customer_book"][customer_id]["trust"], 1)
+        self.assertIn("接受了1枚硬币的报价", s["history"][-1]["text"])
+
+    def test_customer_rejects_high_offer_without_revealing_budget(self):
+        s, item = self._state_with_matching_item()
+        customer_id = s["customer"]["id"]
+        hidden_budget = s["customer"]["_budget"]
+        s = work(s, "sell", item["id"], asking_price=hidden_budget + 10)
+        self.assertEqual(s["customer"]["id"], customer_id)
+        self.assertEqual(s["customer"]["patience"], 1)
+        self.assertIn(item["id"], [x["id"] for x in s["inventory"]])
+        public = json.dumps(rules.observe(s, "seat_a"), ensure_ascii=False)
+        self.assertNotIn('"_budget"', public)
+        self.assertIn("还有一次重新报价", s["history"][-1]["text"])
 
     def test_completed_repair_reveals_engine_secret_only_after_completion(self):
         s = rules.new_game(SEATS, 14)
@@ -151,6 +182,8 @@ class TestNightShop(unittest.TestCase):
         self.assertEqual(s["day"], 31)
         self.assertEqual(len(s["diary"]), 30)
         self.assertEqual(len(s["history"]), 60)
+        self.assertEqual(len(s["weekly"]), 4)
+        self.assertEqual(s["weekly"][0]["through_day"], 7)
         self.assertEqual(rules.observe(s, "seat_a")["legal_actions"][0]["action_id"],
                          "work_shift")
 

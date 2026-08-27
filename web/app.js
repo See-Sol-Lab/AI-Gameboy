@@ -448,6 +448,7 @@ const CART_UI = {
         <div class="item-card night-item ${item.displayed ? "displayed" : ""}">
           <div class="it-name">${item.displayed ? "◇ " : ""}${esc(item.name)}</div>
           <div class="it-tags">
+            <span class="chip">${esc(item.kind)}</span>
             <span class="chip">修复 ${item.condition}/3</span>
             <span class="chip">估值 ${item.value}</span>
           </div>
@@ -468,6 +469,18 @@ const CART_UI = {
         </div>`).join("");
       const doors = (ps.door_history || []).slice(-2).map((entry) => `
         <div>🚪 ${esc(entry.text)}</div>`).join("");
+      const customer = ps.customer ? `
+        <div class="night-customer">
+          <div class="night-customer-name">今夜来客 · ${esc(ps.customer.name)}
+            <span class="chip">第${ps.customer.visits}次来店</span></div>
+          <div>${esc(ps.customer.request)}</div>
+          <div class="dim">可观察到:${esc(ps.customer.clue)}</div>
+          <div class="dim">耐心:${"●".repeat(ps.customer.patience)}${"○".repeat(2 - ps.customer.patience)}</div>
+        </div>` : "";
+      const relations = (ps.customer_book || []).map((row) => `
+        <div class="night-log"><span>${esc(row.name)}</span>
+          <span>来过${row.visits}次 · 成交${row.deals}次 · 信任${row.trust}</span></div>`).join("");
+      const week = (ps.weekly || []).slice(-1)[0];
       return `
         <div class="night-owner">${esc(keeper.display_name || "AI 店主")} 的夜铺</div>
         <div class="night-dashboard">
@@ -475,7 +488,10 @@ const CART_UI = {
           <div>硬币 <strong>${ps.coins}</strong> · 声望 <strong>${ps.reputation}</strong> ·
             店铺 ${ps.shop_level}级 · 库存 ${(ps.inventory || []).length}/${ps.capacity}</div>
         </div>
+        ${week ? `<div class="night-week">第 ${week.week} 周账 · 经过第${week.through_day}日 ·
+          成交${week.deals}次 · 硬币${week.coins} · 声望${week.reputation}</div>` : ""}
         <div class="night-goal">店主眼下想做:${esc(ps.current_goal)}</div>
+        ${customer}
         ${active ? `<div class="night-spotlight">
           <div class="night-replay-label">${replaying ? "显示器正在回放" : "本班刚刚发生"} ·
             第${active.day}日 ${esc(active.shift)}
@@ -489,6 +505,7 @@ const CART_UI = {
         <div class="night-section-title">橱窗与货架</div>
         <div class="night-inventory">${inventory || '<div class="empty-hint">货架空了</div>'}</div>
         ${logs ? `<details class="night-history"><summary>最近五班经营记录</summary>${logs}</details>` : ""}
+        ${relations ? `<details class="night-history"><summary>顾客簿</summary>${relations}</details>` : ""}
         ${doors ? `<div class="report night-door-result">${doors}</div>` : ""}
         ${ps.door_waiting ? '<div class="start-hint ready">门外似乎有什么动静……</div>' : ""}`;
     },
