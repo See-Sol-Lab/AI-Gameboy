@@ -214,12 +214,44 @@ def _p_identities(ctx):
 注意:kind 字段只能从给定菜单里选,机制预算因此天然一致;你的发挥全在文案里。"""
 
 
+def _p_milestones(ctx):
+    return f"""把两位玩家亲自选择的目标各拆成2到3步里程碑。
+世界背景:{json.dumps(ctx['world'], ensure_ascii=False)}
+玩家目标:{json.dumps(ctx['goals'], ensure_ascii=False)}
+剧情规模={ctx['scope']}({ctx.get('scope_intensity') or '按该规模克制'})。
+
+只输出这个 JSON:
+{{"tracks":[逐席各一条,每条 {{"seat":"照抄玩家目标里的席位",
+ "milestones":[2到3步,按先后排序,每步 {{"id":"本席内唯一的英文短名",
+ "text":"一句可判定的阶段目标,不超过40字"}}]}}]}}
+铁律:
+- 每一步只许一个可验收结果,禁止用“或”并列备选;
+- 里程碑只拆玩家宣告的目标,不得偷偷改成世界背景线的任务;
+- 每一步规模不得超过剧情规模,小事不许膨胀成大阴谋;
+- 两席选了同一个目标也各自成轨,允许内容相同。"""
+
+
 def _p_scene(ctx):
     w = ctx["world"]
     last = "\n".join(ctx["last_report"]) if ctx.get("last_report") else "(这是第一幕)"
-    ms = "".join(f"\n- [{'✓已达成' if m['done'] else '未达成'}] {m['text']}"
-                 for m in ctx.get("milestones", []))
-    cur = ctx.get("current_milestone")
+    if "player_goals" in ctx:
+        goal_lines = []
+        for goal in ctx["player_goals"]:
+            goal_lines.append(f"\n- {goal['identity']}({goal['seat']})的目标:{goal['text']}")
+            goal_lines.extend(
+                f"\n  [{'✓已达成' if m['done'] else '未达成'}] {m['text']}"
+                for m in goal["milestones"])
+        goal_contract = ("玩家目标与里程碑账本(已达成的绝不能推翻或重考):"
+                         f"{''.join(goal_lines) or '(无)'}\n"
+                         "本幕危机应让两位玩家都有机会推进各自尚未完成的里程碑;"
+                         "世界背景线只在远处自走,不得把它写成强制任务。")
+    else:
+        milestones = "".join(
+            f"\n- [{'✓已达成' if m['done'] else '未达成'}] {m['text']}"
+            for m in ctx.get("milestones", []))
+        goal_contract = ("里程碑账本(已达成的绝不能推翻或重考):"
+                         f"{milestones or '(无)'}\n本幕危机必须服务于当前里程碑:"
+                         f"{ctx.get('current_milestone') or '全部已达成,收束'}")
     chron = ""
     if ctx.get("chronicle_now"):
         chron = f"""
@@ -280,10 +312,10 @@ kind 只能是:answered(如实作答)/lied(按此人立场撒谎)/refused(拒答
 状态变化(说了新话/做了新事/处境变了)。没有新变化就别让他出场——
 反复渲染同一个神秘姿势("他似乎知道些什么")是禁手,人物每次露面都要往前走一步。"""
     thread = w.get("world_thread", w.get("public_goal", ""))
+    thread_name = "世界背景线" if "world_thread" in w else "世界目标"
     return f"""为《{w['world_name']}》生成第 {ctx['scene_index']} 幕场景。
-世界背景线:{thread}
-里程碑账本(已达成的绝不能推翻或重考):{ms or "(无)"}
-本幕危机必须服务于当前里程碑:{cur or "全部已达成,收束"}{chron}{npc}{inter}{recur}
+{thread_name}:{thread}
+{goal_contract}{chron}{npc}{inter}{recur}
 世界法则:{'; '.join(w['laws'])}
 时钟含义:{w.get('clock_text') or "时钟走满,这段故事就到站"}
 当前账本:{json.dumps(ctx['tracks'], ensure_ascii=False)}
@@ -357,7 +389,8 @@ def _p_ending(ctx):
 
 
 PROMPTS = {"gen_world": _p_world, "gen_identities": _p_identities,
-           "gen_scene": _p_scene, "render_ending": _p_ending}
+           "gen_milestones": _p_milestones, "gen_scene": _p_scene,
+           "render_ending": _p_ending}
 
 
 # ---------------- 校验器 ----------------
@@ -369,7 +402,8 @@ def _req(cond, msg):
 
 def _v_world(d, ctx=None):
     _req(isinstance(d, dict), "世界卡须是对象")
-    crossing = "engine" in ((ctx or {}).get("axes") or {}) or \
+    axes = (ctx or {}).get("axes")
+    crossing = "engine" in axes if axes is not None else \
         "world_thread" in d or "goal_menu" in d
     target_fields = ("world_thread", "goal_menu") if crossing else \
         ("public_goal", "milestones")
@@ -496,6 +530,34 @@ def _v_identities(d, ctx=None):
              all(u in INTENTS for u in item["use"]), "物品 use 非法")
 
 
+def _v_milestones(d, ctx=None):
+    tracks = d.get("tracks") if isinstance(d, dict) else None
+    _req(isinstance(tracks, list), "gen_milestones 须返回 tracks")
+    expected = {g["seat"] for g in (ctx or {}).get("goals", [])}
+    seats = set()
+    for track in tracks:
+        _req(isinstance(track, dict) and track.get("seat"), "track 缺 seat")
+        seat = track["seat"]
+        _req(seat not in seats, f"track seat 重复:{seat}")
+        seats.add(seat)
+        milestones = track.get("milestones")
+        _req(isinstance(milestones, list) and 2 <= len(milestones) <= 3,
+             f"{seat} 的 milestones 须是2到3步")
+        mids = set()
+        for milestone in milestones:
+            _req(isinstance(milestone, dict) and milestone.get("id")
+                 and milestone.get("text"), f"{seat} 的 milestone 缺字段")
+            _req(milestone["id"] not in mids, f"{seat} 的 milestone id 重复")
+            _req(isinstance(milestone["text"], str)
+                 and len(milestone["text"]) <= 40,
+                 f"{seat} 的 milestone text 须不超过40字")
+            _req("或" not in milestone["text"],
+                 f"milestone 含备选写法『或』:{milestone['text']}")
+            mids.add(milestone["id"])
+    if expected:
+        _req(seats == expected, f"tracks 席位须恰好是:{sorted(expected)}")
+
+
 def _v_scene(d, ctx=None):
     for k in ("title", "text", "crisis", "objects"):
         _req(k in d, f"场景缺字段 {k}")
@@ -541,4 +603,5 @@ def _v_ending(d, ctx=None):
 
 
 VALIDATORS = {"gen_world": _v_world, "gen_identities": _v_identities,
-              "gen_scene": _v_scene, "render_ending": _v_ending}
+              "gen_milestones": _v_milestones, "gen_scene": _v_scene,
+              "render_ending": _v_ending}

@@ -8,7 +8,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import narrator  # noqa: E402
-from test_pocket_crossing import FIX_WORLD, FIX_IDENTITIES, fix_scene  # noqa: E402
+from test_pocket_crossing import (FIX_WORLD, FIX_IDENTITIES,
+                                  FIX_MILESTONES, fix_scene)  # noqa: E402
 
 
 class TestValidators(unittest.TestCase):
@@ -18,7 +19,15 @@ class TestValidators(unittest.TestCase):
         world.pop("milestones")
         narrator.VALIDATORS["gen_world"](
             world, {"axes": {"engine": "误入秘境"}})
+        tabletop_world = copy.deepcopy(FIX_WORLD)
+        tabletop_world.pop("world_thread")
+        tabletop_world.pop("goal_menu")
+        narrator.VALIDATORS["gen_world"](
+            tabletop_world, {"axes": {"form": "古典跑团"}})
         narrator.VALIDATORS["gen_identities"](copy.deepcopy(FIX_IDENTITIES))
+        narrator.VALIDATORS["gen_milestones"](
+            copy.deepcopy(FIX_MILESTONES),
+            {"goals": [{"seat": "seat_a"}, {"seat": "seat_b"}]})
         narrator.VALIDATORS["gen_scene"](fix_scene(1))
         narrator.VALIDATORS["render_ending"]({"text": "结局" * 20})
 
@@ -49,6 +58,15 @@ class TestValidators(unittest.TestCase):
         ids[1]["starting_item"]["use"] = ["fly"]
         self.bad("gen_identities", ids)
         self.bad("gen_identities", FIX_IDENTITIES[:5])  # 数量不对
+
+    def test_milestones_reject_disjunction_and_wrong_seats(self):
+        ctx = {"goals": [{"seat": "seat_a"}, {"seat": "seat_b"}]}
+        data = copy.deepcopy(FIX_MILESTONES)
+        data["tracks"][0]["milestones"][0]["text"] = "找到遗稿或信物"
+        self.bad("gen_milestones", data, ctx)
+        data = copy.deepcopy(FIX_MILESTONES)
+        data["tracks"].pop()
+        self.bad("gen_milestones", data, ctx)
 
     def test_scene_rejects(self):
         sc = fix_scene(1)

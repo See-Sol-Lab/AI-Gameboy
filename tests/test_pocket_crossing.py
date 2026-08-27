@@ -100,6 +100,17 @@ FIX_IDENTITIES = [
      "starting_item": {"id": "dice", "name": "骰子", "use": ["advance", "confront"]}},
 ]
 
+FIX_MILESTONES = {"tracks": [
+    {"seat": "seat_a", "milestones": [
+        {"id": "m1", "text": "通过第一道断言闸机"},
+        {"id": "m2", "text": "抵达城心的绿色对勾"},
+    ]},
+    {"seat": "seat_b", "milestones": [
+        {"id": "m1", "text": "问清巡检值守的缘故"},
+        {"id": "m2", "text": "替巡检补全值守记录"},
+    ]},
+]}
+
 
 def fix_scene(n):
     return {"title": f"第{n}号街", "text": "断言街上一切照旧,巡检在拐角打盹。",
@@ -117,6 +128,10 @@ def feed(s):
             data = FIX_WORLD
         elif kind == "gen_identities":
             data = FIX_IDENTITIES
+        elif kind == "gen_milestones":
+            wanted = {g["seat"] for g in s["narration_request"]["context"]["goals"]}
+            data = {"tracks": [t for t in FIX_MILESTONES["tracks"]
+                               if t["seat"] in wanted]}
         elif kind == "gen_scene":
             data = fix_scene(s["scene_index"] + 1)
             # NPC响应协议:欠着回应债就按合同清偿
@@ -136,6 +151,8 @@ def setup_playing(seed=1):
     for seat in SEATS:
         s = rules.apply(s, seat, "choose_identity",
                         {"identity_id": s["identity_offers"][seat][0]})
+    s = rules.apply(s, "seat_a", "choose_goal", {"goal_id": "clear_assertions"})
+    s = rules.apply(s, "seat_b", "choose_goal", {"goal_id": "help_patrol"})
     return feed(s)
 
 
@@ -163,6 +180,47 @@ class TestNarrationFlow(unittest.TestCase):
                                {"kind": "gen_identities", "data": FIX_IDENTITIES})
         self.assertEqual(s["stage"], "identity")
         self.assertIsNone(s["narration_request"])
+        for seat in SEATS:
+            s = rules.apply(s, seat, "choose_identity",
+                            {"identity_id": s["identity_offers"][seat][0]})
+        self.assertEqual(s["stage"], "goal")
+        s = rules.apply(s, "seat_a", "choose_goal", {"goal_id": "clear_assertions"})
+        self.assertEqual(s["stage"], "goal")
+        s = rules.apply(s, "seat_b", "choose_goal", {"custom_text": "守完本街夜班"})
+        self.assertEqual(s["stage"], "milestonegen")
+        self.assertEqual(s["narration_request"]["kind"], "gen_milestones")
+        self.assertEqual({g["seat"] for g in s["narration_request"]["context"]["goals"]},
+                         set(SEATS))
+
+    def test_goal_choice_validation_and_private_progress(self):
+        s = feed(rules.new_game(SEATS, 2))
+        for seat in SEATS:
+            s = rules.apply(s, seat, "choose_identity",
+                            {"identity_id": s["identity_offers"][seat][0]})
+        with self.assertRaises(rules.IllegalAction):
+            rules.apply(s, "seat_a", "choose_goal", {"custom_text": "长" * 41})
+        with self.assertRaises(rules.IllegalAction):
+            rules.apply(s, "seat_a", "choose_goal", {"goal_id": "not_on_menu"})
+        s = rules.apply(s, "seat_a", "choose_goal", {"goal_id": "clear_assertions"})
+        own = rules.observe(s, "seat_a")["private_state"]["player_goals"]
+        self.assertEqual(own[-1]["text"], "通过本街区的全部断言")
+        self.assertEqual(own[-1]["milestones_done"], [])
+
+    def test_crossing_world_keeps_no_world_milestones(self):
+        s = setup_playing(3)
+        self.assertNotIn("public_goal", s["world"])
+        self.assertNotIn("milestones", s["world"])
+        self.assertTrue(all(g["milestones"] for goals in s["player_goals"].values()
+                            for g in goals))
+
+    def test_observe_old_state_without_goal_fields(self):
+        s = setup_playing(4)
+        s.pop("player_goals")
+        s["world"]["public_goal"] = s["world"].pop("world_thread")
+        s["world"].pop("goal_menu")
+        observed = rules.observe(s, "seat_a")
+        self.assertEqual(observed["private_state"]["player_goals"], [])
+        self.assertTrue(observed["public_state"]["world"]["world_thread"])
 
     def test_axes_deterministic(self):
         self.assertEqual(rules.new_game(SEATS, 5)["axes"],
@@ -288,14 +346,19 @@ class TestHiddenAndEndings(unittest.TestCase):
         """主线达成后继续到第10幕,余下回合可探索支线。"""
         s = setup_playing(42)
         guard = 0
-        while not s.get("main_goal_locked") and guard < 20:
-            guard += 1
-            for seat in SEATS:
-                if s.get("narration_request"):
-                    break
-                s = rules.apply(s, seat, "commit",
-                                {"intent": "advance", "action": "冲阵"})
-            s = feed(s)
+        orig = rules._die
+        rules._die = lambda st: 8
+        try:
+            while not s.get("main_goal_locked") and guard < 20:
+                guard += 1
+                for seat in SEATS:
+                    if s.get("narration_request"):
+                        break
+                    s = rules.apply(s, seat, "commit",
+                                    {"intent": "advance", "action": "冲阵"})
+                s = feed(s)
+        finally:
+            rules._die = orig
         self.assertTrue(s["main_goal_locked"])
         self.assertEqual(s["progress"], 10)
         self.assertEqual(s["phase"], "playing")

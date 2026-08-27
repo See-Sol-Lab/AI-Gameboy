@@ -176,6 +176,7 @@ def new_game(seats, seed):
         "identity_pool": None,
         "identity_offers": {},
         "identities": {seats[0]: None, seats[1]: None},
+        "player_goals": {seats[0]: [], seats[1]: []},
         "scene_index": 0,
         "current_scene": None,
         "clock": 0, "progress": 0, "danger": 0, "synergy": 0,
@@ -264,8 +265,9 @@ def apply_system(full_state, action_id, payload):
     if kind == "gen_world":
         data = dict(data)
         data["power_level"] = s["axes"]["power"]   # 常量由引擎注入,不劳荷官复读
+        data.pop("public_goal", None)    # 测试固定样本兼供经典跑团,穿越卡不留旧合同
+        data.pop("milestones", None)
         s["world"] = data
-        s["milestones_done"] = []
         s["facts"] = list(data["opening_facts"])
         # 支线暗典入库:谜底与登场窗口只有引擎知道,悬事 = 谜题原句
         quests = []
@@ -292,6 +294,15 @@ def apply_system(full_state, action_id, payload):
                                 s["seats"][1]: order[2:4]}
         s["narration_request"] = None
         s["stage"] = "identity"
+    elif kind == "gen_milestones":
+        for track in data["tracks"]:
+            goal = _active_goal(s, track["seat"])
+            goal["milestones"] = deepcopy(track["milestones"])
+            goal["milestones_done"] = []
+            goal["goal_locked"] = False
+        s["stage"] = "scenegen"
+        s["narration_request"] = {"kind": "gen_scene",
+                                  "context": _scene_context(s, None)}
     elif kind == "gen_scene":
         new_idx = s["scene_index"] + 1
         # NPC响应入账:荷官清偿的回应债成为既成事实,后续幕与结局都看得见
@@ -349,20 +360,58 @@ def _world_brief(s):
     w = s["world"]
     return {"world_name": w["world_name"], "premise": w["premise"],
             "lore": w["lore"], "power_level": w["power_level"],
-            "world_thread": w["world_thread"],
+            "world_thread": w.get("world_thread", w.get("public_goal", "")),
+            "goal_menu": deepcopy(w.get("goal_menu", [])),
             "clock_text": w.get("clock_text"),
             "laws": [_law_gloss(l) for l in w["laws"]]}
 
 
+def _active_goal(s, seat_id):
+    for goal in reversed((s.get("player_goals") or {}).get(seat_id, [])):
+        if not goal.get("abandoned"):
+            return goal
+    return None
+
+
 def _milestones(s):
-    return (s["world"] or {}).get("milestones", [])
+    milestones = []
+    for seat in s["seats"]:
+        goal = _active_goal(s, seat)
+        if not goal:
+            continue
+        for milestone in goal.get("milestones", []):
+            item = dict(milestone)
+            item["seat"] = seat
+            milestones.append(item)
+    return milestones
 
 
 def _current_milestone(s):
-    for m in _milestones(s):
-        if m["id"] not in s.get("milestones_done", []):
-            return m
+    for seat in s["seats"]:
+        goal = _active_goal(s, seat)
+        if not goal:
+            continue
+        for milestone in goal.get("milestones", []):
+            if milestone["id"] not in goal.get("milestones_done", []):
+                item = dict(milestone)
+                item["seat"] = seat
+                return item
     return None
+
+
+def _request_milestones(s, seats):
+    goals = []
+    for seat in seats:
+        goal = _active_goal(s, seat)
+        goals.append({"seat": seat,
+                      "identity": _identity(s, s["identities"][seat])["name"],
+                      "text": goal["text"]})
+    s["stage"] = "milestonegen"
+    s["narration_request"] = {"kind": "gen_milestones", "context": {
+        "world": _world_brief(s), "goals": goals,
+        "scope": s["axes"]["scope"],
+        "scope_intensity": SCOPE_INTENSITY[s["axes"]["scope"]],
+    }}
 
 
 def _scene_context(s, last_report):
@@ -377,7 +426,8 @@ def _scene_context(s, last_report):
         pacing = (f"余波幕:公开目标已经达成,主线结局已锁定。还可行动{remaining}幕;"
                   "余下的戏全在支线:未解悬事的答案早已写在暗典里,由引擎按解锁条件揭示,"
                   "你不负责回答也不负责加谜——只推演现场。承认主线成果,不要再制造新的主线门槛。")
-    elif s["progress"] >= 8 or (cur and ms and cur is ms[-1]):
+    elif s["progress"] >= 8 or (cur and ms and cur["seat"] == ms[-1]["seat"]
+                                and cur["id"] == ms[-1]["id"]):
         pacing = "决胜幕:终点已在眼前,本幕危机必须是通往目标的最后一道阻碍,不得新增支线人物或新谜团。"
     elif s["clock"] >= 6:
         pacing = "收束幕:时间无多,收拢已有线索,不再展开新方向。"
@@ -395,10 +445,15 @@ def _scene_context(s, last_report):
         "open_questions": [q["question"] for q in s.get("side_quests") or []
                            if q["status"] == "open"],
         "pacing": pacing,
-        "milestones": [{"text": m["text"],
-                        "done": m["id"] in s.get("milestones_done", [])}
-                       for m in _milestones(s)],
-        "current_milestone": cur["text"] if cur else None,
+        "player_goals": [
+            {"seat": seat,
+             "identity": _identity(s, s["identities"][seat])["name"],
+             "text": goal["text"],
+             "milestones": [
+                 {"id": m["id"], "text": m["text"],
+                  "done": m["id"] in goal.get("milestones_done", [])}
+                 for m in goal.get("milestones", [])]}
+            for seat in s["seats"] if (goal := _active_goal(s, seat))],
         "chronicle_now": chronicle_now,
         "world": _world_brief(s),
         "scene_index": s["scene_index"] + 1,
@@ -492,6 +547,7 @@ def observe(full_state, seat_id):
     private = {
         "identity_offers": offers,
         "secret_drive": my_drive,
+        "player_goals": deepcopy((s.get("player_goals") or {}).get(seat_id, [])),
         "my_pending": deepcopy(s["pending"].get(seat_id)),
         "prophecies": deepcopy(s.get("prophecies", {}).get(seat_id, [])),
     }
@@ -505,6 +561,14 @@ def observe(full_state, seat_id):
                 legal = [{"action_id": "choose_identity",
                           "params": {"identity_id":
                                      f"暗选其一:{s['identity_offers'][seat_id]}"}}]
+        elif s["stage"] == "goal":
+            waiting = [x for x in s["seats"] if not _active_goal(s, x)]
+            if seat_id in waiting:
+                menu = [g["id"] for g in (s["world"] or {}).get("goal_menu", [])]
+                legal = [{"action_id": "choose_goal", "params": {
+                    "goal_id": f"从菜单选一个:{menu}",
+                    "custom_text": "或自定义一个可判定目标(≤40字)",
+                }}]
         elif s["stage"] == "scene":
             waiting = [x for x in s["seats"] if x not in s["pending"]]
             if seat_id in waiting:
@@ -551,6 +615,8 @@ def apply(full_state, seat_id, action_id, params):
     params = params if isinstance(params, dict) else {}
     if action_id == "choose_identity":
         _apply_identity(s, seat_id, params)
+    elif action_id == "choose_goal":
+        _apply_goal(s, seat_id, params)
     elif action_id == "commit":
         _apply_commit(s, seat_id, params)
     else:
@@ -571,9 +637,35 @@ def _apply_identity(s, seat_id, params):
     if all(s["identities"].values()):
         names = [_identity(s, s["identities"][x])["name"] for x in s["seats"]]
         s["facts"].append(f"{names[0]}与{names[1]}在这个陌生的世界里认出了彼此。")
-        s["stage"] = "scenegen"
-        s["narration_request"] = {"kind": "gen_scene",
-                                  "context": _scene_context(s, None)}
+        s["stage"] = "goal"
+
+
+def _apply_goal(s, seat_id, params):
+    if s["stage"] != "goal":
+        raise IllegalAction("现在不是选择目标的时候")
+    if _active_goal(s, seat_id):
+        raise IllegalAction("你已经选过目标了")
+    goal_id = params.get("goal_id")
+    custom = params.get("custom_text")
+    if bool(goal_id) == bool(custom):
+        raise IllegalAction("goal_id 与 custom_text 须且只能填一个")
+    if goal_id:
+        picked = next((g for g in s["world"].get("goal_menu", [])
+                       if g["id"] == goal_id), None)
+        if not picked:
+            raise IllegalAction("goal_id 不在目标菜单里")
+        text = picked["text"]
+    else:
+        if not isinstance(custom, str) or not custom.strip() or len(custom.strip()) > 40:
+            raise IllegalAction("custom_text 须是1到40字")
+        text = custom.strip()
+        goal_id = f"custom_{len(s['player_goals'][seat_id]) + 1}"
+    s["player_goals"][seat_id].append({
+        "id": goal_id, "text": text, "abandoned": False,
+        "goal_locked": False, "milestones": [], "milestones_done": [],
+    })
+    if all(_active_goal(s, seat) for seat in s["seats"]):
+        _request_milestones(s, s["seats"])
 
 
 def _apply_commit(s, seat_id, params):
@@ -957,7 +1049,10 @@ def _resolve(s):
     # 里程碑判定:任一玩家本幕成功 → 当前里程碑达成;全部达成 → 锁定主线结局
     cur = _current_milestone(s)
     if cur and any(t in ("success", "critical_success") for t in tiers.values()):
-        s["milestones_done"].append(cur["id"])
+        goal = _active_goal(s, cur["seat"])
+        goal["milestones_done"].append(cur["id"])
+        if len(goal["milestones_done"]) == len(goal["milestones"]):
+            goal["goal_locked"] = True
         s["progress"] = min(10, s["progress"] + 2)
         s["facts"].append(f"里程碑达成:{cur['text']}")
         report.append(f"◆ 里程碑达成:{cur['text']}(进度+2)")
