@@ -32,6 +32,9 @@ class TestValidators(unittest.TestCase):
         w = copy.deepcopy(FIX_WORLD)
         w["hidden_threads"][0]["required"] = {"vibes": "good"}
         self.bad("gen_world", w)                       # 暗线条件不结构化
+        w = copy.deepcopy(FIX_WORLD)
+        w["milestones"][0]["text"] = "找到纸翁的遗稿或信物"
+        self.bad("gen_world", w)                       # 里程碑禁『或』字后门(早期测试局验尸)
         # power_level 已改为引擎按种子注入,荷官不写不算错
 
     def test_identities_reject_off_menu(self):
@@ -50,6 +53,44 @@ class TestValidators(unittest.TestCase):
         sc = fix_scene(1)
         del sc["objects"]
         self.bad("gen_scene", sc)
+
+    def badc(self, kind, data, ctx):
+        with self.assertRaises(narrator.NarratorError):
+            narrator.VALIDATORS[kind](data, ctx)
+
+    def test_scene_response_debt_enforced(self):
+        """NPC响应协议:欠债不还/枚举非法/内容太空,一律废稿。"""
+        ctx = {"pending_interactions": [
+            {"object_id": "patrol", "object_name": "巡检",
+             "by": "失物招领员", "action": "盘问", "tier": "success"}]}
+        good = fix_scene(2)
+        good["npc_responses"] = [{"object_id": "patrol", "kind": "refused",
+                                  "detail": "巡检说职责所限,不能透露布防。"}]
+        narrator.VALIDATORS["gen_scene"](good, ctx)          # 合格样稿放行
+        self.badc("gen_scene", fix_scene(2), ctx)            # 没交 npc_responses
+        sc = fix_scene(2)
+        sc["npc_responses"] = [{"object_id": "patrol", "kind": "ignored",
+                                "detail": "他没理会。"}]
+        self.badc("gen_scene", sc, ctx)                      # 枚举外的 kind
+        sc = fix_scene(2)
+        sc["npc_responses"] = [{"object_id": "patrol", "kind": "answered",
+                                "detail": "嗯"}]
+        self.badc("gen_scene", sc, ctx)                      # 回应没有实质内容
+        sc = fix_scene(2)
+        sc["npc_responses"] = [{"object_id": "gate", "kind": "answered",
+                                "detail": "闸机嗡嗡作响地回答了。"}]
+        self.badc("gen_scene", sc, ctx)                      # 债主没对上,装聋
+
+    def test_scene_recurring_npc_needs_change(self):
+        """刷脸铁律:登场过的对象再出现必须带 change,否则废稿。"""
+        ctx = {"recurring_npcs": [{"name": "巡检", "appearances": 2,
+                                   "last_scene": 2, "last_note": None}]}
+        self.badc("gen_scene", fix_scene(3), ctx)            # 巡检再登场却无 change
+        sc = fix_scene(3)
+        for o in sc["objects"]:
+            if o["name"] == "巡检":
+                o["change"] = "巡检换了岗,眼神比昨天更疲惫。"
+        narrator.VALIDATORS["gen_scene"](sc, ctx)            # 带变化即放行
 
     def test_ending_rejects(self):
         self.bad("render_ending", {"text": "太短"})

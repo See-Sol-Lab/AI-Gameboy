@@ -682,6 +682,8 @@ const CART_UI = {
       const ready = S.pc.intent && S.pc.intent !== "end";
       const prophecies = (mine.private_state.prophecies || []).map((p) =>
         `<div class="mem-line">📜 ${esc(p)}</div>`).join("");
+      const npcOpt = la.params && la.params.target ? `
+        <label class="dim"><input type="checkbox" id="pc-npc"> ${esc(la.params.target)}</label>` : "";
       return `<div class="my-panel">
         <div class="dim center">🤫 你的私密目标:${esc(mine.private_state.secret_drive || "")}</div>
         ${prophecies ? `<div class="report">${prophecies}
@@ -692,6 +694,7 @@ const CART_UI = {
             placeholder="必填:这一步你具体怎么做(自由描述)">
           <select id="pc-item"><option value="">不动用物品</option>${itemOpts}</select>
           <input id="pc-line" maxlength="60" placeholder="桌边留言(可空)">
+          ${npcOpt}
           <button class="soft focusable" data-act="pc-submit"
             ${S.pc.intent ? "" : "disabled"}>确认暗投</button>
         </div>
@@ -743,6 +746,9 @@ const CART_UI = {
     memorial(v) { return { rounds: "", champ: "", scoreLine: "" }; },
   },
 };
+
+// 《口袋跑团》是《口袋穿越》分家出的经典骨架卡:对外状态与动作协议同构,直接共用界面
+CART_UI["pocket-tabletop"] = CART_UI["pocket-crossing"];
 
 /* ---------------- 纪念卡 ---------------- */
 
@@ -865,6 +871,7 @@ async function pcSubmit() {
   if (item) params.item_id = item;
   const line = (document.getElementById("pc-line")?.value || "").trim();
   if (line) params.line = line;
+  if (document.getElementById("pc-npc")?.checked) params.target = "npc";
   const r = await humanAct("commit", params);
   if (r && r.result === "ok") S.pc = { intent: null };
 }

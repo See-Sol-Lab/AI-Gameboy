@@ -758,7 +758,10 @@ def _resolve(s):
             if not s.get("main_goal_locked"):
                 s["main_goal_locked"] = True
                 s["goal_locked_at_scene"] = s["scene_index"]
-                report.append("◆ 公开目标全部达成——主线结局已锁定,余下回合可自由探索支线!")
+                if any(q["status"] == "open" for q in s.get("side_quests") or []):
+                    report.append("◆ 公开目标全部达成——主线结局已锁定,余下回合可自由探索支线!")
+                else:
+                    report.append("◆ 公开目标全部达成,支线亦已尽数了结——尘埃落定。")
 
     report.append(f"账本:进度{s['progress']}/10 危险{s['danger']}/10 "
                   f"默契{s['synergy']}/5 时钟{s['clock']}/8 "
@@ -769,6 +772,11 @@ def _resolve(s):
     locked = s.get("main_goal_locked")
     if len(alive) == 0:
         _finish(s, "BE", "all_down")
+    elif locked and not any(q["status"] == "open"
+                            for q in s.get("side_quests") or []):
+        # 余账清空:主线已锁且支线尽数了结/埋没——当场收卷,不再发空转幕
+        _finish(s, "HE" if len(alive) == 2 else "TE",
+                "goal" if len(alive) == 2 else "sacrifice")
     elif max(s.get("end_streaks", {}).values() or [0]) >= 3:
         # 三辞而别:一人连提三幕停笔,引擎替这段散伙收卷
         if locked:

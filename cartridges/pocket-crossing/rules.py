@@ -1,5 +1,16 @@
 """《口袋穿越》规则 v0.3(支线暗典版)。
 
+v0.3.2 新增·B期 NPC响应协议(源自 早期测试记录伪人感验尸,设计提案):
+- target 扩展:除 'npc'(暗典追查)外,可点名本幕任意在场对象正面交涉;
+  判定不失败即挂"回应债",下一幕荷官必须交 npc_responses(六枚举+实质内容),
+  校验器把关,没有"没有回应"这个选项;回应经引擎入账为既成事实。
+- npc_book 台帐:对象登场记录;登场过的再进 objects 必须带 change(状态变化),
+  否则废稿——治"糖人奶奶反复渲染同一个神秘姿势"式刷脸。
+- 追问机制:commit 可带 about(逐字引用未解悬事)+target,判定成功=逼问一次,
+  两次(卓越算两次)引擎当场揭谜底——问对了人、点对了悬事本身就是解谜成果,
+  不许守门守到终局。
+- 锁定收卷:主线锁定且支线全清时当场结算,不再发空转的余波幕。
+
 v0.3 新增(源自 早期测试测试局验尸报告):
 - 支线暗典:worldgen 时预写 2 条支线悬案(谜题+定死的谜底),谜底玩家不可见;
   一条绑剧情 NPC(在 1..10 幕中随机两个登场窗口,可错过、可翻盘),
@@ -33,6 +44,12 @@ INTENTS = ["advance", "explore", "support", "confront", "recover"]
 INTENT_NAMES = {"advance": "推进", "explore": "探索", "support": "支援",
                 "confront": "对抗", "recover": "休整", "end": "停笔",
                 "wait": "静候"}
+# NPC响应协议(B期):被玩家正面交涉的对象,下一幕必须给出六种回应之一,禁止空气
+RESPONSE_KINDS = ["answered", "lied", "refused", "does_not_know",
+                  "fled", "interrupted"]
+RESPONSE_KIND_NAMES = {"answered": "如实作答", "lied": "撒了谎",
+                       "refused": "拒绝回答", "does_not_know": "确实不知",
+                       "fled": "脱身而去", "interrupted": "话被打断"}
 
 # v0.3 词库重铸(起点男频/女频题材与标签,经人类作者审定):
 # 每项 (词, 权重)。世界生成器 ≠ 任务生成器——题材决定世界,发动机决定这局的事,
@@ -88,6 +105,12 @@ NPC_PERSONAS = [
     ("胆小怕事", 1), ("傲慢毒舌", 1), ("疯癫痴语", 1), ("温吞慢热", 1),
     ("精明算计", 1), ("天真烂漫", 1), ("阴郁多疑", 1), ("豪爽仗义", 1),
 ]
+
+# 硬茬人格:追查失败不再"消失在暗处",而是被逼进墙角——只能【对抗】摊牌。
+# 胜则真相到手、其势力被打散、进度大涨;败则挂彩,但人还困在墙角,同伴可继续。
+# (项目作者设计:治"反派瞬移",并给对抗一个真正的用途)
+HARD_PERSONAS = {"腹黑藏锋", "狡猾市侩", "铁血寡言",
+                 "傲慢毒舌", "精明算计", "阴郁多疑"}
 
 # 剧情规模 → 烈度预算:荷官在此规模下最多写多大的事(注入 worldgen 提示)
 SCOPE_INTENSITY = {
@@ -167,6 +190,8 @@ def new_game(seats, seed):
         "pending": {}, "history": [],
         "prophecies": {seats[0]: [], seats[1]: []},   # 先知情报:私密撕页
         "prophecy_i": 0,
+        "pending_interactions": None,   # NPC响应协议:上一幕欠下的回应债
+        "npc_book": {},                 # NPC台帐:登场记录与状态变化(治刷脸伪人)
         "ending": None, "rolls_used": 0, "end_proposed_by": None,
         "end_streaks": {seats[0]: 0, seats[1]: 0},   # 连续三幕提停笔=强制结算
         "narration_request": {"kind": "gen_world", "context": {
@@ -207,6 +232,12 @@ def _npc_due(s, scene_no):
     return None
 
 
+def _extend_window(q, scene_index):
+    """墙角僵局:NPC 窗口顺延一幕——被盯死的人不会凭空消失。"""
+    if scene_index + 1 not in q["windows"]:
+        q["windows"].append(scene_index + 1)
+
+
 def _quest_resolve(s, q, report, how):
     """支线了结:谜底从暗典掏出,写成既成事实,悬事划掉。"""
     q["status"] = "resolved"
@@ -241,6 +272,7 @@ def apply_system(full_state, action_id, payload):
         for q in data.get("side_quests", []):
             q = dict(q)
             q["status"] = "open"
+            q["pressed"] = 0   # 追问计数:玩家点对悬事逼问,两次谜底必出
             if q["unlock_kind"] == "npc":
                 q["windows"] = _npc_windows(s["seed"])
                 # 人格由引擎抽签定死,不信荷官复读;每次登场都按此写人
@@ -261,8 +293,31 @@ def apply_system(full_state, action_id, payload):
         s["narration_request"] = None
         s["stage"] = "identity"
     elif kind == "gen_scene":
+        new_idx = s["scene_index"] + 1
+        # NPC响应入账:荷官清偿的回应债成为既成事实,后续幕与结局都看得见
+        pend = {p["object_id"]: p for p in s.get("pending_interactions") or []}
+        for r in (data.get("npc_responses") or []):
+            p = pend.get(r.get("object_id"))
+            if not p:
+                continue
+            kn = RESPONSE_KIND_NAMES.get(r.get("kind"), r.get("kind", "?"))
+            s["facts"].append(f"[第{new_idx}幕]{p['object_name']}对{p['by']}"
+                              f"有了回应({kn}):{(r.get('detail') or '')[:60]}")
+        s["pending_interactions"] = None
+        # NPC台帐:记登场,收状态变化
+        book = s.setdefault("npc_book", {})
+        for o in data.get("objects", []):
+            rec = book.get(o["name"])
+            if rec:
+                rec["count"] += 1
+                rec["last_scene"] = new_idx
+                if o.get("change"):
+                    rec["notes"].append(f"第{new_idx}幕:{o['change']}")
+            else:
+                book[o["name"]] = {"first_scene": new_idx, "last_scene": new_idx,
+                                   "count": 1, "notes": []}
         s["current_scene"] = data
-        s["scene_index"] += 1
+        s["scene_index"] = new_idx
         s["narration_request"] = None
         s["stage"] = "scene"
     elif kind == "render_ending":
@@ -335,6 +390,7 @@ def _scene_context(s, last_report):
     return {
         "npc_onstage": ({"name": npc["npc"]["name"], "desc": npc["npc"]["desc"],
                          "persona": npc["npc"].get("persona", ""),
+                         "cornered": bool(npc.get("cornered")),
                          "question": npc["question"]} if npc else None),
         "open_questions": [q["question"] for q in s.get("side_quests") or []
                            if q["status"] == "open"],
@@ -358,6 +414,13 @@ def _scene_context(s, last_report):
         "facts": s["facts"][-8:],
         "hooks": list(s["hooks"]),
         "last_report": last_report,
+        # NPC响应协议:欠下的回应债,下一幕合同必须逐笔清偿
+        "pending_interactions": deepcopy(s.get("pending_interactions") or []),
+        # NPC台帐:登场过的对象,再写必须带状态变化(治刷脸伪人)
+        "recurring_npcs": [
+            {"name": n, "appearances": r["count"], "last_scene": r["last_scene"],
+             "last_note": (r["notes"][-1] if r["notes"] else None)}
+            for n, r in list((s.get("npc_book") or {}).items())[-12:]],
     }
 
 
@@ -453,11 +516,23 @@ def observe(full_state, seat_id):
                     "item_id": f"可选:动用一件物品,标签匹配意图时骰+1,可用:{my_items}",
                     "line": f"可选:一句桌边留言(≤{LINE_MAX}字,不参与判定)",
                 }
+                obj_ids = [o["id"] for o in
+                           (s["current_scene"] or {}).get("objects", [])]
+                tgt = (f"可选:点名一位在场对象正面交涉(本幕之一:{obj_ids}),"
+                       "判定不失败则对方下一幕必须给出回应")
                 npc = _npc_due(s, s["scene_index"])
-                if npc:
-                    commit_params["target"] = (
-                        f"可选:'npc'=本幕追查登场人物「{npc['npc']['name']}」"
-                        "(成功即揭开其知晓的悬事;此人不会久留)")
+                if npc and npc.get("cornered"):
+                    tgt += (f";或 'npc'=与被逼到墙角的「{npc['npc']['name']}」摊牌"
+                            "(只能【对抗】:胜则真相到手+其势力瓦解+进度大涨,败则挂彩)")
+                elif npc:
+                    tgt += (f";或 'npc'=追查登场人物「{npc['npc']['name']}」"
+                            "(成功即揭开其知晓的悬事;此人不会久留)")
+                commit_params["target"] = tgt
+                if s["hooks"]:
+                    commit_params["about"] = (
+                        "可选(须与 target 同用):逐字引用一条未解决悬事,表示这次交涉"
+                        "直指此谜——判定成功即逼问一次,两次(卓越算两次)谜底必出:"
+                        f"{s['hooks']}")
                 legal = [{"action_id": "commit", "params": commit_params}]
     return {"public_state": public, "private_state": private,
             "legal_actions": legal, "waiting_for": waiting}
@@ -526,15 +601,31 @@ def _apply_commit(s, seat_id, params):
         raise IllegalAction(f"line 须是字符串且 ≤{LINE_MAX} 字")
     target = params.get("target")
     if target is not None:
-        if target != "npc":
-            raise IllegalAction("target 只支持 'npc'")
-        if not _npc_due(s, s["scene_index"]):
-            raise IllegalAction("本幕没有可追查的剧情人物")
         if intent == "end":
-            raise IllegalAction("提议停笔的同时不能追查人物")
+            raise IllegalAction("提议停笔的同时不能点名对象")
+        if target == "npc":
+            due = _npc_due(s, s["scene_index"])
+            if not due:
+                raise IllegalAction("本幕没有可追查的剧情人物")
+            if due.get("cornered") and intent != "confront":
+                raise IllegalAction(
+                    f"{due['npc']['name']}已被逼到墙角,退路已断——"
+                    "追查他只能【对抗】摊牌:胜则真相与战果,败则挂彩")
+        else:
+            # NPC响应协议:点名本幕在场对象正面交涉,判定不失败则对方欠下回应
+            ids = [o["id"] for o in (s["current_scene"] or {}).get("objects", [])]
+            if target not in ids:
+                raise IllegalAction(f"target 须是 'npc' 或本幕在场对象之一:{ids}")
+    about = params.get("about")
+    if about is not None:
+        # 追问机制:问对了人、点对了悬事,就是解谜的关键——引擎按逼问次数放谜底
+        if not target or target == "npc":
+            raise IllegalAction("about 须与 target(在场对象)同用:先点名问谁,再声明问什么")
+        if about not in s["hooks"]:
+            raise IllegalAction(f"about 须逐字引用未解决悬事之一:{s['hooks']}")
     s["pending"][seat_id] = {"intent": intent, "action": (action or "").strip(),
                              "item_id": item_id, "line": line.strip(),
-                             "target": target}
+                             "target": target, "about": about}
     if len(s["pending"]) == 2:
         _resolve(s)
 
@@ -698,24 +789,91 @@ def _resolve(s):
                     slip["clock_delta"] = 0
                     report.append("  抄了近路:这一幕没有花掉时钟")
 
-    # 剧情 NPC 窗口:追查者按本幕骰果裁决;最后一个窗口错过即永久埋没
+    # 剧情 NPC 窗口:追查者按本幕骰果裁决;最后一个窗口错过即永久埋没。
+    # 硬茬人格例外:追查失败即入墙角,窗口顺延,直到开口或被打服——绝不瞬移。
     due = _npc_due(s, s["scene_index"])
     if due:
         npc_name = due["npc"]["name"]
+        hard = due["npc"].get("persona", "") in HARD_PERSONAS
         pursuers = [(seat, p) for seat, p in ((a, pa), (b, pb))
                     if p.get("target") == "npc"]
-        if any(tiers[seat] in ("success", "critical_success")
-               for seat, _ in pursuers):
+        showdown = due.get("cornered") and any(
+            p["intent"] == "confront" for _, p in pursuers)
+        if showdown and any(tiers[seat] in ("success", "critical_success")
+                            for seat, p in pursuers if p["intent"] == "confront"):
+            # 摊牌得胜:真相到手,反派势力就地瓦解,进度大涨
+            _quest_resolve(s, due, report, "刀口之下")
+            s["facts"].append(f"{npc_name}被当面制服,他背后的势力就此散了。")
+            slip["progress_delta"] += 2
+            report.append(f"  ◆ {npc_name}的势力被打散——这条街出了口恶气(进度+2)")
+        elif any(tiers[seat] in ("success", "critical_success")
+                 for seat, _ in pursuers):
             _quest_resolve(s, due, report, f"从{npc_name}口中问出")
         elif any(tiers[seat] == "mixed_success" for seat, _ in pursuers):
-            report.append(f"  {npc_name}只留下半句话,便隐入人群——话没说完。")
+            if due.get("cornered"):
+                _extend_window(due, s["scene_index"])
+                report.append(f"  与{npc_name}一伙拉锯不下——他仍被困在墙角,下一幕再见分晓。")
+            else:
+                report.append(f"  {npc_name}只留下半句话,便隐入人群——话没说完。")
         elif pursuers:
-            report.append(f"  {npc_name}被惊动,消失在暗处。")
+            if hard:
+                _extend_window(due, s["scene_index"])
+                if not due.get("cornered"):
+                    due["cornered"] = True
+                    report.append(f"  ◆ {npc_name}被逼到了墙角——他没走脱。"
+                                  "下一幕要么他开口,要么刀兵说话(追查他只能【对抗】)。")
+                else:
+                    report.append(f"  {npc_name}的人手围了上来,你们没能撕开缺口"
+                                  "——他还困在墙角。")
+            else:
+                report.append(f"  {npc_name}被惊动,消失在暗处。")
         else:
-            report.append(f"  {npc_name}在人群边缘停了停,无人上前,他转身离去。")
+            if due.get("cornered"):
+                _extend_window(due, s["scene_index"])
+                report.append(f"  {npc_name}仍被困在墙角,虎视眈眈——没人上前,僵局又拖了一幕。")
+            else:
+                report.append(f"  {npc_name}在人群边缘停了停,无人上前,他转身离去。")
         if due["status"] == "open" and s["scene_index"] >= max(due["windows"]):
             due["status"] = "lost"
             report.append(f"◆ {npc_name}再也不会出现了——某段真相就此埋没。")
+
+    # NPC响应协议(B期):点名在场对象且没骰砸,对方下一幕必须有所回应,禁止空气
+    obj_by_id = {o["id"]: o for o in scene.get("objects", [])}
+    interactions = []
+    for seat, p in ((a, pa), (b, pb)):
+        t = p.get("target")
+        if not t or t == "npc" or t not in obj_by_id:
+            continue
+        ident = _identity(s, s["identities"][seat])
+        if tiers[seat] in ("mixed_success", "success", "critical_success"):
+            interactions.append({
+                "object_id": t, "object_name": obj_by_id[t]["name"],
+                "by": ident["name"], "action": p["action"][:80],
+                "tier": tiers[seat], "about": p.get("about")})
+            report.append(f"  ◆ {ident['name']}与{obj_by_id[t]['name']}正面交涉"
+                          "——对方下一幕必须有所回应")
+            # 追问机制:点对悬事且判定成功=逼问一次;两次(卓越算两次)谜底必出。
+            # 能问对人、问对问题,本身就是解谜成果——不许守门守到终局。
+            if p.get("about") and tiers[seat] in ("success", "critical_success"):
+                q = next((x for x in s.get("side_quests") or []
+                          if x["status"] == "open"
+                          and x["question"] == p["about"]), None)
+                if q:
+                    q["pressed"] = q.get("pressed", 0) + \
+                        (2 if tiers[seat] == "critical_success" else 1)
+                    if q["pressed"] >= 2:
+                        _quest_resolve(s, q, report, "追问到底")
+                    else:
+                        report.append(f"  ◆ 这一问问到了痛处——「{p['about']}」"
+                                      "的口风已被撬松,再追问一次,真相必出。")
+        elif tiers[seat] == "failure":
+            # 对象可能是人也可能是物,措辞须两者通吃(测试反馈:避免把物品误写成生命体)
+            report.append(f"  {ident['name']}在{obj_by_id[t]['name']}那里没问出什么来,"
+                          "线头断在手里。")
+    # 谜底本幕已出的,追问债随之销账——真相大白就是最好的回应(三测毛边①)
+    interactions = [i for i in interactions
+                    if not i.get("about") or i["about"] in s["hooks"]]
+    s["pending_interactions"] = interactions or None
 
     ia, ib = pa["intent"], pb["intent"]
     both_ok = all(t != "failure" for t in tiers.values())
@@ -808,7 +966,10 @@ def _resolve(s):
             if not s.get("main_goal_locked"):
                 s["main_goal_locked"] = True
                 s["goal_locked_at_scene"] = s["scene_index"]
-                report.append("◆ 公开目标全部达成——主线结局已锁定,余下回合可自由探索支线!")
+                if any(q["status"] == "open" for q in s.get("side_quests") or []):
+                    report.append("◆ 公开目标全部达成——主线结局已锁定,余下回合可自由探索支线!")
+                else:
+                    report.append("◆ 公开目标全部达成,支线亦已尽数了结——尘埃落定。")
 
     report.append(f"账本:进度{s['progress']}/10 危险{s['danger']}/10 "
                   f"默契{s['synergy']}/5 时钟{s['clock']}/8 "
@@ -819,6 +980,12 @@ def _resolve(s):
     locked = s.get("main_goal_locked")
     if len(alive) == 0:
         _finish(s, "BE", "all_down")
+    elif locked and not any(q["status"] == "open"
+                            for q in s.get("side_quests") or []):
+        # 余账清空:主线已锁且支线尽数了结/埋没——当场收卷,不再发空转幕
+        # (早期测试局验尸:锁定后无事可做的余波幕只产出危险与谜语人)
+        _finish(s, "HE" if len(alive) == 2 else "TE",
+                "goal" if len(alive) == 2 else "sacrifice")
     elif max(s.get("end_streaks", {}).values() or [0]) >= 3:
         # 三辞而别:一人连提三幕停笔,引擎替这段散伙收卷
         if locked:

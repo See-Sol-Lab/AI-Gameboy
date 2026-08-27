@@ -15,6 +15,9 @@ BASE = Path(__file__).parent
 CONFIG_PATH = BASE / "data" / "narrator.json"
 
 INTENTS = ["advance", "explore", "support", "confront", "recover"]
+# NPC响应协议:被玩家正面交涉的对象,下一幕必须给出这六种回应之一
+RESPONSE_KINDS = ["answered", "lied", "refused", "does_not_know",
+                  "fled", "interrupted"]
 GIFT_KINDS = ["explore_crit_item", "support_synergy", "advance_crit_clock",
               "confront_no_law", "recover_heals_both", "ones_are_fours"]
 FLAW_KINDS = ["advance_minus", "explore_minus", "support_minus",
@@ -28,7 +31,8 @@ SYSTEM_PROMPT = (
     "你是双人文字冒险《口袋穿越》的叙事荷官。你负责把游戏引擎提供的世界事实与"
     "裁决结果写成玩家可读的剧情。你没有玩家席位,没有行动权、计分权和结局判定权。"
     "你不得替玩家说话、选择、补写心理或改变任何数值与既成事实。"
-    "不得主动加入恋爱剧情;两名玩家是同行的旅伴,关系如何发展只来自他们的真实行动。"
+    "不得在两名玩家之间生成恋爱剧情;两名玩家是同行的旅伴,他们的关系如何发展只来自他们的真实行动。"
+    "但世界中的 NPC 可以有自己的爱情、恩怨与羁绊——江湖儿女情、故人旧誓皆是好戏,写进世界与幕景无妨,只是不得把两名玩家写进感情线。"
     "输出必须是严格的 JSON,不带任何注释、前后缀或代码围栏。"
 )
 
@@ -107,7 +111,7 @@ def call(kind, context):
     # 1.3 高温实测会烧坏 JSON 纪律;1.0 的中文创意已经够野了
     temp = 1.0 if kind in ("gen_world", "gen_identities") else 0.9
     data = _chat(prompt, temp, kind=kind)
-    VALIDATORS[kind](data)
+    VALIDATORS[kind](data, context)
     return data
 
 
@@ -164,7 +168,7 @@ def _p_world(ctx):
  "power_level": "{a['power']}",
  "public_goal": "{goal_desc}",
  "clock_text": "{clock_desc}",
- "milestones": [把主目标拆成2到3步,按先后排序,每步 {{"id":"m1这样的短名","text":"一句可判定的阶段目标,如『通过西境检查站』"}}——玩家每完成一步,引擎当场记账;全部完成即结算,你无权拖延],
+ "milestones": [把主目标拆成2到3步,按先后排序,每步 {{"id":"m1这样的短名","text":"一句可判定的阶段目标,如『通过西境检查站』"}}——玩家每完成一步,引擎当场记账;全部完成即结算,你无权拖延。每步只许一个可验收的结果,禁止用『或』并列备选(『找到遗稿或信物』这种写法会让引擎替玩家宣布假胜利)],
  "laws": [2到3条,每条 {{"id":"law_英文短名","text":"玩家能读懂的世界法则",
    "trigger_kind":"只能严格写成以下形式之一(不要照抄占位符):intent:advance / intent:explore / intent:support / intent:confront / intent:recover / clock>=5 这种带具体数字的 / danger>=6 这种带具体数字的",
    "cost_kind":"danger|progress|clock|flag 之一"}}],
@@ -227,16 +231,57 @@ def _p_scene(ctx):
     if ctx.get("npc_onstage"):
         n = ctx["npc_onstage"]
         persona = f"性格底色={n['persona']},言行必须贴此性格;" if n.get("persona") else ""
-        npc = f"""
+        if n.get("cornered"):
+            npc = f"""
+【墙角对峙(必须执行)】{n['name']}:{n['desc']}
+{persona}此人上一幕被玩家逼到了墙角,没能走脱——本幕必须写他被困在现场的对峙:
+他和他的人手就在那里,退路已断,气氛剑拔弩张。把他写进 text 和 objects
+(该条 id 必须恰好是 "npc")。他仍不主动交底,但绝不允许他离场、消失或被写走;
+这一幕要么他开口,要么刀兵说话,结果由引擎裁决。"""
+        else:
+            npc = f"""
 【剧情人物登场(必须执行)】{n['name']}:{n['desc']}
 {persona}此人知晓「{n['question']}」的内情。把他写进 text 的现场,并放进 objects
 (该条 id 必须恰好是 "npc")。他只现身、只露暗示,绝不主动全盘托出;
 玩家是否追上去、能不能问出来,由引擎裁决,与你无关。"""
     oq = ctx.get("open_questions") or []
+    inter = ""
+    if ctx.get("pending_interactions"):
+        lines = []
+        for p in ctx["pending_interactions"]:
+            row = (f"- {p['by']}对{p['object_name']}(object_id={p['object_id']})做了:"
+                   f"{p['action']}(判定:{p['tier']})")
+            if p.get("about"):
+                row += f"——此番交涉直指悬事「{p['about']}」"
+            lines.append(row)
+        inter = f"""
+【回应债(必须逐笔清偿)】上一幕,玩家与这些在场对象正面交涉且判定过关:
+{chr(10).join(lines)}
+本幕开场必须给出回应:在 text 里把回应演出来,并在 npc_responses 字段结构化交账。
+kind 只能是:answered(如实作答)/lied(按此人立场撒谎)/refused(拒答,detail 必须写出拒绝
+的理由)/does_not_know(确实不知)/fled(脱身而去)/interrupted(话被打断)。
+判定为 success/critical_success 的,必须给实质信息(answered/lied/refused/does_not_know
+之一);mixed_success 的可以用 fled/interrupted,但也必须演出来。
+关于悬事的口径:悬事的谜底由引擎裁决揭示——若"既成事实"里已写明"真相大白",
+就按那个真相回应;若谜底尚未大白,此人给外围的真话或守口如瓶(引擎已记下这次
+逼问,追问到底时谜底自会由引擎放出),你不得自行编造谜底。
+没有"没有回应"这个选项:哪怕一句"无可奉告",也必须是六种之一。"""
+    recur = ""
+    if ctx.get("recurring_npcs"):
+        lines = [f"- {n['name']}(已出场{n['appearances']}次"
+                 + (f",上次变化:{n['last_note']}" if n.get("last_note") else "")
+                 + ")"
+                 for n in ctx["recurring_npcs"]]
+        recur = f"""
+【刷脸铁律】以下对象已经登场过:
+{chr(10).join(lines)}
+本幕若再把其中任何一位写进 objects,该条必须附 "change" 字段:一句他相对上次的
+状态变化(说了新话/做了新事/处境变了)。没有新变化就别让他出场——
+反复渲染同一个神秘姿势("他似乎知道些什么")是禁手,人物每次露面都要往前走一步。"""
     return f"""为《{w['world_name']}》生成第 {ctx['scene_index']} 幕场景。
 世界目标:{w['public_goal']}
 里程碑账本(已达成的绝不能推翻或重考):{ms or "(无)"}
-本幕危机必须服务于当前里程碑:{cur or "全部已达成,收束"}{chron}{npc}
+本幕危机必须服务于当前里程碑:{cur or "全部已达成,收束"}{chron}{npc}{inter}{recur}
 世界法则:{'; '.join(w['laws'])}
 时钟含义:{w.get('clock_text') or "时钟走满,这段故事就到站"}
 当前账本:{json.dumps(ctx['tracks'], ensure_ascii=False)}
@@ -251,7 +296,7 @@ def _p_scene(ctx):
 只输出这个 JSON:
 {{"title":"不超过10字","text":"不超过300字,只描写玩家行动前已经发生的事,承接上一幕结果与既成事实;危险值越高氛围越紧",
  "crisis":"本幕必须面对的问题,一句",
- "objects":[3到4个,每个 {{"id":"英文短名","name":"对象名","hint":"玩家此刻能观察到的一句线索"}}],
+ "objects":[3到4个,每个 {{"id":"英文短名","name":"对象名","hint":"玩家此刻能观察到的一句线索"}};登场过的对象再出现必须多带 "change":"相对上次的新状态一句"],{'"npc_responses":[逐笔清偿上面的回应债,每笔 {"object_id":"...","kind":"六种之一","detail":"回应的实质内容一句"}],' if inter else ""}
  "questions":[0到2条,**只能从这份清单里逐字挑选**:{json.dumps(oq, ensure_ascii=False)};
    清单为空或都不贴切就写 []。禁止自创新谜题,禁止改写措辞——悬事的生老病死归引擎管]}}
 铁律(违反即废稿):
@@ -320,7 +365,7 @@ def _req(cond, msg):
         raise NarratorError(f"荷官交稿不合格:{msg}")
 
 
-def _v_world(d):
+def _v_world(d, ctx=None):
     _req(isinstance(d, dict), "世界卡须是对象")
     for k in ("world_name", "premise", "lore", "public_goal",
               "laws", "opening_facts", "hidden_threads"):
@@ -346,6 +391,8 @@ def _v_world(d):
         _req(isinstance(m, dict) and m.get("id") and m.get("text"), "milestone 缺字段")
         _req(m["id"] not in mids, "milestone id 重复")
         mids.add(m["id"])
+        # 禁析取:『找到遗稿或信物』会让引擎按宽的判,玩家按窄的玩,目标脱钩
+        _req("或" not in m["text"], f"milestone 含备选写法『或』:{m['text']}")
     _req(isinstance(d.get("chronicle"), list) and 6 <= len(d["chronicle"]) <= 10,
          "chronicle 须是6到10章的原典")
     for c in d["chronicle"]:
@@ -410,7 +457,7 @@ def _v_world(d):
             q["stat"] = fixed
 
 
-def _v_identities(d):
+def _v_identities(d, ctx=None):
     _req(isinstance(d, list) and len(d) == 6, "身份卡须恰好6张")
     ids = set()
     for i in d:
@@ -429,7 +476,7 @@ def _v_identities(d):
              all(u in INTENTS for u in item["use"]), "物品 use 非法")
 
 
-def _v_scene(d):
+def _v_scene(d, ctx=None):
     for k in ("title", "text", "crisis", "objects"):
         _req(k in d, f"场景缺字段 {k}")
     _req(len(d["title"]) <= 14, "title 过长")
@@ -442,9 +489,33 @@ def _v_scene(d):
              "questions 过多")
     else:
         d["questions"] = []
+    # NPC响应协议:上一幕欠下的回应债,本幕必须逐笔清偿——没有"没有回应"这个选项
+    pend = (ctx or {}).get("pending_interactions") or []
+    if pend:
+        resp = d.get("npc_responses")
+        _req(isinstance(resp, list) and resp, "欠着回应债却没交 npc_responses")
+        by_id = {}
+        for r in resp:
+            _req(isinstance(r, dict) and r.get("object_id"), "npc_response 缺 object_id")
+            _req(r.get("kind") in RESPONSE_KINDS,
+                 f"npc_response kind 非法:{r.get('kind')}(须是 {RESPONSE_KINDS} 之一)")
+            detail = (r.get("detail") or "").strip()
+            _req(len(detail) >= 4, "npc_response detail 太空:回应必须有实质内容")
+            by_id[r["object_id"]] = r
+        for p in pend:
+            _req(p["object_id"] in by_id,
+                 f"{p['object_name']}的回应没交账——被正面交涉的对象不许装聋")
+    # 刷脸铁律:登场过的对象再进 objects,必须带一句相对上次的状态变化
+    seen = {n["name"] for n in (ctx or {}).get("recurring_npcs") or []}
+    if seen:
+        for o in d["objects"]:
+            if o["name"] in seen:
+                _req(isinstance(o.get("change"), str) and len(o["change"].strip()) >= 4,
+                     f"{o['name']}已登场过:再写必须带 change(相对上次的新状态),"
+                     "没有新变化就别让他出场")
 
 
-def _v_ending(d):
+def _v_ending(d, ctx=None):
     _req(isinstance(d, dict) and "text" in d, "结局缺 text")
     _req(isinstance(d["text"], str) and 20 <= len(d["text"]) <= 600, "结局长度不对")
 

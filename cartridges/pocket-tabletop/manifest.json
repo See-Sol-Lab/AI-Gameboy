@@ -1,7 +1,7 @@
 {
   "id": "pocket-tabletop",
   "name": "口袋跑团",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "See Sol Lab",
   "license": "private-prototype",
   "players": { "min": 2, "max": 2 },

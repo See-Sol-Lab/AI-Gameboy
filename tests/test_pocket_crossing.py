@@ -114,6 +114,12 @@ def feed(s):
             data = FIX_IDENTITIES
         elif kind == "gen_scene":
             data = fix_scene(s["scene_index"] + 1)
+            # NPC响应协议:欠着回应债就按合同清偿
+            pend = s.get("pending_interactions") or []
+            if pend:
+                data["npc_responses"] = [
+                    {"object_id": p["object_id"], "kind": "answered",
+                     "detail": "断言街的规矩,问了就答。"} for p in pend]
         else:
             data = {"text": "测试之城照常运转,断言全部通过。" * 2}
         s = rules.apply_system(s, "narration_result", {"kind": kind, "data": data})
@@ -300,6 +306,187 @@ class TestHiddenAndEndings(unittest.TestCase):
                         {"intent": "support", "action": "替她照亮支路"})
         self.assertEqual(s["stage"], "endinggen")
         self.assertEqual(s["ending"]["kind"], "HE")
+
+    def test_target_object_creates_response_debt_and_fact(self):
+        """点名在场对象且没骰砸→挂回应债;荷官清偿→入既成事实(NPC响应协议)。"""
+        hit = None
+        for seed in range(60, 90):
+            s = setup_playing(seed)
+            s = rules.apply(s, "seat_a", "commit",
+                            {"intent": "explore", "action": "上前盘问闸机边的巡检",
+                             "target": "patrol"})
+            s = rules.apply(s, "seat_b", "commit",
+                            {"intent": "support", "action": "在旁帮腔"})
+            if s.get("pending_interactions"):
+                hit = s
+                break
+        self.assertIsNotNone(hit, "30个种子里竟无一次交涉判定过关")
+        p = hit["pending_interactions"][0]
+        self.assertEqual(p["object_id"], "patrol")
+        self.assertEqual(p["object_name"], "巡检")
+        self.assertIn("正面交涉", json.dumps(hit["history"][-1]["report"],
+                                         ensure_ascii=False))
+        ctx = hit["narration_request"]["context"]
+        self.assertTrue(ctx["pending_interactions"])
+        s2 = feed(hit)   # 假荷官按合同清偿
+        self.assertIsNone(s2["pending_interactions"])
+        self.assertIn("巡检对", json.dumps(s2["facts"], ensure_ascii=False))
+        self.assertIn("如实作答", json.dumps(s2["facts"], ensure_ascii=False))
+
+    def test_target_must_be_scene_object(self):
+        s = setup_playing(46)
+        with self.assertRaises(rules.IllegalAction):
+            rules.apply(s, "seat_a", "commit",
+                        {"intent": "explore", "action": "问路",
+                         "target": "nobody_here"})
+
+    def test_about_requires_target_and_open_hook(self):
+        s = setup_playing(48)
+        hook = s["hooks"][0]
+        with self.assertRaises(rules.IllegalAction):   # 没点名问谁
+            rules.apply(s, "seat_a", "commit",
+                        {"intent": "explore", "action": "追问", "about": hook})
+        with self.assertRaises(rules.IllegalAction):   # 悬事没对上原句
+            rules.apply(s, "seat_a", "commit",
+                        {"intent": "explore", "action": "追问",
+                         "target": "gate", "about": "自创的谜题?"})
+
+    def test_pressing_hook_twice_reveals_truth(self):
+        """追问机制:点对悬事逼问,两次(卓越算两次)谜底必出——不许守门到终局。"""
+        hook = FIX_WORLD["side_quests"][1]["question"]   # 数值考验型支线
+        truth = FIX_WORLD["side_quests"][1]["truth"]
+        done = False
+        for seed in range(90, 140):
+            s = setup_playing(seed)
+            presses = 0
+            guard = 0
+            while presses < 2 and s["phase"] == "playing" and guard < 8:
+                guard += 1
+                if hook not in s["hooks"]:
+                    break   # 数值考验先解开了,换个种子重试
+                s = rules.apply(s, "seat_a", "commit",
+                                {"intent": "explore", "action": "揪住巡检追问到底",
+                                 "target": "patrol", "about": hook})
+                s = rules.apply(s, "seat_b", "commit",
+                                {"intent": "support", "action": "帮腔施压"})
+                q = next(x for x in s["side_quests"] if x["question"] == hook)
+                presses = q.get("pressed", 0)
+                if q["status"] == "resolved":
+                    done = True
+                    break
+                s = feed(s)
+            if done:
+                break
+        self.assertTrue(done, "50个种子里追问竟从未成功两次")
+        self.assertIn(truth, json.dumps(s["facts"], ensure_ascii=False))
+        self.assertNotIn(hook, s["hooks"])
+        self.assertIn("追问到底", json.dumps(s["history"], ensure_ascii=False))
+
+    def test_npc_book_tracks_appearances(self):
+        """同名对象反复登场,台帐计数;change 入台帐(刷脸铁律的账本侧)。"""
+        s = setup_playing(47)
+        s = commit(s, "seat_a", "explore", action="看看闸机")
+        s = commit(s, "seat_b", "recover", action="歇脚")
+        self.assertGreaterEqual(s["npc_book"]["闸机"]["count"], 2)
+        ctx_names = [n["name"] for n in
+                     rules._scene_context(s, None)["recurring_npcs"]]
+        self.assertIn("巡检", ctx_names)
+
+    def test_cornered_npc_requires_confront(self):
+        """墙角摊牌:硬茬NPC被逼入墙角后,追查只能【对抗】(项目作者设计,治反派瞬移)。"""
+        s = setup_playing(50)
+        q = next(x for x in s["side_quests"] if x["unlock_kind"] == "npc")
+        q["npc"]["persona"] = "铁血寡言"
+        q["cornered"] = True
+        q["windows"] = [s["scene_index"]]
+        with self.assertRaises(rules.IllegalAction):
+            rules.apply(s, "seat_a", "commit",
+                        {"intent": "explore", "action": "再问一次",
+                         "target": "npc"})
+
+    def test_hard_npc_corners_instead_of_vanishing(self):
+        """硬茬NPC:追查失败不消失,入墙角且窗口顺延。"""
+        found = False
+        for seed in range(150, 200):
+            s = setup_playing(seed)
+            q = next(x for x in s["side_quests"] if x["unlock_kind"] == "npc")
+            q["npc"]["persona"] = "傲慢毒舌"
+            q["windows"] = [s["scene_index"]]
+            s = rules.apply(s, "seat_a", "commit",
+                            {"intent": "explore", "action": "上去堵人盘问",
+                             "target": "npc"})
+            s = rules.apply(s, "seat_b", "commit",
+                            {"intent": "recover", "action": "在旁歇脚"})
+            q2 = next(x for x in s["side_quests"] if x["unlock_kind"] == "npc")
+            if q2.get("cornered"):
+                found = True
+                self.assertEqual(q2["status"], "open")   # 没有"永久埋没"
+                self.assertIn(s["scene_index"] + 1, q2["windows"])
+                self.assertIn("逼到了墙角",
+                              json.dumps(s["history"][-1]["report"],
+                                         ensure_ascii=False))
+                break
+        self.assertTrue(found, "50个种子里追查竟从未失败过")
+
+    def test_showdown_win_resolves_and_boosts_progress(self):
+        """摊牌得胜:真相到手+势力瓦解+进度大涨。"""
+        won = False
+        for seed in range(200, 260):
+            s = setup_playing(seed)
+            q = next(x for x in s["side_quests"] if x["unlock_kind"] == "npc")
+            q["npc"]["persona"] = "腹黑藏锋"
+            q["cornered"] = True
+            q["windows"] = [s["scene_index"]]
+            p0 = s["progress"]
+            s = rules.apply(s, "seat_a", "commit",
+                            {"intent": "confront", "action": "拔刀摊牌",
+                             "target": "npc"})
+            s = rules.apply(s, "seat_b", "commit",
+                            {"intent": "support", "action": "压阵助势"})
+            q2 = next(x for x in s["side_quests"] if x["unlock_kind"] == "npc")
+            if q2["status"] == "resolved":
+                won = True
+                rep = json.dumps(s["history"][-1]["report"], ensure_ascii=False)
+                self.assertIn("刀口之下", rep)
+                self.assertIn("势力被打散", rep)
+                self.assertGreaterEqual(s["progress"], p0 + 2)
+                break
+        self.assertTrue(won, "60个种子里摊牌竟从未打赢")
+
+    def test_lock_with_no_open_sidequests_settles_immediately(self):
+        """主线锁定且支线全清:当场收卷,不再发空转的余波幕(早期测试局验尸)。"""
+        s = setup_playing(44)
+        for q in s["side_quests"]:
+            q["status"] = "resolved"
+        s["main_goal_locked"] = True
+        s["goal_locked_at_scene"] = s["scene_index"]
+        s["progress"] = 10
+        s = rules.apply(s, "seat_a", "commit",
+                        {"intent": "explore", "action": "再看一眼"})
+        s = rules.apply(s, "seat_b", "commit",
+                        {"intent": "support", "action": "陪着"})
+        self.assertIsNotNone(s["ending"])
+        self.assertEqual(s["ending"]["kind"], "HE")
+        self.assertEqual(s["ending"]["reason"], "goal")
+
+    def test_lock_message_mentions_sidequests_only_if_open(self):
+        """锁定瞬间支线已全清时,不再喊'可自由探索支线'。"""
+        s = setup_playing(45)
+        for q in s["side_quests"]:
+            q["status"] = "lost"
+        guard = 0
+        while not s.get("main_goal_locked") and s["phase"] == "playing" \
+                and guard < 20:
+            guard += 1
+            for seat in SEATS:
+                if s.get("narration_request") or s["phase"] != "playing":
+                    break
+                s = rules.apply(s, seat, "commit",
+                                {"intent": "advance", "action": "冲阵"})
+            s = feed(s)
+        if s.get("main_goal_locked"):
+            text = json.dumps(s["history"], ensure_ascii=False)
+            self.assertNotIn("可自由探索支线", text)
 
     def test_mutual_end_after_goal_keeps_locked_ending(self):
         s = setup_playing(43)
