@@ -145,13 +145,20 @@ def _p_world(ctx):
   世间常事,世界不需要摇摇欲坠,鸡毛蒜皮也能有好故事;{scale_rules}
 - 特色元素为(无特别元素)时不要硬塞超凡设定;
 - 进入方式决定两位玩家与这个世界的关系(穿书成配角=他们是原典里的路人)。"""
-        goal_block = f''' "world_thread": "世界正在发生什么,一句。它是默认远离玩家的背景大事,禁止写成‘你们必须去阻止它’,没有里程碑也不参与结算",
- "goal_menu": [2到4个本地事件,每个 {{"id":"英文短名","text":"玩家可以选择去做的一件具体可判定的事,不超过40字"}}。规模不得超过剧情规模={scope},每项都是选择而非指派],'''
+        # C期三层:这份合同只写大世界与三个落点,本局那一段等落点定了再写
+        goal_block = f''' "world_background": "文明/力量体系/时代/大人物,≤200字。玩家可见",
+ "global_canon": {{"text": "这部长篇真正的主线是什么(原典主角、战争、王朝更替),一句。它离玩家很远",
+   "ticks": [4到6行远方大事推进,每行一句,按时间排序。每两幕自动推进一行,只作背景。
+     **每行都禁止出现“你们”,禁止要求玩家参与**——大主线自走,玩家不是它的角色]}},
+ "world_thread": "世界正在发生什么,一句。默认远离玩家,禁止写成‘你们必须去阻止它’,没有里程碑也不参与结算",
+ "landings": [恰好3个降落点,玩家将选其一掉进去,每个 {{"id":"英文短名",
+   "place":"具体地方,≤20字","happening":"此刻这里正发生什么,≤60字"}}
+   ——三个要够不一样,让同一个世界能长出三段完全不同的故事;规模不得超过剧情规模={scope}],'''
         clock_desc = ("时钟在这局代表什么、走满了会发生什么,一句"
                       "——不必是灾难,可以只是'商队出发了''大典落幕了'")
-        chron_desc = ("恰好8章,**本局这段小章节**没有玩家时本该怎么走——只写玩家落点"
-                      "附近的这段事,远处的天下大势最多露一句、不展开;按时间排序")
-        orig_desc = "没人干预时**这段事**的自然了局(≤80字)——不必是世界的结局"
+        # 开局事实、支线、原典都随本局那一段走,等落点定了由 gen_episode 生成
+        facts_block = ""
+        episode_block = ""
     else:               # 《口袋跑团》经典种子:危机跑团,直给
         seed_block = f"""世界种子(必须全部体现):
 题材={a['form']},力量等级={a['power']},冒险类型={a['kind']},情绪基调={a['mood']},核心变数={a['variable']}。"""
@@ -160,6 +167,21 @@ def _p_world(ctx):
         clock_desc = "时钟走满会发生什么,一句(危机跑团:通常是大祸临头)"
         chron_desc = ("恰好8章,这个世界**没有玩家时**本该上演的完整剧情,按时间排序")
         orig_desc = "原典结局一句:没有任何人干预时,这个世界最后怎么了(≤80字)"
+        facts_block = ' "opening_facts": ["开局已成立的3到5条事实,短句"],\n'
+        episode_block = f''',
+ "side_quests": [恰好2条支线悬案。这是玩家会反复追问的谜题,谜底**现在就定死**,
+   写在这里只有引擎能看到;此后你永远只许照抄,不许改写、不许另编:
+   第1条 {{"id":"sq_npc","question":"一句悬而未决的谜题(玩家视角的问句)",
+     "truth":"谜底,≤80字,必须直接回答谜题,且与lore、原典自洽",
+     "unlock_kind":"npc",
+     "npc":{{"name":"知晓此事的剧情人物称呼","desc":"他登场时的样子与来意暗示,一句{persona_hint}"}}}},
+   第2条 {{"id":"sq_stat","question":"另一句谜题","truth":"谜底,≤80字,同上要求",
+     "unlock_kind":"stat",
+     "stat": 逐字采用其一:{{"synergy>=": 3}} 或 {{"explore_wins>=": 3}} 或 {{"confront_wins>=": 2}}}}],
+ "chronicle": [{chron_desc},
+   每章 {{"chapter":1,"title":"≤8字","event":"本章原典事件一句,≤60字"}}——
+   这是只有你和引擎能看到的底本小说,玩家永远看不到,直到终局才揭晓],
+ "original_ending": "{orig_desc}"'''
     return f"""为一局新游戏生成世界卡。{seed_block}
 
 只输出这个 JSON:
@@ -173,25 +195,11 @@ def _p_world(ctx):
  "laws": [2到3条,每条 {{"id":"law_英文短名","text":"玩家能读懂的世界法则",
    "trigger_kind":"只能严格写成以下形式之一(不要照抄占位符):intent:advance / intent:explore / intent:support / intent:confront / intent:recover / clock>=5 这种带具体数字的 / danger>=6 这种带具体数字的",
    "cost_kind":"danger|progress|clock|flag 之一"}}],
- "opening_facts": ["开局已成立的3到5条事实,短句"],
- "hidden_threads": [1到2条,每条 {{"id":"h-英文短名",
+{facts_block} "hidden_threads": [1到2条,每条 {{"id":"h-英文短名",
    "required": 必须逐字采用下面四种写法之一,键名一个字符都不能改:
      {{"flag": "found_the_key_truth"}} 或 {{"synergy>=": 4}} 或 {{"progress>=": 7}} 或 {{"danger>=": 6}},
    "effect_kind":"truth|ending_modifier",
-   "brief":"暗线浮出时向玩家公布的一句话"}}],
- "side_quests": [恰好2条支线悬案。这是玩家会反复追问的谜题,谜底**现在就定死**,
-   写在这里只有引擎能看到;此后你永远只许照抄,不许改写、不许另编:
-   第1条 {{"id":"sq_npc","question":"一句悬而未决的谜题(玩家视角的问句)",
-     "truth":"谜底,≤80字,必须直接回答谜题,且与lore、原典自洽",
-     "unlock_kind":"npc",
-     "npc":{{"name":"知晓此事的剧情人物称呼","desc":"他登场时的样子与来意暗示,一句{persona_hint}"}}}},
-   第2条 {{"id":"sq_stat","question":"另一句谜题","truth":"谜底,≤80字,同上要求",
-     "unlock_kind":"stat",
-     "stat": 逐字采用其一:{{"synergy>=": 3}} 或 {{"explore_wins>=": 3}} 或 {{"confront_wins>=": 2}}}}],
- "chronicle": [{chron_desc},
-   每章 {{"chapter":1,"title":"≤8字","event":"本章原典事件一句,≤60字"}}——
-   这是只有你和引擎能看到的底本小说,玩家永远看不到,直到终局才揭晓],
- "original_ending": "{orig_desc}"
+   "brief":"暗线浮出时向玩家公布的一句话"}}]{episode_block}
 }}
 要求:法则是给玩家的真实约束与权衡,不是装饰;隐藏线要值得期待;
 原典要是一个自洽的完整故事(玩家不来它也成立);
@@ -403,7 +411,57 @@ abandoned=true 的旧目标只作引擎备查,正文禁止提及、惩罚或评�
 引用至少一件既成事实;若有暗线,让它在结局里回响;写世界如何继续,不评价玩家。"}}"""
 
 
-PROMPTS = {"gen_world": _p_world, "gen_identities": _p_identities,
+def _p_episode(ctx):
+    """降落点选定后,只写玩家掉进的那个角落——世界的其余部分不归这份合同。"""
+    w = ctx["world"]
+    land = ctx["landing"]
+    scope = ctx.get("scope", "街坊门户")
+    grand = scope in ("一城一地", "天下大势")
+    intensity = f"({ctx['scope_intensity']})" if ctx.get("scope_intensity") else ""
+    scale_rules = "" if grand else """
+- 规模纪律(违反即废稿):禁止生成世界毁灭、全城覆灭、末日倒计时、
+  "幕后大人物制造了一切"的总阴谋、"所有小事其实都连着终极秘密"。
+  房租、生意、婚丧嫁娶、邻里矛盾、丢东西、修房子——这些本身就是完整剧情;"""
+    return f"""两位玩家已经落在《{w['world_name']}》的一个角落。为**这个落点**生成本局小段。
+
+世界背景:{w.get('world_background', w['lore'][:200])}
+远方大事(只作背景,本局不必参与):{w.get('world_thread', '')}
+落点:{land['place']}——{land['happening']}
+剧情规模={scope}{intensity}
+
+怎么写:
+- 你写的是一部长篇小说的第437到444章,不是这部小说的全部。玩家也许十幕都
+  不知道原典主角是谁,那完全没问题;
+- 本局小段必须由落点长出来:换一个落点就该是另一段故事;{scale_rules}
+- chronicle 只写**这段小事**没有玩家介入时的走向,不写天下大势。
+
+只输出这个 JSON:
+{{
+ "local_episode": {{
+   "place": "落点的具体地方,≤20字",
+   "situation": "此刻这里是什么状况,一句",
+   "events": [2到4件正在发生的本地小事,每件一句,都是玩家够得着的]
+ }},
+ "goal_menu": [2到4个玩家可选目标,每个 {{"id":"英文短名","text":"一件具体可判定的事,≤40字"}}
+   ——须从上面的本地小事长出来,规模不超过{scope},每项是选择不是指派],
+ "opening_facts": ["这个落点开局已成立的3到5条事实,短句"],
+ "side_quests": [恰好2条支线悬案,谜底现在就定死,此后只许照抄:
+   第1条 {{"id":"sq_npc","question":"一句悬而未决的谜题(玩家视角的问句)",
+     "truth":"谜底,≤80字,必须直接回答谜题",
+     "unlock_kind":"npc",
+     "npc":{{"name":"知晓此事的人物称呼","desc":"他登场时的样子与来意暗示,一句"}}}},
+   第2条 {{"id":"sq_stat","question":"另一句谜题","truth":"谜底,≤80字",
+     "unlock_kind":"stat",
+     "stat": 逐字采用其一:{{"synergy>=": 3}} 或 {{"explore_wins>=": 3}} 或 {{"confront_wins>=": 2}}}}],
+ "chronicle": [恰好8章,**这段小事**没有玩家时本该怎么走,按时间排序,
+   每章 {{"chapter":1,"title":"≤8字","event":"≤60字"}}
+   ——只有你和引擎看得到,玩家到终局才揭晓],
+ "original_ending": "没人干预时**这段事**的自然了局(≤80字)——不必是世界的结局"
+}}"""
+
+
+PROMPTS = {"gen_world": _p_world, "gen_episode": _p_episode,
+           "gen_identities": _p_identities,
            "gen_milestones": _p_milestones, "gen_scene": _p_scene,
            "render_ending": _p_ending}
 
@@ -417,6 +475,8 @@ def _req(cond, msg):
 
 def _v_world(d, ctx=None):
     _req(isinstance(d, dict), "世界卡须是对象")
+    if "landings" in d:      # C期三层世界卡:本局那一段归 gen_episode,这里只验大世界
+        return _v_world_layer(d)
     axes = (ctx or {}).get("axes")
     crossing = "engine" in axes if axes is not None else \
         "world_thread" in d or "goal_menu" in d
@@ -428,30 +488,13 @@ def _v_world(d, ctx=None):
     _req(len(d["world_name"]) <= 16, "world_name 过长")
     _req(len(d["lore"]) <= 600, "lore 过长")
     # power_level 由引擎按种子注入,荷官写不写都以引擎为准
-    _req(isinstance(d["laws"], list) and 1 <= len(d["laws"]) <= 4, "laws 数量不对")
-    for l in d["laws"]:
-        _req(all(k in l for k in ("id", "text", "trigger_kind", "cost_kind")), "law 缺字段")
-        tk = l["trigger_kind"]
-        ok = (tk.startswith("intent:") and tk[7:] in INTENTS) or \
-             (tk.startswith("clock>=") and tk[7:].isdigit()) or \
-             (tk.startswith("danger>=") and tk[8:].isdigit())
-        _req(ok, f"trigger_kind 非法:{tk}")
-        _req(l["cost_kind"] in COST_KINDS, f"cost_kind 非法:{l['cost_kind']}")
+    _v_laws(d)
     _req(isinstance(d["opening_facts"], list) and 2 <= len(d["opening_facts"]) <= 6,
          "opening_facts 数量不对")
     if crossing:
         _req(isinstance(d["world_thread"], str) and d["world_thread"].strip(),
              "world_thread 须是一句话")
-        _req(isinstance(d["goal_menu"], list) and 2 <= len(d["goal_menu"]) <= 4,
-             "goal_menu 须是2到4项")
-        goal_ids = set()
-        for goal in d["goal_menu"]:
-            _req(isinstance(goal, dict) and goal.get("id") and goal.get("text"),
-                 "goal_menu 项缺字段")
-            _req(goal["id"] not in goal_ids, "goal_menu id 重复")
-            _req(isinstance(goal["text"], str) and len(goal["text"]) <= 40,
-                 "goal_menu text 须不超过40字")
-            goal_ids.add(goal["id"])
+        _v_goal_menu(d)
     else:
         _req(isinstance(d["milestones"], list) and 2 <= len(d["milestones"]) <= 4,
              "milestones 须是2到4步")
@@ -462,6 +505,84 @@ def _v_world(d, ctx=None):
             _req(m["id"] not in mids, "milestone id 重复")
             mids.add(m["id"])
             _req("或" not in m["text"], f"milestone 含备选写法『或』:{m['text']}")
+    _v_chronicle(d)
+    if not isinstance(d.get("clock_text"), str) or not d["clock_text"].strip():
+        d["clock_text"] = "时钟走满,这段故事就到站。"   # 宽容:漏写不废稿
+    _v_hidden_threads(d)
+    _v_side_quests(d)
+
+
+def _v_laws(d):
+    _req(isinstance(d["laws"], list) and 1 <= len(d["laws"]) <= 4, "laws 数量不对")
+    for l in d["laws"]:
+        _req(all(k in l for k in ("id", "text", "trigger_kind", "cost_kind")), "law 缺字段")
+        tk = l["trigger_kind"]
+        ok = (tk.startswith("intent:") and tk[7:] in INTENTS) or \
+             (tk.startswith("clock>=") and tk[7:].isdigit()) or \
+             (tk.startswith("danger>=") and tk[8:].isdigit())
+        _req(ok, f"trigger_kind 非法:{tk}")
+        _req(l["cost_kind"] in COST_KINDS, f"cost_kind 非法:{l['cost_kind']}")
+
+
+def _v_world_layer(d):
+    """C期世界层:大世界 + 远方大主线 + 三个降落点。本局那一段不在这里。"""
+    for k in ("world_name", "premise", "lore", "world_background",
+              "global_canon", "world_thread", "laws", "hidden_threads",
+              "landings"):
+        _req(k in d, f"缺字段 {k}")
+    _req(len(d["world_name"]) <= 16, "world_name 过长")
+    _req(len(d["lore"]) <= 600, "lore 过长")
+    _req(isinstance(d["world_background"], str) and
+         0 < len(d["world_background"]) <= 200, "world_background 须≤200字")
+    _req(isinstance(d["world_thread"], str) and d["world_thread"].strip(),
+         "world_thread 须是一句话")
+    gc = d["global_canon"]
+    _req(isinstance(gc, dict) and isinstance(gc.get("text"), str)
+         and gc["text"].strip(), "global_canon 须带 text")
+    ticks = gc.get("ticks")
+    _req(isinstance(ticks, list) and 4 <= len(ticks) <= 6,
+         "global_canon.ticks 须是4到6行远方大事")
+    for t in ticks:
+        _req(isinstance(t, str) and t.strip(), "canon tick 须是一句话")
+        # 远方大事只许自走,不许伸手拽玩家——这是三层拆分的命根子
+        _req("你们" not in t, f"canon tick 不得点玩家:{t}")
+    _req(isinstance(d["landings"], list) and len(d["landings"]) == 3,
+         "landings 须恰好3个降落点")
+    lids = set()
+    for l in d["landings"]:
+        _req(isinstance(l, dict) and l.get("id") and l.get("place")
+             and l.get("happening"), "landing 缺字段(id/place/happening)")
+        _req(l["id"] not in lids, "landing id 重复")
+        lids.add(l["id"])
+        _req(len(l["happening"]) <= 60, "landing happening 须≤60字")
+    _v_laws(d)
+    if not isinstance(d.get("clock_text"), str) or not d["clock_text"].strip():
+        d["clock_text"] = "时钟走满,这段故事就到站。"
+    _v_hidden_threads(d)
+
+
+def _v_episode(d, ctx=None):
+    """C期本局层:玩家掉进的那个角落。降落点选定后才生成。"""
+    _req(isinstance(d, dict), "本局卡须是对象")
+    for k in ("local_episode", "goal_menu", "opening_facts", "side_quests",
+              "chronicle", "original_ending"):
+        _req(k in d, f"缺字段 {k}")
+    le = d["local_episode"]
+    _req(isinstance(le, dict) and le.get("place") and le.get("situation"),
+         "local_episode 须带 place 与 situation")
+    events = le.get("events")
+    _req(isinstance(events, list) and 2 <= len(events) <= 4,
+         "local_episode.events 须是2到4件本地小事")
+    for e in events:
+        _req(isinstance(e, str) and e.strip(), "本地小事须是一句话")
+    _req(isinstance(d["opening_facts"], list) and
+         2 <= len(d["opening_facts"]) <= 6, "opening_facts 数量不对")
+    _v_goal_menu(d)
+    _v_chronicle(d)
+    _v_side_quests(d)
+
+
+def _v_chronicle(d):
     _req(isinstance(d.get("chronicle"), list) and 6 <= len(d["chronicle"]) <= 10,
          "chronicle 须是6到10章的原典")
     for c in d["chronicle"]:
@@ -469,8 +590,22 @@ def _v_world(d, ctx=None):
              "chronicle 章节缺字段")
     _req(isinstance(d.get("original_ending"), str) and d["original_ending"],
          "缺 original_ending")
-    if not isinstance(d.get("clock_text"), str) or not d["clock_text"].strip():
-        d["clock_text"] = "时钟走满,这段故事就到站。"   # 宽容:漏写不废稿
+
+
+def _v_goal_menu(d):
+    _req(isinstance(d.get("goal_menu"), list) and 2 <= len(d["goal_menu"]) <= 4,
+         "goal_menu 须是2到4项")
+    goal_ids = set()
+    for goal in d["goal_menu"]:
+        _req(isinstance(goal, dict) and goal.get("id") and goal.get("text"),
+             "goal_menu 项缺字段")
+        _req(goal["id"] not in goal_ids, "goal_menu id 重复")
+        _req(isinstance(goal["text"], str) and len(goal["text"]) <= 40,
+             "goal_menu text 须不超过40字")
+        goal_ids.add(goal["id"])
+
+
+def _v_hidden_threads(d):
     _req(isinstance(d["hidden_threads"], list) and 1 <= len(d["hidden_threads"]) <= 3,
          "hidden_threads 数量不对")
     for t in d["hidden_threads"]:
@@ -496,6 +631,9 @@ def _v_world(d, ctx=None):
         _req(fixed, f"thread 触发条件非法:{r}")
         t["required"] = fixed
         _req(t["effect_kind"] in ("truth", "ending_modifier"), "effect_kind 非法")
+
+
+def _v_side_quests(d):
     # 支线暗典:恰好2条,一条NPC一条数值,谜题谜底俱全——这是余波幕的命根子
     sq = d.get("side_quests")
     _req(isinstance(sq, list) and len(sq) == 2, "side_quests 须恰好2条")
@@ -617,6 +755,7 @@ def _v_ending(d, ctx=None):
     _req(isinstance(d["text"], str) and 20 <= len(d["text"]) <= 600, "结局长度不对")
 
 
-VALIDATORS = {"gen_world": _v_world, "gen_identities": _v_identities,
+VALIDATORS = {"gen_world": _v_world, "gen_episode": _v_episode,
+              "gen_identities": _v_identities,
               "gen_milestones": _v_milestones, "gen_scene": _v_scene,
               "render_ending": _v_ending}

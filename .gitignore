@@ -5,3 +5,4 @@ data/narrator.json
 data/*.log
 data/narrator_last_error.txt
 *.db
+latest-game.txt

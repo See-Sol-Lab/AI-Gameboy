@@ -6,6 +6,7 @@
 import importlib.util
 import json
 import unittest
+from copy import deepcopy
 from pathlib import Path
 
 _spec = importlib.util.spec_from_file_location(
@@ -100,6 +101,67 @@ FIX_IDENTITIES = [
      "starting_item": {"id": "dice", "name": "骰子", "use": ["advance", "confront"]}},
 ]
 
+# ---- C期三层世界样本:世界层只管大世界与降落点,本局那段归 gen_episode ----
+FIX_WORLD3 = {
+    "world_name": "三层之城",
+    "premise": "你们醒在一座分了层的城里。",
+    "lore": "这座城为验收而生。它的每条街都通向断言。",
+    "world_background": "断言纪元第七年,测试总署统辖九区,总署长从不露面。",
+    "global_canon": {
+        "text": "总署长正在远方逐区改写全城的断言。",
+        "ticks": ["总署的复核队开进第三区。",
+                  "第三区的旧断言被整批作废。",
+                  "复核队向第五区推进。",
+                  "总署长在第五区立了新碑。",
+                  "九区只剩两区未被复核。"],
+    },
+    "world_thread": "测试总署正在远方逐区复核整座城市。",
+    "landings": [
+        {"id": "market", "place": "断言集市", "happening": "摊主们正为一条作废的断言吵架。"},
+        {"id": "archive", "place": "旧档案馆", "happening": "馆长整夜誊抄将被归档的卷宗。"},
+        {"id": "gatehouse", "place": "西闸机房", "happening": "闸机连续三天判定失败。"},
+    ],
+    "laws": [
+        {"id": "law_confront", "text": "对抗会惊动巡检(危险+1)。",
+         "trigger_kind": "intent:confront", "cost_kind": "danger"},
+        {"id": "law_night", "text": "时钟过5后每幕危险+1。",
+         "trigger_kind": "clock>=5", "cost_kind": "danger"},
+    ],
+    "hidden_threads": [
+        {"id": "h-truth", "required": {"flag": "found_the_key_truth"},
+         "effect_kind": "truth", "brief": "这座城是有人测出来的。"},
+    ],
+}
+
+FIX_EPISODE = {
+    "local_episode": {
+        "place": "断言集市",
+        "situation": "一条作废的断言让整条街的买卖停了。",
+        "events": ["摊主们为该认哪条断言吵了三天。",
+                   "有人偷偷改了集市口的告示牌。"],
+    },
+    "goal_menu": [
+        {"id": "clear_assertions", "text": "通过本街区的全部断言"},
+        {"id": "help_patrol", "text": "查明巡检不眨眼的原因"},
+    ],
+    "opening_facts": ["集市口的告示牌被人改过。", "巡检从不眨眼。"],
+    "side_quests": [
+        {"id": "sq_npc", "question": "档案馆为什么整夜亮灯?",
+         "truth": "馆长在誊抄将被归档的城,一页一页救下它的记忆。",
+         "unlock_kind": "npc",
+         "npc": {"name": "档案馆长", "desc": "抱着一摞誊本,袖口沾着墨。"}},
+        {"id": "sq_stat", "question": "巡检为什么从不眨眼?",
+         "truth": "巡检是断言化成的人形,眨眼即失效,所以永远睁着。",
+         "unlock_kind": "stat", "stat": {"explore_wins>=": 3}},
+    ],
+    "chronicle": [
+        {"chapter": i, "title": f"第{i}章", "event": f"集市密文第{i}节:吵架照旧。"}
+        for i in range(1, 9)
+    ],
+    "original_ending": "没人来的话,集市自己散了,告示牌一直挂着旧断言。",
+}
+
+
 FIX_MILESTONES = {"tracks": [
     {"seat": "seat_a", "milestones": [
         {"id": "m1", "text": "通过第一道断言闸机"},
@@ -126,6 +188,8 @@ def feed(s):
         kind = s["narration_request"]["kind"]
         if kind == "gen_world":
             data = FIX_WORLD
+        elif kind == "gen_episode":
+            data = FIX_EPISODE
         elif kind == "gen_identities":
             data = FIX_IDENTITIES
         elif kind == "gen_milestones":
@@ -148,6 +212,38 @@ def feed(s):
 
 def setup_playing(seed=1):
     s = feed(rules.new_game(SEATS, seed))
+    for seat in SEATS:
+        s = rules.apply(s, seat, "choose_identity",
+                        {"identity_id": s["identity_offers"][seat][0]})
+    s = rules.apply(s, "seat_a", "choose_goal", {"goal_id": "clear_assertions"})
+    s = rules.apply(s, "seat_b", "choose_goal", {"goal_id": "help_patrol"})
+    return feed(s)
+
+
+def feed3(s):
+    """三层世界的假荷官:世界卡换成 FIX_WORLD3,其余同 feed。"""
+    while s.get("narration_request"):
+        kind = s["narration_request"]["kind"]
+        if kind == "gen_world":
+            s = rules.apply_system(s, "narration_result",
+                                   {"kind": kind, "data": FIX_WORLD3})
+        else:
+            s = feed(s)
+            break
+    return s
+
+
+def setup_landing(seed=1):
+    """跑到降落点这一步,停在等玩家挑落点。"""
+    return feed3(rules.new_game(SEATS, seed))
+
+
+def setup_playing3(seed=1, landing="market"):
+    """三层世界完整开局:挑落点 → 本局生成 → 身份 → 目标。"""
+    s = setup_landing(seed)
+    for seat in SEATS:
+        s = rules.apply(s, seat, "choose_landing", {"landing_id": landing})
+    s = feed(s)
     for seat in SEATS:
         s = rules.apply(s, seat, "choose_identity",
                         {"identity_id": s["identity_offers"][seat][0]})
@@ -863,7 +959,11 @@ class TestScopeAndAntiEpic(unittest.TestCase):
         self.assertIn("规模纪律", p)
         self.assertIn("烈度1-2", p)
         self.assertIn('"world_thread"', p)
-        self.assertIn('"goal_menu"', p)
+        # C期三层:世界卡只管大世界与降落点,本局那一段归 gen_episode
+        self.assertIn('"landings"', p)
+        self.assertIn('"global_canon"', p)
+        self.assertNotIn('"goal_menu"', p)
+        self.assertNotIn('"side_quests"', p)
         self.assertNotIn('"public_goal"', p)
         self.assertNotIn('"milestones"', p)
         axes["scope"] = "天下大势"
@@ -901,6 +1001,96 @@ class TestScopeAndAntiEpic(unittest.TestCase):
         p = narrator._p_ending(ctx)
         self.assertIn("禁止补写没演出来的新事件", p)
         self.assertIn("不强制升华", p)
+
+
+class TestThreeLayerWorld(unittest.TestCase):
+    """C期窗口B:三层世界 + 降落点。"""
+
+    def test_worldgen_stops_at_landing(self):
+        s = setup_landing()
+        self.assertEqual(s["stage"], "landing")
+        self.assertIsNone(s["narration_request"])   # 落点没定,不劳荷官写本局
+        self.assertIsNone(s["episode"])
+        self.assertEqual(len(s["landings"]), 3)
+        # 世界层不该扛着本局那一段
+        self.assertNotIn("landings", s["world"])
+        self.assertNotIn("goal_menu", s["world"])
+
+    def test_landing_needs_both_seats_to_agree(self):
+        s = setup_landing()
+        s = rules.apply(s, "seat_a", "choose_landing", {"landing_id": "market"})
+        self.assertEqual(s["stage"], "landing")     # 一票不落定
+        s = rules.apply(s, "seat_b", "choose_landing", {"landing_id": "archive"})
+        # 谈不拢:清票重来,不罚也不僵
+        self.assertEqual(s["stage"], "landing")
+        self.assertEqual(s["landing_votes"], {})
+        self.assertIsNone(s["landing"])
+        for seat in SEATS:
+            s = rules.apply(s, seat, "choose_landing", {"landing_id": "archive"})
+        self.assertEqual(s["landing"]["id"], "archive")
+        self.assertEqual(s["stage"], "episodegen")
+        self.assertEqual(s["narration_request"]["kind"], "gen_episode")
+
+    def test_roll_landing_settles_immediately(self):
+        s = setup_landing()
+        s = rules.apply(s, "seat_a", "roll_landing", {})
+        self.assertIsNotNone(s["landing"])
+        self.assertEqual(s["narration_request"]["context"]["settled_by"], "rolled")
+
+    def test_landing_rejects_unknown_id(self):
+        s = setup_landing()
+        with self.assertRaises(rules.IllegalAction):
+            rules.apply(s, "seat_a", "choose_landing", {"landing_id": "nowhere"})
+
+    def test_landing_fact_survives_episode_facts(self):
+        s = setup_playing3(landing="gatehouse")
+        self.assertIn("西闸机房", s["facts"][0])          # 落点那句排在最前
+        self.assertIn("集市口的告示牌被人改过。", s["facts"])  # 开局事实接在后面
+
+    def test_episode_carries_local_layer(self):
+        s = setup_playing3()
+        self.assertEqual(s["episode"]["local_episode"]["place"], "断言集市")
+        # 本局字段读的是 episode,不是 world
+        self.assertEqual([g["id"] for g in rules._ep(s).get("goal_menu")],
+                         ["clear_assertions", "help_patrol"])
+        brief = rules._world_brief(s)
+        self.assertEqual(brief["landing"]["id"], "market")
+        self.assertIn("断言纪元", brief["world_background"])
+
+    def test_same_seed_different_landing_yields_different_first_fact(self):
+        a = setup_playing3(landing="market")["facts"][0]
+        b = setup_playing3(landing="archive")["facts"][0]
+        self.assertNotEqual(a, b)
+
+    def test_world_layer_validator_rejects_canon_tick_touching_players(self):
+        import narrator
+        bad = deepcopy(FIX_WORLD3)
+        bad["global_canon"]["ticks"][0] = "复核队找上你们,要求同行。"
+        with self.assertRaises(narrator.NarratorError):
+            narrator._v_world(bad)
+
+    def test_world_layer_validator_requires_three_landings(self):
+        import narrator
+        bad = deepcopy(FIX_WORLD3)
+        bad["landings"] = bad["landings"][:2]
+        with self.assertRaises(narrator.NarratorError):
+            narrator._v_world(bad)
+        narrator._v_world(deepcopy(FIX_WORLD3))   # 完整样本应当通过
+
+    def test_episode_validator(self):
+        import narrator
+        narrator._v_episode(deepcopy(FIX_EPISODE))
+        bad = deepcopy(FIX_EPISODE)
+        bad["local_episode"]["events"] = ["只有一件"]
+        with self.assertRaises(narrator.NarratorError):
+            narrator._v_episode(bad)
+
+    def test_old_shape_world_still_works(self):
+        """旧形态世界卡(本局字段写在世界层)照旧能开局,不逼老存档改造。"""
+        s = setup_playing()
+        self.assertIsNone(s["landing"])
+        self.assertEqual(s["stage"], "scene")
+        self.assertEqual(rules._ep(s)["goal_menu"][0]["id"], "clear_assertions")
 
 
 if __name__ == "__main__":

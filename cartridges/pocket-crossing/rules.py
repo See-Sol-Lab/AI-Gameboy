@@ -176,6 +176,11 @@ def new_game(seats, seed):
         "axes": axes,
         "seats": list(seats),
         "world": None,
+        "episode": None,                # 本局小段:降落点选定后才生成
+        "landings": [],                 # 三个降落点选项(worldgen 产出)
+        "landing": None,                # 选定的降落点
+        "landing_votes": {},            # 席位 -> 降落点 id;两席同选才落定
+        "canon_index": 0,               # 远方大事推进到第几行
         "identity_pool": None,
         "identity_offers": {},
         "identities": {seats[0]: None, seats[1]: None},
@@ -270,8 +275,25 @@ def apply_system(full_state, action_id, payload):
         data["power_level"] = s["axes"]["power"]   # 常量由引擎注入,不劳荷官复读
         data.pop("public_goal", None)    # 测试固定样本兼供经典跑团,穿越卡不留旧合同
         data.pop("milestones", None)
+        # 三层拆分:世界层只留大世界。本局那一段等降落点选定后另开合同生成,
+        # 同一颗世界种子因此能掉进完全不同的角落(C期设计稿 §1/§4)。
+        landings = deepcopy(data.pop("landings", []) or [])
         s["world"] = data
-        s["facts"] = list(data["opening_facts"])
+        s["landings"] = landings
+        s["landing"] = None
+        s["landing_votes"] = {}
+        if landings:
+            s["narration_request"] = None
+            s["stage"] = "landing"
+            return s
+        # 旧形态世界卡(本局字段直接写在世界层)自己兼作本局层,老样本零改造
+        kind = "gen_episode"
+    if kind == "gen_episode":
+        data = dict(data)
+        s["episode"] = data
+        # 落点那句是这局的第一条事实,开局事实接在它后面,不覆盖
+        landed = list(s["facts"]) if s.get("landing") else []
+        s["facts"] = landed + list(data["opening_facts"])
         # 支线暗典入库:谜底与登场窗口只有引擎知道,悬事 = 谜题原句
         quests = []
         for q in data.get("side_quests", []):
@@ -363,14 +385,27 @@ def _law_gloss(law):
     return f"{law['text']}(判定:{when} {COST_GLOSS.get(law['cost_kind'], '')})"
 
 
+def _ep(s):
+    """本局小段。三层拆分后本局字段住在 episode 里;旧形态世界卡自己兼作本局层。"""
+    return s.get("episode") or s.get("world") or {}
+
+
 def _world_brief(s):
     w = s["world"]
-    return {"world_name": w["world_name"], "premise": w["premise"],
-            "lore": w["lore"], "power_level": w["power_level"],
-            "world_thread": w.get("world_thread", w.get("public_goal", "")),
-            "goal_menu": deepcopy(w.get("goal_menu", [])),
-            "clock_text": w.get("clock_text"),
-            "laws": [_law_gloss(l) for l in w["laws"]]}
+    ep = _ep(s)
+    brief = {"world_name": w["world_name"], "premise": w["premise"],
+             "lore": w["lore"], "power_level": w["power_level"],
+             "world_thread": w.get("world_thread", w.get("public_goal", "")),
+             "goal_menu": deepcopy(ep.get("goal_menu", [])),
+             "clock_text": w.get("clock_text"),
+             "laws": [_law_gloss(l) for l in w["laws"]]}
+    if w.get("world_background"):
+        brief["world_background"] = w["world_background"]
+    if ep.get("local_episode"):
+        brief["local_episode"] = deepcopy(ep["local_episode"])
+    if s.get("landing"):
+        brief["landing"] = deepcopy(s["landing"])
+    return brief
 
 
 def _active_goal(s, seat_id):
@@ -439,7 +474,7 @@ def _scene_context(s, last_report):
         pacing = "决胜幕:终点已在眼前,本幕危机必须是通往目标的最后一道阻碍,不得新增支线人物或新谜团。"
     elif s["clock"] >= 6:
         pacing = "收束幕:时间无多,收拢已有线索,不再展开新方向。"
-    chron = (s["world"] or {}).get("chronicle") or []
+    chron = _ep(s).get("chronicle") or []
     idx = min(s["scene_index"], len(chron) - 1) if chron else -1
     chronicle_now = (f"第{chron[idx].get('chapter', idx + 1)}章"
                      f"《{chron[idx]['title']}》:{chron[idx]['event']}"
@@ -522,13 +557,19 @@ def observe(full_state, seat_id):
         "hooks": list(s["hooks"]),
         "submitted": {x: (x in s["pending"]) for x in s["seats"]},
         "end_proposed_by": s["end_proposed_by"],
+        # 降落点:待选时摊开三个选项与当前票型,选定后只留落点本身
+        "landings": (deepcopy(s.get("landings", []))
+                     if s["stage"] == "landing" else None),
+        "landing_votes": (deepcopy(s.get("landing_votes", {}))
+                          if s["stage"] == "landing" else None),
+        "landing": deepcopy(s.get("landing")),
         "history": [{"scene_index": h["scene_index"], "title": h["title"],
                      "report": h["report"]} for h in s["history"]],
         "ending": deepcopy(s["ending"]),
         # 原典只在全书终了时揭晓——这一刻是穿越者的对账时刻
         "chronicle_reveal": (
-            {"chapters": deepcopy((s["world"] or {}).get("chronicle", [])),
-             "original_ending": (s["world"] or {}).get("original_ending"),
+            {"chapters": deepcopy(_ep(s).get("chronicle", [])),
+             "original_ending": _ep(s).get("original_ending"),
              # 支线对账:解开的、错过的,谜底与钥匙一并摊牌
              "side_quests": [
                  {"question": q["question"], "truth": q["truth"],
@@ -563,6 +604,14 @@ def observe(full_state, seat_id):
     if s["phase"] == "playing":
         if req:
             waiting = ["narrator"]
+        elif s["stage"] == "landing":
+            # 降落点是全桌共同的一步:两席同选才落定,谈不拢就掷骰交给运气
+            waiting = [x for x in s["seats"] if x not in s.get("landing_votes", {})]
+            if seat_id in waiting:
+                opts = [l["id"] for l in s.get("landings", [])]
+                legal = [{"action_id": "choose_landing", "params": {
+                    "landing_id": f"商量后选同一个才落定:{opts}"}},
+                    {"action_id": "roll_landing", "params": {}}]
         elif s["stage"] == "identity":
             waiting = [x for x in s["seats"] if not s["identities"][x]]
             if seat_id in waiting:
@@ -572,7 +621,7 @@ def observe(full_state, seat_id):
         elif s["stage"] == "goal":
             waiting = [x for x in s["seats"] if not _active_goal(s, x)]
             if seat_id in waiting:
-                menu = [g["id"] for g in (s["world"] or {}).get("goal_menu", [])]
+                menu = [g["id"] for g in _ep(s).get("goal_menu", [])]
                 legal = [{"action_id": "choose_goal", "params": {
                     "goal_id": f"从菜单选一个:{menu}",
                     "custom_text": "或自定义一个可判定目标(≤40字)",
@@ -607,7 +656,7 @@ def observe(full_state, seat_id):
                         f"{s['hooks']}")
                 legal = [{"action_id": "commit", "params": commit_params}]
                 if not s.get("main_goal_locked") and not s["pending"]:
-                    menu = [g["id"] for g in (s["world"] or {}).get("goal_menu", [])]
+                    menu = [g["id"] for g in _ep(s).get("goal_menu", [])]
                     legal.append({"action_id": "switch_goal", "params": {
                         "goal_id": f"从菜单选一个:{menu}",
                         "custom_text": "或自定义一个可判定目标(≤40字)",
@@ -627,7 +676,11 @@ def apply(full_state, seat_id, action_id, params):
     if s.get("narration_request"):
         raise IllegalAction("荷官执笔中,请稍候(人类界面可一键召荷官)")
     params = params if isinstance(params, dict) else {}
-    if action_id == "choose_identity":
+    if action_id == "choose_landing":
+        _apply_landing(s, seat_id, params)
+    elif action_id == "roll_landing":
+        _apply_roll_landing(s, seat_id)
+    elif action_id == "choose_identity":
         _apply_identity(s, seat_id, params)
     elif action_id == "choose_goal":
         _apply_goal(s, seat_id, params)
@@ -638,6 +691,50 @@ def apply(full_state, seat_id, action_id, params):
     else:
         raise IllegalAction(f"没有这个动作:{action_id}")
     return s
+
+
+def _landing_by_id(s, lid):
+    return next((l for l in s.get("landings", []) if l["id"] == lid), None)
+
+
+def _settle_landing(s, landing, how):
+    """降落点落定:记事实,再开本局合同——这一段世界由降落点决定怎么展开。"""
+    s["landing"] = deepcopy(landing)
+    s["facts"] = [f"你们落在{landing['place']}。{landing['happening']}"]
+    s["narration_request"] = {"kind": "gen_episode", "context": {
+        "world": _world_brief(s),
+        "landing": deepcopy(landing),
+        "scope": s["axes"]["scope"],
+        "scope_intensity": SCOPE_INTENSITY.get(s["axes"].get("scope"), ""),
+        "settled_by": how,
+    }}
+    s["stage"] = "episodegen"
+
+
+def _apply_landing(s, seat_id, params):
+    if s["stage"] != "landing":
+        raise IllegalAction("现在不是挑降落点的时候")
+    lid = params.get("landing_id")
+    if not _landing_by_id(s, lid):
+        raise IllegalAction(
+            f"只能从这三个里选:{[l['id'] for l in s.get('landings', [])]}")
+    votes = s.setdefault("landing_votes", {})
+    votes[seat_id] = lid
+    if len(votes) < len(s["seats"]):
+        return
+    if len(set(votes.values())) == 1:
+        _settle_landing(s, _landing_by_id(s, lid), "agreed")
+    else:   # 谈不拢不罚也不僵:清票重来,想省事就 roll_landing
+        s["landing_votes"] = {}
+
+
+def _apply_roll_landing(s, seat_id):
+    if s["stage"] != "landing":
+        raise IllegalAction("现在不是挑降落点的时候")
+    if not s.get("landings"):
+        raise IllegalAction("这局没有降落点可掷")
+    idx = (_die(s) - 1) % len(s["landings"])
+    _settle_landing(s, s["landings"][idx], "rolled")
 
 
 def _apply_identity(s, seat_id, params):
@@ -662,7 +759,7 @@ def _goal_record(s, seat_id, params):
     if bool(goal_id) == bool(custom):
         raise IllegalAction("goal_id 与 custom_text 须且只能填一个")
     if goal_id:
-        picked = next((g for g in s["world"].get("goal_menu", [])
+        picked = next((g for g in _ep(s).get("goal_menu", [])
                        if g["id"] == goal_id), None)
         if not picked:
             raise IllegalAction("goal_id 不在目标菜单里")
@@ -895,7 +992,7 @@ def _resolve(s):
                         slip["items_gained"].append((seat, item))
                         report.append(f"  {name}顺手寻获:{item['name']}")
                     # 先知情报:撕一页原典,私密塞给探到的人
-                    chron = (s["world"] or {}).get("chronicle") or []
+                    chron = _ep(s).get("chronicle") or []
                     if s["prophecy_i"] < len(chron):
                         page = chron[s["prophecy_i"]]
                         s["prophecy_i"] += 1
@@ -1223,7 +1320,7 @@ def _finish(s, kind, reason):
             })
     world_thread = {
         "text": (s["world"] or {}).get("world_thread", ""),
-        "outcome": (s["world"] or {}).get("original_ending", ""),
+        "outcome": _ep(s).get("original_ending", ""),
     }
     s["ending"] = {"kind": kind, "reason": reason,
                    "reason_name": REASON_NAMES[kind_reason_key(kind, reason)],
@@ -1257,9 +1354,9 @@ def _finish(s, kind, reason):
                              (s["world"].get("hidden_threads", []) if s["world"] else [])
                              if th["id"] in s["hidden_fired"]],
             "scene_titles": [h["title"] for h in s["history"]],
-            "original_ending": (s["world"] or {}).get("original_ending"),
+            "original_ending": _ep(s).get("original_ending"),
             "chronicle_titles": [c["title"] for c in
-                                 (s["world"] or {}).get("chronicle", [])],
+                                 _ep(s).get("chronicle", [])],
         },
     }
 
