@@ -57,7 +57,7 @@ worldgen 后、identities 前插 `landing`:荷官给 3 个降落点
 ## 6. 施工顺序(建议3个窗口)
 
 1. **窗口A（已落地，v0.4.0）**:world_thread/player_goal 分家 + gen_milestones 合同
-2. **窗口B**:landing 降落点 + 三层 worldgen 合同 + canon_tick
+2. ~~**窗口B**:landing 降落点 + 三层 worldgen 合同 + canon_tick~~ **已落地 v0.5.0**
 3. **窗口C**:local_thread 双线 + chronicle_reveal 语义 + 全量回归
 
 每步保持 tests 全绿再进下一步;《口袋跑团》不跟进 C期,维持经典骨架。

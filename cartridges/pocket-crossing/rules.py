@@ -1,4 +1,9 @@
-"""《口袋穿越》规则 v0.4(玩家目标分轨版)。
+"""《口袋穿越》规则 v0.5(三层世界版)。
+
+v0.5 新增·C期窗口B:世界三层拆分(world_background/global_canon/local_episode)。
+worldgen 只写大世界与三个降落点,玩家选定落点后由 gen_episode 生成本局那一段
+——同一颗世界种子能掉进三个完全不同的角落。global_canon.ticks 每两幕自走一行,
+只作背景,除「天下大势」外禁止与本幕合流。
 
 v0.4 新增:world_thread 仅作背景自走;两席自选 player_goal,荷官现场拆分逐席
 里程碑;可花1时钟换目标;结局按目标成败 × 世界线走向成文。
