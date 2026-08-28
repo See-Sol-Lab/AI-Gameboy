@@ -268,6 +268,20 @@ def _p_scene(ctx):
 但两位穿越者已经造成了这些偏移(见既成事实)。你的任务不是编新故事,
 而是**推演**:原典的这一章,被他们的行动扰动之后,现场变成了什么样。
 原典中的人物、事件照常想登场,除非偏移已经改变了它们。"""
+    canon = ""
+    if ctx.get("canon_now"):
+        c = ctx["canon_now"]
+        if c.get("may_converge"):
+            canon = f"""
+【远方大事(第{c['index']}/{c['total']}行)】{c['line']}
+本局剧情规模是天下大势,玩家本就身处这条主线之中,允许它与本幕合流。"""
+        else:
+            canon = f"""
+【远方大事(第{c['index']}/{c['total']}行)】{c['line']}
+这是别处正在发生的事,与玩家无关。**最多在 text 里作为背景露一句**
+(听来的消息、路过的队伍、贴出的告示),然后继续拍你的本地故事。
+禁止:让它找上玩家、要求玩家表态或参与、把本幕危机换成它、
+暗示"其实这一切都连着它"。它自己走它的,玩家不是它的角色。"""
     npc = ""
     if ctx.get("npc_onstage"):
         n = ctx["npc_onstage"]
@@ -323,7 +337,7 @@ kind 只能是:answered(如实作答)/lied(按此人立场撒谎)/refused(拒答
     thread_name = "世界背景线" if "world_thread" in w else "世界目标"
     return f"""为《{w['world_name']}》生成第 {ctx['scene_index']} 幕场景。
 {thread_name}:{thread}
-{goal_contract}{chron}{npc}{inter}{recur}
+{goal_contract}{chron}{canon}{npc}{inter}{recur}
 世界法则:{'; '.join(w['laws'])}
 时钟含义:{w.get('clock_text') or "时钟走满,这段故事就到站"}
 当前账本:{json.dumps(ctx['tracks'], ensure_ascii=False)}

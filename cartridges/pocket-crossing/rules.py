@@ -457,6 +457,23 @@ def _request_milestones(s, seats):
     }}
 
 
+CANON_TICK_EVERY = 2   # 每两幕推进一行远方大事
+
+
+def _canon_now(s):
+    """远方大事推进到哪一行。它只作背景自走,永远不拽玩家参与。
+
+    scope=天下大势 时玩家本就身处大主线,此时才允许它与本幕合流。
+    """
+    ticks = ((s["world"] or {}).get("global_canon") or {}).get("ticks") or []
+    if not ticks:
+        return None
+    idx = min(s["scene_index"] // CANON_TICK_EVERY, len(ticks) - 1)
+    return {"line": ticks[idx],
+            "index": idx + 1, "total": len(ticks),
+            "may_converge": s["axes"].get("scope") == "天下大势"}
+
+
 def _scene_context(s, last_report):
     # 桌边留言是玩家之间的真实闲聊,永远不进荷官的眼(§DS永远不能)
     if last_report:
@@ -498,6 +515,7 @@ def _scene_context(s, last_report):
                  for m in goal.get("milestones", [])]}
             for seat in s["seats"] if (goal := _active_goal(s, seat))],
         "chronicle_now": chronicle_now,
+        "canon_now": _canon_now(s),
         "world": _world_brief(s),
         "scene_index": s["scene_index"] + 1,
         "tracks": {"progress": s["progress"], "danger": s["danger"],
@@ -1322,6 +1340,10 @@ def _finish(s, kind, reason):
         "text": (s["world"] or {}).get("world_thread", ""),
         "outcome": _ep(s).get("original_ending", ""),
     }
+    # 大主线结算只露一行:保持神秘才是余味(C期设计稿 §5)
+    canon = _canon_now(s)
+    if canon:
+        world_thread["canon_line"] = canon["line"]
     s["ending"] = {"kind": kind, "reason": reason,
                    "reason_name": REASON_NAMES[kind_reason_key(kind, reason)],
                    "text": None,   # 待荷官成文

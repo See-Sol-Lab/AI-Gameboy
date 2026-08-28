@@ -1085,6 +1085,40 @@ class TestThreeLayerWorld(unittest.TestCase):
         with self.assertRaises(narrator.NarratorError):
             narrator._v_episode(bad)
 
+    def test_canon_tick_advances_every_two_scenes(self):
+        s = setup_playing3()
+        seen = []
+        for idx in range(0, 10):
+            s["scene_index"] = idx
+            seen.append(rules._canon_now(s)["index"])
+        # 每两幕推进一行:1,1,2,2,3,3,...,并在末行封顶
+        self.assertEqual(seen[:6], [1, 1, 2, 2, 3, 3])
+        self.assertEqual(max(seen), len(FIX_WORLD3["global_canon"]["ticks"]))
+
+    def test_canon_only_converges_at_grand_scope(self):
+        s = setup_playing3()
+        s["axes"]["scope"] = "鸡毛蒜皮"
+        self.assertFalse(rules._canon_now(s)["may_converge"])
+        s["axes"]["scope"] = "天下大势"
+        self.assertTrue(rules._canon_now(s)["may_converge"])
+
+    def test_scene_prompt_forbids_canon_dragging_players(self):
+        import narrator
+        ctx = rules._scene_context(setup_playing3(), [])
+        p = narrator._p_scene(ctx)
+        self.assertIn("远方大事", p)
+        self.assertIn("玩家不是它的角色", p)
+        self.assertIn("最多在 text 里作为背景露一句", p)
+
+    def test_ending_reveals_only_one_canon_line(self):
+        s = setup_playing3()
+        rules._finish(s, "HE", "goal")
+        wt = s["narration_request"]["context"]["world_thread"]
+        self.assertIn(wt["canon_line"], FIX_WORLD3["global_canon"]["ticks"])
+
+    def test_canon_absent_without_global_canon(self):
+        self.assertIsNone(rules._canon_now(setup_playing()))
+
     def test_old_shape_world_still_works(self):
         """旧形态世界卡(本局字段写在世界层)照旧能开局,不逼老存档改造。"""
         s = setup_playing()
