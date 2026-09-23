@@ -45,7 +45,7 @@ class TestHumanSeat(unittest.TestCase):
                           {"display_name": "AI 玩家", "surface": "Codex Desktop"})
         self.assertEqual(r["result"], "ok")
         r = self.host.act(self.sid, self.t_hu, 1, "introduce",
-                          {"display_name": "项目作者", "surface": "掌机 UI"})
+                          {"display_name": "人类玩家", "surface": "掌机 UI"})
         self.assertEqual(r["result"], "ok")
         self.assertEqual(self.host.start_game(self.sid)["result"], "ok")
 
@@ -93,7 +93,7 @@ class TestHumanSeat(unittest.TestCase):
             {"display_name": "AI 玩家", "surface": "Codex Desktop"})["result"], "ok")
         self.assertEqual(self.host.act(
             sid, t_hu, 1, "introduce",
-            {"display_name": "项目作者", "surface": "掌机 UI"})["result"], "ok")
+            {"display_name": "人类玩家", "surface": "掌机 UI"})["result"], "ok")
         self.assertEqual(self.host.start_game(sid)["result"], "ok")
 
         ai_before = self.host.observe(sid, t_ai)
@@ -135,7 +135,7 @@ class TestHumanSeat(unittest.TestCase):
             {"display_name": "AI 玩家", "surface": "Codex Desktop"})["result"], "ok")
         self.assertEqual(self.host.act(
             sid, t_hu, 1, "introduce",
-            {"display_name": "项目作者", "surface": "掌机 UI"})["result"], "ok")
+            {"display_name": "人类玩家", "surface": "掌机 UI"})["result"], "ok")
         with patch("game_host.secrets.randbits", return_value=1):
             self.assertEqual(self.host.start_game(sid)["result"], "ok")
 

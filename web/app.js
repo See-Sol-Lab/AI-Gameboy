@@ -315,7 +315,7 @@ function renderSeats(v, mine, tokenLost) {
     } else if (isMe) {
       body = `<div class="dim center">这是你的席位,报个名入座:</div>
         <div class="intro-form">
-          <input id="intro-name" maxlength="40" value="项目作者" aria-label="称呼">
+          <input id="intro-name" maxlength="40" value="玩家" aria-label="称呼">
           <input id="intro-now" maxlength="120" placeholder="此刻一句话(可空)" aria-label="此刻">
           <button class="soft focusable" data-act="hu-intro">入座</button>
         </div>`;

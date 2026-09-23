@@ -617,7 +617,7 @@ class TestHiddenAndEndings(unittest.TestCase):
         self.assertTrue(won, "60个种子里摊牌竟从未打赢")
 
     def test_lock_with_no_open_sidequests_settles_immediately(self):
-        """主线锁定且支线全清:当场收卷,不再发空转的余波幕(早期测试局验尸)。"""
+        """主线锁定且支线全清:当场收卷,不再发空转的余波幕。"""
         s = setup_playing(44)
         for q in s["side_quests"]:
             q["status"] = "resolved"

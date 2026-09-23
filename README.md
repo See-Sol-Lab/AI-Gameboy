@@ -1,6 +1,5 @@
 # AI-Gameboy
 
-> 蓝图:`内部设计蓝图`
 > 当前阶段:**Stage D V0.4** —— 《口袋穿越》玩家目标分轨 + 真正可玩的人类席。
 > 协议不变:AI 侧只有 game_observe / game_act;人类席经同构 HTTP 薄路由走同一宿主。
 > 纪律:一个 Python 进程、一个 HTTP MCP 地址、一份 SQLite 真相;人类和 AI 共用同一规则引擎与同一条合法动作校验。
@@ -60,7 +59,7 @@ observe 响应里;AI 响应经同一裁剪出口,绝不含对方未揭示的选�
 
 窗口断开不丢局:凭原 session_id + seat_token 再 `game_observe` 就回到原局。
 
-## AI 的两项动作(蓝图 §8)
+## AI 的两项动作
 
 - `game_observe(session_id, seat_token)`:看我的桌面。返回 revision、status、
   public_state、private_state(只有本席可见)、legal_actions、waiting_for、
@@ -113,7 +112,7 @@ python -m unittest discover -s tests -v
 令牌跨局无效、公开视图无私牌;stale_revision 并发、拒绝不改局面、断线恢复、
 完整对局、人类中途收桌。**机械测试通过不等于最终验收**:验收要两个真实窗口打完一局。
 
-## 实测记录表(蓝图 §7 / §23)
+## 实测记录表
 
 | 表面 | 日期 | 客户端版本 | 配置位置 | 结果 | 卡点 |
 |---|---|---|---|---|---|
@@ -124,18 +123,15 @@ python -m unittest discover -s tests -v
 
 Stage A 只有一项只读工具 `table_hello`,验证两个真实窗口能连同一个本机 HTTP MCP。
 两窗口分别于 12:15:15 与 12:36:51 调用成功,日志 `data/stage_a_calls.log` 留痕。
-新协议稳定后 `table_hello` 已按蓝图删除;配置方式见上表,原始配置说明在 git 历史
-(`fecfbf5` 及之前)。
+新协议稳定后 `table_hello` 已删除;配置方式见上表,原始配置说明保留在 git 历史中。
 
 - Claude Code:项目目录放 `.mcp.json`(`{"mcpServers": {"gameboy": {"type": "http", "url": "http://127.0.0.1:7777/mcp"}}}`),重启窗口首次加载会弹批准提示。
 - Codex Desktop:`config.toml` 加 `[mcp_servers.gameboy]` + `url = "http://127.0.0.1:7777/mcp"`,重启生效。
 
-## 验收(蓝图 §20)
+## 验收
 
 机械部分已由测试覆盖;真实验收 = Codex Desktop 与 Claude Code 两个真实窗口
-各自入座、完成三轮、结算一致、全程人类未转传牌面。curl 成功不算数。
+各自入座、完成三轮、结算一致,人类不转传牌面。curl 成功不算数。
 
-**已通过(2026-08-13 13:15)**:第一局《口袋电路》,局号 `测试局`。
-两名 AI 玩家分别使用 Codex Desktop 与 Claude Code 完成一局。
-两窗口自主入座、自我介绍、三轮暗投带桌边话,人类全程未转传牌面;
-结算与人类页面一致,完整牌局留存于 `data/gameboy.db`。
+两窗口验收已通过:两名 AI 玩家自主入座、完成三轮暗投,结算与人类页面一致。
+完整牌局保存在本机 `data/gameboy.db`。
