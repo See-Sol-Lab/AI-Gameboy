@@ -1,17 +1,17 @@
-"""《口袋夜铺》v0.1:AI 自主经营,人类观看并偶尔盲点一次门铃。
+"""《口袋夜铺》v0.2：单人经营、永久图鉴、街巷探索与自动事件。
 
-seat_a 是唯一店主,每次 work_shift 完成半日经营并立即存档;seat_b 是观看者,
-没有日常经营权。门外一响由引擎预先暗定事件,人类只看见门铃亮起,点击 knock
-后才与 AI 一同得知结果。门铃从不阻塞 AI 继续经营。
+AI 是唯一玩家；所有随机结果由种子决定。展示端只接收公开观察和顺序日志。
+批量行动在新发现、事件、资源边界处交还决策权，不替玩家报价或出售藏品。
 """
 
 import hashlib
 from copy import deepcopy
 
 SHIFTS = ["黄昏", "深夜"]
-FOCI = ["sell", "repair", "scavenge", "curate", "upgrade", "tidy"]
+FOCI = ["sell", "repair", "scavenge", "curate", "upgrade", "tidy", "recycle", "dismiss"]
 MOODS = ["期待", "专注", "犹豫", "烦躁", "眷恋", "疲惫", "得意"]
 MAX_SHOP_LEVEL = 3
+MAX_BATCH = 6
 
 ITEMS = [
     ("watch", "停在四点的怀表", "表盖内侧刻着一句没写完的道歉。", 2, 6,
@@ -85,410 +85,579 @@ AMBIENT = [
     "老钟慢了两分钟,整条街却像只有这里发现了。",
 ]
 
-DOOR_EVENTS = [
-    ("parcel", "门缝下推进来一个没有寄件人的小包裹。", "item"),
-    ("cat", "一只湿漉漉的猫撞翻零钱罐,随后若无其事地卧在门垫上。", "lose_coin"),
-    ("old_customer", "一位旧客人没有进门,只在玻璃外向店主认真鞠了一躬。", "reputation"),
-    ("wrong_delivery", "远方商队把一件货误送到这里,收货单上的地址已经被雨泡掉。", "item"),
-    ("bill", "门把手上挂着一张来路不明的维修账单,偏偏盖着本店的旧章。", "lose_coins"),
-    ("leaf", "门打开后什么人也没有,窗台上只多了一片仍带雨水的红叶。", "none"),
-    ("shelf", "墙后传来一声轻响,一块原本钉死的木板向里退了半寸。", "capacity"),
-    ("coin", "门口放着一枚温热的旧硬币,两面都铸着月亮。", "coins"),
-]
+
+RARITIES = {"common": ("寻常", 8), "uncommon": ("少见", 3), "rare": ("奇珍", 1)}
+ITEM_RARITY = {
+    "watch": "common", "key": "common", "scarf": "common", "teacup": "common",
+    "lamp": "common", "buttonjar": "common", "letter": "uncommon", "shoe": "uncommon",
+    "camera": "rare", "musicbox": "uncommon", "notebook": "common", "bell": "uncommon",
+    "bird": "uncommon", "tinwhale": "rare", "seedbox": "common", "glove": "uncommon",
+}
+LOCATIONS = {
+    "lane": {"name": "旧货巷", "description": "日常旧物与被遗忘的小事。", "cost": 1,
+             "unlock_cost": 0, "discoveries": 0,
+             "pool": ["watch", "key", "scarf", "teacup", "lamp", "buttonjar", "letter", "shoe"]},
+    "station": {"name": "废弃车站", "description": "时间、声音和往返的痕迹。", "cost": 2,
+                "unlock_cost": 8, "discoveries": 4,
+                "pool": ["watch", "shoe", "camera", "musicbox", "notebook", "bell"]},
+    "dock": {"name": "码头仓库", "description": "远航留下的机械与异物。", "cost": 3,
+             "unlock_cost": 12, "discoveries": 8,
+             "pool": ["key", "scarf", "bird", "tinwhale", "seedbox", "glove"]},
+}
+EVENTS = {
+    "leaf": {"name": "雨中的红叶", "text": "风从门缝送来一片仍带雨水的红叶。"},
+    "refund": {"name": "迟来的零钱", "text": "旧客人托人送回少付的两枚硬币。", "coins": 2},
+    "lamp_post": {"name": "街灯重亮", "text": "修路人重新点亮巷口的灯,橱窗又被路人看见。", "reputation": 1},
+    "parcel": {"name": "无名包裹", "text": "送货人抱来一件看不出形状的旧物,要两枚搬运费。",
+               "choices": {"accept": {"label": "付2枚收下,打开检查", "cost": 2},
+                           "decline": {"label": "婉拒包裹", "cost": 0}}},
+    "locked_box": {"name": "锁住的小匣", "text": "清理柜台时发现一只封死的小匣,里面有轻响。",
+                   "choices": {"open": {"label": "花2枚买工具拆开", "cost": 2},
+                               "trade": {"label": "整匣交给收货人,得1枚", "cost": 0},
+                               "leave": {"label": "合上抽屉,让它留在原处", "cost": 0}}},
+}
 
 
 class IllegalAction(Exception):
-    """非法动作:宿主据此返回 rejected,局面不变。"""
+    pass
 
 
 def _number(seed, *parts):
-    raw = ":".join(str(x) for x in (seed, *parts))
-    return int(hashlib.sha256(raw.encode()).hexdigest(), 16)
+    return int(hashlib.sha256(":".join(map(str, (seed, *parts))).encode()).hexdigest(), 16)
 
 
 def _capacity(s):
     return 4 + s["shop_level"] * 2 + s["extra_capacity"]
 
 
-def _make_item(seed, serial, salt):
-    template = ITEMS[_number(seed, salt, serial) % len(ITEMS)]
-    code, name, story, condition, value, secret = template
-    return {
-        "id": f"{code}_{serial}", "name": name, "story": story,
-        "condition": condition, "value": value, "displayed": False,
-        "kind": ITEM_KINDS[code],
-        "secret": None, "_secret": secret,
-    }
+def _make_item(s, location, salt):
+    pool = LOCATIONS[location]["pool"]
+    weights = [RARITIES[ITEM_RARITY[code]][1] for code in pool]
+    roll = _number(s["seed"], salt, s["item_counter"]) % sum(weights)
+    for code, weight in zip(pool, weights):
+        if roll < weight:
+            break
+        roll -= weight
+    _, name, story, condition, value, secret = next(row for row in ITEMS if row[0] == code)
+    s["item_counter"] += 1
+    return {"id": f"{code}_{s['item_counter']}", "code": code, "name": name,
+            "story": story, "condition": condition, "value": value,
+            "displayed": False, "kind": ITEM_KINDS[code], "rarity": ITEM_RARITY[code],
+            "origin": location, "secret": None, "_secret": secret}
+
+
+def _collect(s, item):
+    code = item["code"]
+    first = code not in s["collection"]
+    if first:
+        s["collection"][code] = {
+            "code": code, "name": item["name"], "story": item["story"],
+            "kind": item["kind"], "rarity": item["rarity"], "first_day": s["day"],
+            "first_location": item["origin"], "count": 0, "revealed": None,
+        }
+        s["coins"] += 2
+    s["collection"][code]["count"] += 1
+    s["inventory"].append(item)
+    return first
 
 
 def new_game(seats, seed):
-    if len(seats) != 2:
-        raise ValueError("口袋夜铺需要一位 AI 店主和一位人类观看者")
-    state = {
-        "phase": "playing", "seed": seed, "seats": list(seats),
-        "shopkeeper": seats[0], "observer": seats[1],
+    if len(seats) != 1:
+        raise ValueError("口袋夜铺 v0.2 只需要一位 AI 店主")
+    s = {
+        "phase": "playing", "seed": seed, "seats": list(seats), "shopkeeper": seats[0],
         "day": 1, "shift_index": 0, "coins": 12, "reputation": 0,
-        "shop_level": 1, "extra_capacity": 0,
-        "inventory": [], "item_counter": 0,
-        "shift_count": 0,
-        "mood": None, "current_goal": "先让这间店安稳开过第一个夜晚",
-        "public_line": None,
-        "history": [], "diary": [],
-        "door_signal": None, "door_count": 0, "door_history": [],
+        "shop_level": 1, "extra_capacity": 0, "inventory": [], "item_counter": 0,
+        "shift_count": 0, "history": [], "diary": [], "weekly": [],
+        "current_goal": "认识旧货巷的旧物,补全第一批图鉴",
+        "resting": False, "last_checkpoint": None,
+        "collection": {}, "encounters": {}, "unlocked_locations": ["lane"],
+        "location": "lane", "pending_event": None, "event_count": 0,
         "customer": None, "customer_count": 0, "customer_book": {},
-        "weekly": [], "resting": False, "last_checkpoint": None,
+        "last_run": None,
     }
-    for index in range(3):
-        state["item_counter"] += 1
-        state["inventory"].append(
-            _make_item(seed, state["item_counter"], f"start{index}"))
-    _ensure_state(state)
-    return state
-
-
-def _ensure_state(s):
-    s.setdefault("customer", None)
-    s.setdefault("customer_count", 0)
-    s.setdefault("customer_book", {})
-    s.setdefault("weekly", [])
-    s.setdefault("resting", False)
-    s.setdefault("last_checkpoint", None)
-    for item in s.get("inventory", []):
-        code = item["id"].rsplit("_", 1)[0]
-        item.setdefault("kind", ITEM_KINDS.get(code, "奇物"))
-    if s["customer"] is None:
-        _spawn_customer(s)
+    for i in range(3):
+        _collect(s, _make_item(s, "lane", f"start{i}"))
+    _spawn_customer(s)
+    return s
 
 
 def _spawn_customer(s):
     n = _number(s["seed"], "customer", s["customer_count"], s["day"])
-    cid, name, request, clue, wants, base_budget = CUSTOMERS[n % len(CUSTOMERS)]
-    book = s["customer_book"].setdefault(
+    cid, name, request, clue, wants, base = CUSTOMERS[n % len(CUSTOMERS)]
+    row = s["customer_book"].setdefault(
         cid, {"id": cid, "name": name, "visits": 0, "deals": 0, "trust": 0})
-    book["visits"] += 1
-    budget = base_budget + (n // len(CUSTOMERS)) % 4 - 1 + book["trust"]
+    row["visits"] += 1
     s["customer_count"] += 1
-    s["customer"] = {
-        "id": cid, "name": name, "request": request, "clue": clue,
-        "visits": book["visits"], "patience": 2,
-        "_wants": list(wants), "_budget": max(3, budget),
-    }
-
-
-def _item(s, item_id):
-    return next((item for item in s["inventory"] if item["id"] == item_id), None)
+    s["customer"] = {"id": cid, "name": name, "request": request, "clue": clue,
+                     "visits": row["visits"], "patience": 2,
+                     "_wants": list(wants), "_budget": max(3, base + n // 8 % 4 - 1 + row["trust"])}
 
 
 def _public_item(item):
-    public = {key: deepcopy(item[key]) for key in
-              ("id", "name", "story", "condition", "value", "displayed", "kind")}
-    if item.get("secret"):
-        public["secret"] = item["secret"]
-    return public
+    return {key: deepcopy(value) for key, value in item.items() if not key.startswith("_")}
 
 
-def _public_customer(customer):
-    return {key: deepcopy(customer[key]) for key in
-            ("id", "name", "request", "clue", "visits", "patience")}
+def _public_customer(s):
+    return {key: value for key, value in s["customer"].items() if not key.startswith("_")}
 
 
-def _legal_hint(s):
-    items = [{"id": item["id"], "name": item["name"],
-              "kind": item["kind"], "condition": item["condition"], "value": item["value"],
-              "displayed": item["displayed"]} for item in s["inventory"]]
-    return {
-        "focus": f"必填:{FOCI} 之一",
-        "item_id": f"sell/repair/curate 时必填,从库存选:{items}",
-        "asking_price": "sell 时必填:店主自己报一个正整数价格;客人的真实预算不可见",
-        "mood": f"可选:{MOODS} 之一;真有感受时才更新公开心情灯",
-        "public_line": "可选:店主真想公开说时写一句(1-80字);沉默完全合法",
-        "goal": "可选:更新一个公开经营目标(1-60字)",
-    }
+def _locations(s):
+    return [
+        {"id": key, "name": loc["name"], "description": loc["description"], "cost": loc["cost"],
+         "unlock_cost": loc["unlock_cost"], "required_discoveries": loc["discoveries"],
+         "unlocked": key in s["unlocked_locations"],
+         "undiscovered": sum(code not in s["collection"] for code in loc["pool"])}
+        for key, loc in LOCATIONS.items()
+    ]
+
+
+def _event_view(s):
+    pending = s["pending_event"]
+    if pending is None:
+        return None
+    event = EVENTS[pending["kind"]]
+    choices = []
+    for key, choice in event["choices"].items():
+        has_room = key not in ("accept", "open") or len(s["inventory"]) < _capacity(s)
+        choices.append({"id": key, **choice,
+                        "available": s["coins"] >= choice["cost"] and has_room})
+    return {"id": pending["id"], "name": event["name"], "text": event["text"], "choices": choices}
+
+
+def _legal_actions(s):
+    if s["resting"]:
+        return [{"action_id": "reopen_shop", "params": {}}]
+    if s["pending_event"]:
+        return [{"action_id": "choose_event", "params": {
+                    "event_id": s["pending_event"]["id"], "choice": _event_view(s)["choices"]}},
+                {"action_id": "close_for_now", "params": {}}]
+    actions = [
+        {"action_id": "work_shift", "params": {
+            "focus": FOCI, "item_id": "sell/repair/curate/recycle 必填,从库存选",
+            "asking_price": "sell 必填正整数;店主自己报价",
+            "location": "scavenge 可选已解锁地点 id",
+            "goal": "可选,1-60字;表达也可省略", "mood": MOODS,
+            "public_line": "可选,1-80字;沉默是正常玩法"}},
+        {"action_id": "run_shifts", "params": {
+            "focus": ["scavenge", "repair", "tidy"], "count": "1-6",
+            "item_id": "repair 必填", "location": "scavenge 可选已解锁地点",
+            "reserve": "非负整数,含当班维护费的现金保留线",
+            "stop_on": ["new", "rare", "event"]}},
+        {"action_id": "close_for_now", "params": {}},
+    ]
+    if any(key not in s["unlocked_locations"] for key in LOCATIONS):
+        actions.append({"action_id": "unlock_location", "params": {"location": _locations(s)}})
+    return actions
 
 
 def observe(full_state, seat_id):
-    s = deepcopy(full_state)
+    s = full_state
     if seat_id not in s["seats"]:
         raise ValueError("未知席位")
-    _ensure_state(s)
     public = {
         "phase": s["phase"], "day": s["day"], "shift": SHIFTS[s["shift_index"]],
-        "coins": s["coins"], "reputation": s["reputation"],
-        "shop_level": s["shop_level"], "capacity": _capacity(s),
-        "inventory": [_public_item(item) for item in s["inventory"]],
-        "customer": _public_customer(s["customer"]),
-        "customer_book": deepcopy(list(s["customer_book"].values())),
-        "weekly": deepcopy(s["weekly"][-8:]),
-        "resting": s["resting"],
+        "coins": s["coins"], "reputation": s["reputation"], "shop_level": s["shop_level"],
+        "capacity": _capacity(s), "inventory": [_public_item(item) for item in s["inventory"]],
+        "current_goal": s["current_goal"], "resting": s["resting"],
         "last_checkpoint": deepcopy(s["last_checkpoint"]),
-        "current_goal": s["current_goal"],
-        "recent_history": deepcopy(s["history"][-10:]),
-        "diary": deepcopy(s["diary"][-8:]),
-        "door_waiting": s["door_signal"] is not None,
-        "door_history": deepcopy(s["door_history"][-6:]),
+        "customer": _public_customer(s), "customer_book": deepcopy(list(s["customer_book"].values())),
+        "weekly": deepcopy(s["weekly"][-8:]), "diary": deepcopy(s["diary"][-8:]),
+        "recent_history": deepcopy(s["history"][-6:]), "journal_total": len(s["history"]),
+        "collection": {"found": len(s["collection"]), "total": len(ITEMS),
+                       "revealed": sum(bool(row["revealed"]) for row in s["collection"].values()),
+                       "entries": deepcopy(list(s["collection"].values()))},
+        "encounters": {"found": len(s["encounters"]), "total": len(EVENTS),
+                       "entries": deepcopy(list(s["encounters"].values()))},
+        "locations": _locations(s), "location": s["location"],
+        "pending_event": _event_view(s), "last_run": deepcopy(s["last_run"]),
     }
-    if seat_id == s["shopkeeper"]:
-        private = {"role": "shopkeeper", "resume_summary": {
-            "day": s["day"], "shift": SHIFTS[s["shift_index"]],
-            "coins": s["coins"], "goal": s["current_goal"],
-            "last_events": [x["text"] for x in s["history"][-3:]],
-        }}
-        if s["resting"]:
-            legal = [{"action_id": "reopen_shop", "params": {}}]
-        else:
-            legal = [{"action_id": "work_shift", "params": _legal_hint(s)}]
-            if s["shift_index"] == 0:
-                legal.append({"action_id": "close_for_now", "params": {}})
-    else:
-        private = {"role": "observer"}
-        legal = ([{"action_id": "knock", "params": {}}]
-                 if s["door_signal"] is not None and not s["resting"] else [])
-    waiting = [] if s["resting"] else [s["shopkeeper"]]
-    if s["door_signal"] is not None and not s["resting"]:
-        waiting.append(s["observer"])
-    return {"public_state": public, "private_state": private,
-            "legal_actions": legal, "waiting_for": waiting}
+    return {"public_state": public,
+            "private_state": {"role": "shopkeeper", "resume_summary": {
+                "day": s["day"], "shift": SHIFTS[s["shift_index"]], "goal": s["current_goal"],
+                "coins": s["coins"], "discoveries": len(s["collection"]),
+                "pending_event": _event_view(s),
+                "last_events": [entry["text"] for entry in s["history"][-3:]]}},
+            "legal_actions": [] if s["phase"] == "finished" else _legal_actions(s),
+            "waiting_for": [] if s["resting"] or s["phase"] == "finished" else [s["shopkeeper"]]}
+
+
+def history_since(s, after_seq):
+    # 显示器按游标读取全部公开日志,批量经营也不丢班次。
+    return deepcopy(s["history"][after_seq:after_seq + 100])
+
+
+def _log(s, day, shift, focus, text, before, **extra):
+    s["history"].append({
+        "seq": len(s["history"]) + 1, "day": day, "shift": shift, "focus": focus,
+        "text": text, "coins_delta": s["coins"] - before[0],
+        "reputation_delta": s["reputation"] - before[1], **extra,
+    })
+
+
+def _text_param(params, key, maximum):
+    value = params.get(key)
+    if value is not None and (not isinstance(value, str) or not 1 <= len(value.strip()) <= maximum):
+        raise IllegalAction(f"{key} 须为1到{maximum}字")
+    return value.strip() if value is not None else None
+
+
+def _validate_work(s, params):
+    focus = params.get("focus")
+    if focus not in FOCI:
+        raise IllegalAction("未知经营动作")
+    _text_param(params, "goal", 60)
+    _text_param(params, "public_line", 80)
+    if params.get("mood") is not None and params["mood"] not in MOODS:
+        raise IllegalAction("未知心情")
+    if focus in ("sell", "repair", "curate", "recycle"):
+        item = next((item for item in s["inventory"] if item["id"] == params.get("item_id")), None)
+        if item is None:
+            raise IllegalAction("请选库存中的旧物")
+        if focus == "sell":
+            price = params.get("asking_price")
+            if type(price) is not int or price <= 0:
+                raise IllegalAction("asking_price 必须为正整数")
+    if focus == "scavenge":
+        location = params.get("location", s["location"])
+        if not isinstance(location, str) or location not in s["unlocked_locations"]:
+            raise IllegalAction("请先解锁淘货地点")
+
+
+def _work_cost(s, params):
+    focus = params["focus"]
+    if focus == "scavenge":
+        return LOCATIONS[params.get("location", s["location"])]["cost"]
+    if focus == "repair":
+        return 1
+    if focus == "upgrade":
+        return 10 * s["shop_level"]
+    return 0
+
+
+def _work_block(s, params):
+    focus = params["focus"]
+    if focus == "scavenge" and len(s["inventory"]) >= _capacity(s):
+        return "inventory_full"
+    if focus in ("repair", "curate"):
+        item = next(item for item in s["inventory"] if item["id"] == params["item_id"])
+        if focus == "repair" and item["condition"] >= 3:
+            return "repair_complete"
+        if focus == "curate" and (item["displayed"] or
+                sum(bool(x["displayed"]) for x in s["inventory"]) >= s["shop_level"] + 1):
+            return "display_full"
+    if focus == "upgrade" and s["shop_level"] >= MAX_SHOP_LEVEL:
+        return "shop_maximum"
+    if s["coins"] < _work_cost(s, params):
+        return "insufficient_coins"
+    return None
 
 
 def apply(full_state, seat_id, action_id, params):
     s = deepcopy(full_state)
-    if seat_id not in s["seats"]:
-        raise IllegalAction("未知席位")
+    if seat_id != s["shopkeeper"] or seat_id not in s["seats"]:
+        raise IllegalAction("只有 AI 店主可以操作;网页仅供观看")
     if s["phase"] != "playing":
         raise IllegalAction("本局已结束")
-    _ensure_state(s)
-    params = params if isinstance(params, dict) else {}
-    if action_id == "work_shift":
-        if seat_id != s["shopkeeper"]:
-            raise IllegalAction("观看者不能替店主经营")
+    if not isinstance(params, dict):
+        raise IllegalAction("params 须是对象")
+    if action_id == "close_for_now":
         if s["resting"]:
-            raise IllegalAction("夜铺已经歇业,先重新开门")
-        _work_shift(s, params)
-    elif action_id == "close_for_now":
-        if seat_id != s["shopkeeper"]:
-            raise IllegalAction("只有店主能决定歇业")
-        if s["shift_index"] != 0:
-            raise IllegalAction("请在一天打烊后的黄昏存档点歇业")
+            raise IllegalAction("已经歇业")
         s["resting"] = True
-        s["last_checkpoint"] = {
-            "day": s["day"], "coins": s["coins"],
-            "reputation": s["reputation"], "goal": s["current_goal"],
-            "week": (s["weekly"][-1]["week"] if s["weekly"] else None),
-        }
-    elif action_id == "reopen_shop":
-        if seat_id != s["shopkeeper"]:
-            raise IllegalAction("只有店主能重新开门")
+        s["last_checkpoint"] = {"day": s["day"], "shift": SHIFTS[s["shift_index"]],
+                                "coins": s["coins"], "goal": s["current_goal"],
+                                "week": s["weekly"][-1]["week"] if s["weekly"] else None}
+        return s
+    if action_id == "reopen_shop":
         if not s["resting"]:
-            raise IllegalAction("夜铺并未歇业")
+            raise IllegalAction("店铺已经开门")
         s["resting"] = False
-    elif action_id == "knock":
-        if seat_id != s["observer"]:
-            raise IllegalAction("店主不能替窗外的人按门铃")
-        _knock(s)
+        return s
+    if s["resting"]:
+        raise IllegalAction("请先 reopen_shop 续档")
+    s["last_run"] = None
+    if action_id == "choose_event":
+        _choose_event(s, params)
+    elif s["pending_event"]:
+        raise IllegalAction("请先处理眼前事件,也可歇业后下次继续")
+    elif action_id == "unlock_location":
+        _unlock(s, params)
+    elif action_id in ("work_shift", "run_shifts"):
+        _validate_work(s, params)
+        if action_id == "work_shift":
+            block = _work_block(s, params)
+            if block:
+                raise IllegalAction(block)
+            _work_shift(s, params)
+        else:
+            _run_shifts(s, params)
     else:
         raise IllegalAction(f"没有这个动作:{action_id}")
     return s
 
 
+def _run_shifts(s, params):
+    if params["focus"] not in ("scavenge", "repair", "tidy"):
+        raise IllegalAction("连续行动限淘货、修理和整理;出售由店主逐件决定")
+    count = params.get("count", 1)
+    reserve = params.get("reserve", 0)
+    stops = params.get("stop_on", ["new", "rare", "event"])
+    if type(count) is not int or not 1 <= count <= MAX_BATCH:
+        raise IllegalAction("count 须为1到6")
+    if type(reserve) is not int or reserve < 0:
+        raise IllegalAction("reserve 须为非负整数")
+    if not isinstance(stops, list) or any(x not in ("new", "rare", "event") for x in stops):
+        raise IllegalAction("stop_on 只支持 new/rare/event")
+    done, reason, start = 0, "count", len(s["history"])
+    for _ in range(count):
+        block = _work_block(s, params)
+        upkeep = 2 + s["shop_level"] if s["shift_index"] == 1 else 0
+        known_income = 3 if params["focus"] == "tidy" else 0
+        # 不把未知奖励当作已到手的钱;边界在真正花钱前生效。
+        if block or s["coins"] + known_income - _work_cost(s, params) - upkeep < reserve:
+            reason = block or "reserve"
+            break
+        flags = _work_shift(s, params)
+        done += 1
+        if s["pending_event"]:
+            reason = "decision"
+            break
+        hit = next((key for key in ("event", "new", "rare") if key in stops and flags[key]), None)
+        if hit:
+            reason = hit
+            break
+    s["last_run"] = {"requested": count, "completed": done, "stop_reason": reason,
+                     "from_seq": start + 1 if done else None, "to_seq": len(s["history"]),
+                     "highlights": [row["text"] for row in s["history"][start:]
+                                    if row.get("new") or row.get("rare") or row.get("event")]}
+
+
 def _work_shift(s, params):
-    focus = params.get("focus")
-    mood = params.get("mood")
-    line = params.get("public_line")
-    goal = params.get("goal")
-    if focus not in FOCI:
-        raise IllegalAction(f"focus 须是 {FOCI} 之一")
-    if mood is not None and mood not in MOODS:
-        raise IllegalAction(f"mood 须是 {MOODS} 之一")
-    if line is not None and (not isinstance(line, str)
-                             or not 1 <= len(line.strip()) <= 80):
-        raise IllegalAction("public_line 须是1到80字")
-    if goal is not None and (not isinstance(goal, str)
-                             or not 1 <= len(goal.strip()) <= 60):
-        raise IllegalAction("goal 须是1到60字")
-
-    before = {"coins": s["coins"], "reputation": s["reputation"]}
-    report = _do_focus(s, focus, params.get("item_id"), params.get("asking_price"))
-    if s["customer"] is None:
-        _spawn_customer(s)
-    ambient = AMBIENT[_number(s["seed"], "ambient", s["day"],
-                              s["shift_index"]) % len(AMBIENT)]
-    if mood is not None:
-        s["mood"] = mood
-    if line is not None:
-        s["public_line"] = line.strip()
-    if goal is not None:
-        s["current_goal"] = goal.strip()
-    entry_day = s["day"]
-    entry_shift = SHIFTS[s["shift_index"]]
-    _maybe_spawn_door(s)
-    closing = _advance_time(s)
-    if closing:
-        report += f" 打烊维护应付{closing['due']}枚,实际付了{closing['paid']}枚。"
-    s["shift_count"] = s.get("shift_count", len(s["history"])) + 1
-    s["history"].append({
-        "seq": s["shift_count"], "day": entry_day, "shift": entry_shift,
-        "focus": focus, "text": report, "ambient": ambient,
-        "coins_delta": s["coins"] - before["coins"],
-        "reputation_delta": s["reputation"] - before["reputation"],
-        "reaction": ({"mood": mood, "text": line.strip() if line else None}
-                     if mood is not None or line is not None else None),
-    })
+    before = (s["coins"], s["reputation"])
+    day, shift = s["day"], SHIFTS[s["shift_index"]]
+    flags = {"new": False, "rare": False, "event": False}
+    report = _do_focus(s, params, flags)
+    if params.get("goal") is not None:
+        s["current_goal"] = params["goal"].strip()
+    ambient = AMBIENT[_number(s["seed"], "ambient", s["shift_count"]) % len(AMBIENT)]
+    s["shift_count"] += 1
+    event_text = _maybe_event(s)
+    if event_text:
+        report += " " + event_text
+        flags["event"] = True
+    if s["shift_index"] == 1:
+        upkeep = 2 + s["shop_level"]
+        paid = min(upkeep, s["coins"])
+        s["coins"] -= paid
+        if paid < upkeep:
+            s["reputation"] = max(0, s["reputation"] - 1)
+        report += f" 打烊维护应付{upkeep}枚,实际付{paid}枚。"
+        s["diary"].append({"day": day, "text": f"打烊时硬币{s['coins']}枚,声望{s['reputation']}。",
+                           "upkeep": paid})
+        if day % 7 == 0:
+            s["weekly"].append({"week": day // 7, "through_day": day, "coins": s["coins"],
+                "reputation": s["reputation"], "shop_level": s["shop_level"],
+                "inventory": len(s["inventory"]), "deals": sum(x["deals"] for x in s["customer_book"].values()),
+                "discoveries": len(s["collection"]), "encounters": len(s["encounters"])})
+        s["day"] += 1
+        s["shift_index"] = 0
+    else:
+        s["shift_index"] = 1
+    reaction = None
+    if params.get("mood") is not None or params.get("public_line") is not None:
+        reaction = {"mood": params.get("mood"), "text": _text_param(params, "public_line", 80)}
+    _log(s, day, shift, params["focus"], report, before, ambient=ambient, reaction=reaction, **flags)
+    return flags
 
 
-def _do_focus(s, focus, item_id, asking_price):
-    item = _item(s, item_id)
-    if focus in ("sell", "repair", "curate") and not item:
-        raise IllegalAction(f"{focus} 须给出库存中的 item_id")
-    if focus == "sell":
-        if isinstance(asking_price, bool) or not isinstance(asking_price, int) \
-                or asking_price <= 0:
-            raise IllegalAction("sell 须给出正整数 asking_price")
-        customer = s["customer"]
-        book = s["customer_book"][customer["id"]]
-        if item["kind"] not in customer["_wants"]:
-            customer["patience"] -= 1
-            result = (f"{customer['name']}认真看过「{item['name']}」,说这不是自己在找的"
-                      f"那类东西。")
-            if customer["patience"] <= 0:
-                result += " 对方礼貌告辞,这次没有成交。"
-                s["customer"] = None
-            return result
-        if asking_price <= customer["_budget"]:
-            s["coins"] += asking_price
-            s["reputation"] += 1
-            s["inventory"].remove(item)
-            book["deals"] += 1
-            book["trust"] = min(5, book["trust"] + 1)
-            s["customer"] = None
-            result = (f"{customer['name']}接受了{asking_price}枚硬币的报价,"
-                      f"带走「{item['name']}」。")
-            if book["deals"] == 3:
-                result += " 这位客人已经把夜铺当成会再来的地方。"
-            return result
-        customer["patience"] -= 1
-        result = (f"{customer['name']}听完{asking_price}枚的报价后沉默了一会,"
-                  "东西是对的,价钱却还没谈拢。")
-        if customer["patience"] <= 0:
-            result += " 对方最终离开了夜铺。"
-            s["customer"] = None
-        else:
-            result += " 对方没有走,店主还有一次重新报价的机会。"
-        return result
+def _do_focus(s, params, flags):
+    focus = params["focus"]
+    item = next((x for x in s["inventory"] if x["id"] == params.get("item_id")), None)
+    if focus == "scavenge":
+        location = params.get("location", s["location"])
+        s["location"] = location
+        s["coins"] -= LOCATIONS[location]["cost"]
+        found = _make_item(s, location, f"find{s['shift_count']}")
+        flags["new"] = _collect(s, found)
+        flags["rare"] = found["rarity"] == "rare"
+        prefix = "新发现,图鉴收录+2枚。" if flags["new"] else "这件见过,图鉴数量+1。"
+        if flags["new"] and len(s["collection"]) == len(ITEMS):
+            prefix += " 异物志全部物种已发现！还可继续补完修复秘密。"
+        return f"从{LOCATIONS[location]['name']}带回「{found['name']}」。{prefix} {found['story']}"
     if focus == "repair":
-        if item["condition"] >= 3:
-            raise IllegalAction("这件旧物已经修到最好")
-        if s["coins"] < 1:
-            raise IllegalAction("至少需要1枚硬币买修补材料")
         s["coins"] -= 1
         item["condition"] += 1
         item["value"] += 2
-        result = f"「{item['name']}」被修好了一些,旧伤没有消失,却又能继续使用。"
-        if item["condition"] == 3 and item.get("_secret") and not item.get("secret"):
+        report = f"修补「{item['name']}」,完好度{item['condition']}/3。"
+        if item["condition"] == 3:
             item["secret"] = item["_secret"]
+            row = s["collection"][item["code"]]
+            if row["revealed"] is None:
+                row["revealed"] = item["secret"]
+                row["revealed_day"] = s["day"]
+                s["coins"] += 2
+                flags["new"] = True
+                report += " 图鉴首次揭秘,获得2枚。"
+                if sum(bool(x["revealed"]) for x in s["collection"].values()) == len(ITEMS):
+                    report += " 异物志全部揭秘！这间店已经见证了每一种旧物的另一面。"
             item["value"] += 3
-            result += f" 完全修复后才发现:{item['secret']}"
-        return result
-    if focus == "scavenge":
-        if len(s["inventory"]) >= _capacity(s):
-            raise IllegalAction("店里已经放不下更多旧物")
-        if s["coins"] < 1:
-            raise IllegalAction("至少留1枚硬币支付搬运费")
-        s["coins"] -= 1
-        s["item_counter"] += 1
-        found = _make_item(s["seed"], s["item_counter"],
-                           f"day{s['day']}shift{s['shift_index']}")
-        s["inventory"].append(found)
-        return f"店主从旧货巷带回「{found['name']}」:{found['story']}"
+            report += f" 完全修复后才发现:{item['secret']}"
+        return report
+    if focus == "sell":
+        c = s["customer"]
+        price = params["asking_price"]
+        # 完好程度和异能确实影响出价上限,昂贵破物不能无限高价倒卖。
+        ceiling = min(c["_budget"], item["value"] + item["condition"] + s["shop_level"])
+        if item["kind"] in c["_wants"] and price <= ceiling:
+            s["coins"] += price
+            s["reputation"] += 1
+            row = s["customer_book"][c["id"]]
+            row["deals"] += 1
+            row["trust"] = min(5, row["trust"] + 1)
+            s["inventory"].remove(item)
+            report = f"{c['name']}付了{price}枚,带走「{item['name']}」。图鉴记录保留。"
+            _spawn_customer(s)
+            return report
+        c["patience"] -= 1
+        report = (f"{c['name']}表示这类旧物不合需要。" if item["kind"] not in c["_wants"]
+                  else f"{c['name']}觉得报价偏高,还没有成交。")
+        if c["patience"] == 0:
+            report += " 客人告辞了。"
+            _spawn_customer(s)
+        return report
+    if focus == "recycle":
+        price = max(1, item["value"] // 3)
+        s["coins"] += price
+        s["inventory"].remove(item)
+        return f"把「{item['name']}」作为零件回收,得{price}枚。图鉴记录保留。"
+    if focus == "dismiss":
+        name = s["customer"]["name"]
+        _spawn_customer(s)
+        return f"向{name}说明暂时无货,记下需求送客;另一位客人进门。"
     if focus == "curate":
-        if item["displayed"]:
-            raise IllegalAction("这件旧物已经在橱窗里")
-        if sum(1 for x in s["inventory"] if x["displayed"]) >= s["shop_level"] + 1:
-            raise IllegalAction("橱窗已经摆满")
         item["displayed"] = True
         s["reputation"] += 1
-        return f"店主把「{item['name']}」摆进橱窗,没有标价。"
+        return f"「{item['name']}」放进橱窗,暂不出售。"
     if focus == "upgrade":
-        if s["shop_level"] >= MAX_SHOP_LEVEL:
-            raise IllegalAction("店铺已经扩建到当前上限")
         cost = 10 * s["shop_level"]
-        if s["coins"] < cost:
-            raise IllegalAction(f"扩建需要{cost}枚硬币")
         s["coins"] -= cost
         s["shop_level"] += 1
-        return f"店主花掉{cost}枚硬币,把夜铺扩建到了{ s['shop_level'] }级。"
-    s["coins"] += 1
-    return "店主清点货架、擦净柜台,从抽屉深处找回了1枚滚丢的硬币。"
+        return f"花{cost}枚扩建到{s['shop_level']}级。"
+    s["coins"] += 3
+    return "整理货架并承接街坊的小修补,挣得3枚硬币。"
 
 
-def _maybe_spawn_door(s):
-    if s["door_signal"] is not None:
-        return
-    n = _number(s["seed"], "door", s["day"], s["shift_index"])
-    if n % 3:
-        return
-    event = DOOR_EVENTS[(n // 3) % len(DOOR_EVENTS)]
-    s["door_count"] += 1
-    s["door_signal"] = {"id": f"door_{s['door_count']}", "event": event[0]}
-
-
-def _advance_time(s):
-    if s["shift_index"] == 0:
-        s["shift_index"] = 1
-        return None
-    upkeep = 2 + s["shop_level"]
-    paid = min(s["coins"], upkeep)
-    s["coins"] -= paid
-    if paid < upkeep:
-        s["reputation"] = max(0, s["reputation"] - 1)
-    s["diary"].append({
-        "day": s["day"], "text": f"打烊时硬币{s['coins']}枚,声望{s['reputation']}。",
-        "upkeep": paid,
+def _record_event(s, key, outcome=None, text=None):
+    event = EVENTS[key]
+    row = s["encounters"].setdefault(key, {
+        "id": key, "name": event["name"], "text": event["text"],
+        "first_day": s["day"], "count": 0, "outcomes": {},
     })
-    if s["day"] % 7 == 0:
-        s["weekly"].append({
-            "week": s["day"] // 7, "through_day": s["day"],
-            "coins": s["coins"], "reputation": s["reputation"],
-            "shop_level": s["shop_level"], "inventory": len(s["inventory"]),
-            "deals": sum(row["deals"] for row in s["customer_book"].values()),
-        })
-    s["day"] += 1
-    s["shift_index"] = 0
-    return {"due": upkeep, "paid": paid}
+    if outcome is None:
+        row["count"] += 1
+    else:
+        row["outcomes"][outcome] = text
 
 
-def _knock(s):
-    signal = s["door_signal"]
-    if signal is None:
-        raise IllegalAction("门外现在没有动静")
-    event = next(e for e in DOOR_EVENTS if e[0] == signal["event"])
-    _, text, effect = event
-    result = text
-    if effect == "item":
-        if len(s["inventory"]) < _capacity(s):
-            s["item_counter"] += 1
-            item = _make_item(s["seed"], s["item_counter"], signal["id"])
-            s["inventory"].append(item)
-            result += f" 包裹里是「{item['name']}」。"
-        else:
-            s["coins"] += 2
-            result += " 店里实在放不下,送货人留下2枚保管费。"
-    elif effect == "lose_coin":
-        lost = min(1, s["coins"])
-        s["coins"] -= lost
-        result += f" 零钱少了{lost}枚,门口却从此多了个常住客。"
-    elif effect == "reputation":
-        s["reputation"] += 2
-        result += " 这件小事后来在街坊间传开,声望+2。"
-    elif effect == "lose_coins":
-        lost = min(2, s["coins"])
-        s["coins"] -= lost
-        result += f" 店主最后还是付了{lost}枚硬币。"
-    elif effect == "capacity":
-        s["extra_capacity"] += 1
-        result += " 墙后竟空出一个窄小暗格,库存上限+1。"
-    elif effect == "coins":
-        s["coins"] += 3
-        result += " 硬币在柜台上化成了3枚寻常零钱。"
-    s["door_history"].append({"day": s["day"], "id": signal["id"],
-                              "text": result})
-    s["door_signal"] = None
+def _maybe_event(s):
+    n = _number(s["seed"], "event", s["shift_count"])
+    if n % 4:
+        return ""
+    key = list(EVENTS)[(n // 4) % len(EVENTS)]
+    event = EVENTS[key]
+    s["event_count"] += 1
+    _record_event(s, key)
+    if "choices" in event:
+        s["pending_event"] = {"id": f"event_{s['event_count']}", "kind": key,
+                              "_location": s["location"]}
+        return f"街巷见闻「{event['name']}」:{event['text']} 等待店主选择。"
+    s["coins"] += event.get("coins", 0)
+    s["reputation"] += event.get("reputation", 0)
+    _record_event(s, key, "happened", event["text"])
+    return f"街巷见闻「{event['name']}」:{event['text']}"
+
+
+def _choose_event(s, params):
+    pending = s["pending_event"]
+    if pending is None or params.get("event_id") != pending["id"]:
+        raise IllegalAction("请回应当前事件")
+    key, choice = pending["kind"], params.get("choice")
+    event = EVENTS[key]
+    if not isinstance(choice, str) or choice not in event["choices"]:
+        raise IllegalAction("请选事件中列出的选项")
+    cost = event["choices"][choice]["cost"]
+    if s["coins"] < cost:
+        raise IllegalAction("现金不足,可以选择免费选项")
+    gets_item = choice in ("accept", "open")
+    if gets_item and len(s["inventory"]) >= _capacity(s):
+        raise IllegalAction("货架已满,可选择不收下")
+    before = (s["coins"], s["reputation"])
+    s["coins"] -= cost
+    first = rare = False
+    if gets_item:
+        item = _make_item(s, pending["_location"], pending["id"])
+        first = _collect(s, item)
+        rare = item["rarity"] == "rare"
+        report = f"打开后发现「{item['name']}」。" + ("首次收录,获得2枚。" if first else "补记到图鉴。")
+        if first and len(s["collection"]) == len(ITEMS):
+            report += " 异物志全部物种已发现！"
+    elif choice == "trade":
+        s["coins"] += 1
+        report = "收货人带走小匣,留下一枚硬币。"
+    else:
+        report = "店主选择暂不接下这件事,店铺继续营业。"
+    _record_event(s, key, choice, report)
+    s["pending_event"] = None
+    _log(s, s["day"], SHIFTS[s["shift_index"]], "choose_event", report, before,
+         event=True, new=first, rare=rare, reaction=None, ambient="")
+
+
+def _unlock(s, params):
+    key = params.get("location")
+    if not isinstance(key, str) or key not in LOCATIONS:
+        raise IllegalAction("未知地点")
+    if key in s["unlocked_locations"]:
+        raise IllegalAction("地点已经解锁")
+    loc = LOCATIONS[key]
+    if len(s["collection"]) < loc["discoveries"] or s["coins"] < loc["unlock_cost"]:
+        raise IllegalAction("发现种数或现金不足")
+    before = (s["coins"], s["reputation"])
+    s["coins"] -= loc["unlock_cost"]
+    s["unlocked_locations"].append(key)
+    _log(s, s["day"], SHIFTS[s["shift_index"]], "unlock_location",
+         f"打通前往{loc['name']}的淘货路线。", before, ambient="", reaction=None)
+
+
+def migrate(old):
+    """显式升级 v0.1 存档；只收录仍有证据的库存秘密，不补造历史发现。"""
+    s = new_game([old["shopkeeper"]], old["seed"])
+    for key in ("phase", "day", "shift_index", "coins", "reputation", "shop_level",
+                "extra_capacity", "item_counter", "shift_count", "current_goal",
+                "resting", "last_checkpoint", "diary", "weekly",
+                "customer", "customer_count", "customer_book"):
+        if key in old:
+            s[key] = deepcopy(old[key])
+    s["history"] = deepcopy(old["history"])
+    for seq, row in enumerate(s["history"], 1):
+        row["seq"] = seq
+    s["inventory"], s["collection"] = [], {}
+    for source in old["inventory"]:
+        item = deepcopy(source)
+        code = item["id"].rsplit("_", 1)[0]
+        template = next(row for row in ITEMS if row[0] == code)
+        item.update(code=code, rarity=ITEM_RARITY[code], origin="旧存档",
+                    kind=ITEM_KINDS[code], _secret=template[5])
+        item.setdefault("secret", None)
+        _collect(s, item)
+        if item["secret"]:
+            s["collection"][code]["revealed"] = item["secret"]
+    s["coins"] = old["coins"]  # 导入既有物品不会再领取首次奖励。
+    for entry in old.get("door_history", []):
+        _log(s, entry["day"], "旧版见闻", "migration", entry["text"],
+             (s["coins"] - entry.get("coins_delta", 0),
+              s["reputation"] - entry.get("reputation_delta", 0)),
+             ambient="", reaction=None)
+    if not s["customer"]:
+        _spawn_customer(s)
+    return s

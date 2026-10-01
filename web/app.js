@@ -20,7 +20,7 @@ const S = {
   chooseCart: null,     // 插卡后待选模式的卡带
   bc: { fact: null, stance: null, target: null },  // 盲区同行的三步选择
   pc: { intent: null },                            // 口袋穿越的意图选择
-  night: { sid: null, known: [], queue: [], active: null, holdUntil: 0 },
+  night: { sid: null, cursor: 0, known: [], queue: [], active: null, holdUntil: 0, paused: false },
 };
 
 const isNightShop = (id) => id === "pocket-night-shop";
@@ -78,24 +78,24 @@ const nightEntryKey = (entry) => entry
   : "";
 
 function updateNightPlayback(sid, ps) {
-  const history = ps.recent_history || [];
+  const history = ps.playback_entries || ps.recent_history || [];
   const now = Date.now();
   if (S.night.sid !== sid) {
     S.night = {
-      sid, known: history.map(nightEntryKey), queue: [],
-      active: history.length ? history[history.length - 1] : null,
-      holdUntil: now + 5000,
+      sid, cursor: 0, known: [], queue: [], active: null, holdUntil: 0, paused: false,
     };
-    return;
   }
   for (const entry of history) {
     const key = nightEntryKey(entry);
-    if (!S.night.known.includes(key)) {
+    const fresh = ps.playback_entries ? entry.seq > S.night.cursor : !S.night.known.includes(key);
+    if (fresh) {
       S.night.known.push(key);
       S.night.queue.push(entry);
+      S.night.cursor = Math.max(S.night.cursor, entry.seq || 0);
     }
   }
-  if (S.night.queue.length && (!S.night.active || now >= S.night.holdUntil)) {
+  S.night.known = S.night.known.slice(-100);
+  if (!S.night.paused && S.night.queue.length && (!S.night.active || now >= S.night.holdUntil)) {
     S.night.active = S.night.queue.shift();
     S.night.holdUntil = now + 5000;
   }
@@ -169,9 +169,9 @@ function askMode(cartId) {
       <h2>· ${esc(cartName(cartId))} ·</h2>
       <p class="center dim">一位 AI 店主自主经营 · 你在显示器外观看</p>
       <div class="mode-choices">
-        <button class="soft focusable" data-act="create" data-mode="human_ai">开一间夜铺</button>
+        <button class="soft focusable" data-act="create" data-mode="solo_ai">开一间夜铺</button>
       </div>
-      <p class="center dim">经营不会等待观看者;门外一响时,你偶尔能叩一下。</p>`;
+      <p class="center dim">店主自己经营、探索和应对事件。你可以翻图鉴、看每一班回放。</p>`;
     afterRender();
     return;
   }
@@ -199,19 +199,6 @@ async function insertCartridge(cartId, mode) {
   const humanSeat = r.seats.find((s) => s.participant_type === "human");
   if (humanSeat) {
     localStorage.setItem(humanTokenKey(r.session_id), humanSeat.seat_token);
-    if (isNightShop(cartId)) {
-      const o = await api(`/api/sessions/${r.session_id}/observe`, "POST",
-                          { seat_token: humanSeat.seat_token });
-      if (o.result === "ok" && (o.legal_actions || []).some(
-          (x) => x.action_id === "introduce")) {
-        await api(`/api/sessions/${r.session_id}/act`, "POST", {
-          seat_token: humanSeat.seat_token,
-          expected_revision: o.revision,
-          action_id: "introduce",
-          params: { display_name: "观看者", surface: "掌机显示器" },
-        });
-      }
-    }
   }
   location.hash = `#/s/${r.session_id}`;
 }
@@ -223,7 +210,7 @@ async function showSession(sid) {
     S.picked = null;
     S.bc = { fact: null, stance: null, target: null };
     S.pc = { intent: null };
-    S.night = { sid: null, known: [], queue: [], active: null, holdUntil: 0 };
+    S.night = { sid: null, cursor: 0, known: [], queue: [], active: null, holdUntil: 0, paused: false };
   }
   S.sid = sid;
   // 人类身份只凭统一 observe 成功确认,不靠 localStorage 猜(校正 #1)
@@ -235,8 +222,13 @@ async function showSession(sid) {
     if (o.result === "ok") S.human = { token: stored, seatId: o.you.seat_id };
     else tokenLost = true;
   }
+  let drawing = false;
   const draw = async () => {
-    const v = await api(`/api/sessions/${sid}`);
+    if (drawing) return;
+    drawing = true;
+    try {
+    const cursor = S.night.sid === sid ? S.night.cursor : 0;
+    const v = await api(`/api/sessions/${sid}?after_seq=${cursor}`);
     if (v.result !== "ok") {
       setScreen("seats", "开局席位");
       app.innerHTML = `<p class="center">读不到这局(${esc(v.result)})。按 B 回卡带架。</p>`;
@@ -256,12 +248,18 @@ async function showSession(sid) {
     const snap = JSON.stringify([v, mine && mine.revision, mine && mine.public_state,
                                  mine && mine.private_state, S.infoOpen, S.picked,
                                  tokenLost, S.night.active && nightEntryKey(S.night.active, 0),
-                                 S.night.queue.length]);
+                                 S.night.queue.length, S.night.paused]);
     if (snap === S.lastSnap) return;
     S.lastSnap = snap;
+    const openDetails = [...app.querySelectorAll("details[open]")].map(x => x.dataset.panel).filter(Boolean);
+    const scrollTop = app.scrollTop;
     if (v.status === "lobby") renderSeats(v, mine, tokenLost);
     else renderGame(v, mine, tokenLost);
     restoreDraft(draft);
+    for (const panel of app.querySelectorAll("details[data-panel]"))
+      panel.open = openDetails.includes(panel.dataset.panel);
+    app.scrollTop = scrollTop;
+    } finally { drawing = false; }
   };
   await draw();
   S.timer = setInterval(draw, 3000); // 人类自己的视图刷新,不触碰任何 AI 窗口
@@ -372,9 +370,11 @@ function renderNightShopSeats(v, tokenLost) {
         <div class="dim">AI 店主</div>${keeperBody}
       </div>
       <div class="night-observer-note">◉ 观看端已连接<br>
-        <span class="dim">你不占玩家席位。门外一响时,显示器会给你一次盲点。</span></div>
+        <span class="dim">你可以观看与翻阅图鉴。事件由店主自己处理。</span></div>
     </div>
-    <div class="start-hint ${ready ? "ready" : ""}">${ready
+    <div class="start-hint ${ready ? "ready" : ""}">${v.seats.length === 1
+      ? "AI 完成自我介绍后自动开灯营业"
+      : ready
       ? "店主已经进门 —— 按 START 开灯营业"
       : "等待 AI 店主完成自我介绍"}</div>
     <p class="center"><button class="soft warn focusable" data-act="end">收起这间夜铺</button></p>
@@ -401,7 +401,8 @@ function renderGame(v, mine, tokenLost) {
     </div>
     ${mine ? ui.myPanel(v, mine) : ""}
     ${solo ? "" : `<div class="table-talk">${talk}</div>`}
-    <p class="center"><button class="soft warn focusable" data-act="end">结束本局</button></p>
+    ${solo ? '<p class="dim center">每次行动自动保存 · 关闭页面不影响店铺存档</p>'
+      : '<p class="center"><button class="soft warn focusable" data-act="end">结束本局</button></p>'}
     <p class="dim center">局号 ${esc(v.session_id)}</p>`;
   afterRender();
 }
@@ -438,6 +439,35 @@ function eventLine(e) {
 
 /* ---------------- CART_UI:唯一的卡带渲染映射 ---------------- */
 
+function nightCollection(ps) {
+  if (!ps.collection) return '<p class="dim">旧版存档可由店主用 upgrade_shop 升级到图鉴版。</p>';
+  const locations = Object.fromEntries(ps.locations.map(x => [x.id, x.name]));
+  const rarities = {common: "寻常", uncommon: "少见", rare: "奇珍"};
+  const entries = ps.collection.entries.map(row => `
+    <article class="night-dex-entry">
+      <strong>${esc(row.name)}</strong><span class="chip">${rarities[row.rarity]}</span>
+      <div class="dim">首次：第${row.first_day}日 · ${esc(locations[row.first_location] || row.first_location)} · 共见${row.count}件</div>
+      <p>${esc(row.story)}</p>
+      <div class="night-secret">${row.revealed ? "✦ " + esc(row.revealed) : "尚未修复揭秘"}</div>
+    </article>`).join("");
+  const encounters = ps.encounters.entries.map(row => `
+    <article class="night-dex-entry"><strong>${esc(row.name)}</strong>
+      <span class="chip">遇见 ${row.count} 次</span><p>${esc(row.text)}</p>
+      ${Object.values(row.outcomes).map(text => `<div class="night-secret">${esc(text)}</div>`).join("")}
+    </article>`).join("");
+  return `<div class="night-dex-summary">异物志 ${ps.collection.found}/${ps.collection.total}
+      · 已揭秘 ${ps.collection.revealed} · 街巷见闻 ${ps.encounters.found}/${ps.encounters.total}</div>
+    <details class="night-history" data-panel="collection"><summary>翻开异物志 · 卖掉的发现也留在这里</summary>
+      <div class="night-dex-grid">${entries}</div></details>
+    <details class="night-history" data-panel="encounters"><summary>翻开街巷见闻</summary>
+      <div class="night-dex-grid">${encounters || '<p class="dim">还没有遇见街巷事件。</p>'}</div></details>
+    <details class="night-history" data-panel="locations"><summary>淘货地图 · 寻找下一页</summary>
+      ${ps.locations.map(loc => `<div class="night-log"><strong>${esc(loc.name)}</strong>
+        <span>${esc(loc.description)} 待发现 ${loc.undiscovered} 种 · 每次 ${loc.cost} 枚
+        · ${loc.unlocked ? "已解锁" : "需发现" + loc.required_discoveries + "种及" + loc.unlock_cost + "枚"}</span></div>`).join("")}
+    </details>`;
+}
+
 const CART_UI = {
   "pocket-night-shop": {
     layout: "solo",
@@ -448,6 +478,7 @@ const CART_UI = {
         <div class="item-card night-item ${item.displayed ? "displayed" : ""}">
           <div class="it-name">${item.displayed ? "◇ " : ""}${esc(item.name)}</div>
           <div class="it-tags">
+            ${item.rarity ? `<span class="chip">${esc({common:"寻常",uncommon:"少见",rare:"奇珍"}[item.rarity])}</span>` : ""}
             <span class="chip">${esc(item.kind)}</span>
             <span class="chip">修复 ${item.condition}/3</span>
             <span class="chip">估值 ${item.value}</span>
@@ -484,7 +515,7 @@ const CART_UI = {
       return `
         <div class="night-owner">${esc(keeper.display_name || "AI 店主")} 的夜铺</div>
         <div class="night-dashboard">
-          <div class="night-day">第 ${ps.day} 日 · ${esc(ps.shift)}</div>
+          <div class="night-day">实时店况 · 第 ${ps.day} 日 · ${esc(ps.shift)}</div>
           <div>硬币 <strong>${ps.coins}</strong> · 声望 <strong>${ps.reputation}</strong> ·
             店铺 ${ps.shop_level}级 · 库存 ${(ps.inventory || []).length}/${ps.capacity}</div>
         </div>
@@ -493,7 +524,21 @@ const CART_UI = {
         ${week ? `<div class="night-week">第 ${week.week} 周账 · 经过第${week.through_day}日 ·
           成交${week.deals}次 · 硬币${week.coins} · 声望${week.reputation}</div>` : ""}
         <div class="night-goal">店主眼下想做:${esc(ps.current_goal)}</div>
+        ${nightCollection(ps)}
+        ${ps.pending_event ? `<div class="night-customer">
+          <strong>店主正在面对 · ${esc(ps.pending_event.name)}</strong>
+          <p>${esc(ps.pending_event.text)}</p>
+          <div class="dim">可选：${ps.pending_event.choices.map(c => esc(c.label) + (c.available ? "" : "（暂不可选）")).join(" / ")}</div>
+          <div class="dim">由 AI 决定，观看者无需操作。</div></div>` : ""}
         ${customer}
+        ${ps.last_run ? `<div class="night-week">本次连续行动：${ps.last_run.completed}/${ps.last_run.requested}班
+          · 停于 ${esc({count:"计划完成",new:"新发现",rare:"奇珍",event:"街巷事件",decision:"等待店主选择",
+             reserve:"现金保留线",inventory_full:"货架已满",repair_complete:"修复完成",
+             insufficient_coins:"现金不足"}[ps.last_run.stop_reason] || ps.last_run.stop_reason)}</div>` : ""}
+        <div class="night-play-controls">
+          <button class="soft" data-act="night-pause">${S.night.paused ? "继续回放" : "暂停回放"}</button>
+          <span class="dim">每段至少5秒 · 回放不影响店主经营</span>
+        </div>
         ${active ? `<div class="night-spotlight">
           <div class="night-replay-label">${replaying ? "显示器正在回放" : "本班刚刚发生"} ·
             第${active.day}日 ${esc(active.shift)}
@@ -506,8 +551,8 @@ const CART_UI = {
         </div>` : '<div class="night-spotlight dim">店主刚刚点亮招牌。</div>'}
         <div class="night-section-title">橱窗与货架</div>
         <div class="night-inventory">${inventory || '<div class="empty-hint">货架空了</div>'}</div>
-        ${logs ? `<details class="night-history"><summary>最近五班经营记录</summary>${logs}</details>` : ""}
-        ${relations ? `<details class="night-history"><summary>顾客簿</summary>${relations}</details>` : ""}
+        ${logs ? `<details class="night-history" data-panel="history"><summary>最近五班经营记录</summary>${logs}</details>` : ""}
+        ${relations ? `<details class="night-history" data-panel="customers"><summary>顾客簿</summary>${relations}</details>` : ""}
         ${doors ? `<div class="report night-door-result">${doors}</div>` : ""}
         ${ps.door_waiting ? (ps.resting
           ? '<div class="start-hint">门外的动静已随存档封存,重新开门后仍会等着。</div>'
@@ -515,6 +560,7 @@ const CART_UI = {
     },
     myPanel(v, mine) {
       if (v.status !== "playing" || !mine) return "";
+      if (v.cartridge.version !== "0.1.0") return "";
       if (v.public_state.resting) return `<div class="my-panel"><div class="dim center">
         店主已经歇业。店铺、客人和未完成目标都保存在这里。</div></div>`;
       const knock = (mine.legal_actions || []).find((x) => x.action_id === "knock");
@@ -1137,7 +1183,10 @@ seat_id: ${t.seat_id}
 seat_token: ${t.seat_token}
 请先调用 game_observe(session_id, seat_token) 看店铺,再按 legal_actions 用 game_act 经营。
 你是唯一店主,可以连续执行许多个 work_shift,不必等待观看者;想停时直接停下,
-下次凭同一连接继续。mood、goal、public_line 会显示在人类的掌机上。门铃不阻塞经营。`
+介绍后自动开店。人类只观看，无需等待或按门铃。
+run_shifts 可连续淘货、修理或整理（count最多6，reserve现金保留线，stop_on=new/rare/event）。
+遇到 pending_event 用 choose_event 自行决定。图鉴保留已发现旧物和见闻，卖掉也不消失。
+想停时 close_for_now，下次 reopen_shop；mood/public_line 完全可选。`
     : `你在 AI-Gameboy 牌桌上有一个席位(MCP 服务名 gameboy,入口 http://127.0.0.1:7777/mcp)。
 session_id: ${S.sid}
 seat_id: ${t.seat_id}
@@ -1177,7 +1226,7 @@ function act(el) {
   const a = el.dataset.act;
   if (a === "insert") {
     const cart = S.carts.find((c) => c.id === el.dataset.cart);
-    if (cart && (cart.modes || []).includes("human_ai")) askMode(cart.id);
+    if (cart && ((cart.modes || []).includes("human_ai") || isNightShop(cart.id))) askMode(cart.id);
     else insertCartridge(el.dataset.cart, "ai_ai");
   } else if (a === "create") insertCartridge(S.chooseCart, el.dataset.mode);
   else if (a === "open-save") location.hash = `#/s/${el.dataset.sid}`;
@@ -1192,6 +1241,7 @@ function act(el) {
   else if (a === "pick-draw") humanDraw(el.dataset.item);
   else if (a === "circuit-card") circuitPlay(Number(el.dataset.card));
   else if (a === "night-knock") nightKnock();
+  else if (a === "night-pause") { S.night.paused = !S.night.paused; S.lastSnap = ""; }
   else if (a === "bc-fact") { S.bc.fact = el.dataset.id; S.lastSnap = ""; redrawSoon(); }
   else if (a === "bc-stance") { S.bc.stance = el.dataset.id; S.lastSnap = ""; redrawSoon(); }
   else if (a === "bc-target") { S.bc.target = el.dataset.id; S.lastSnap = ""; redrawSoon(); }

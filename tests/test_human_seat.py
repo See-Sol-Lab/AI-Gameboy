@@ -124,41 +124,78 @@ class TestHumanSeat(unittest.TestCase):
         self.assertEqual(manifest["version"], "0.1.0")
         self.assertEqual(rules.TOTAL_ROUNDS, 3)
 
-    def test_night_shop_ai_runs_while_human_blind_knock_waits(self):
-        c = self.host.create_session("pocket-night-shop", "human_ai")
+    def test_night_shop_solo_starts_without_human_and_resumes_from_disk(self):
+        c = self.host.create_session("pocket-night-shop", "solo_ai")
         self.assertEqual(c["result"], "ok")
-        sid = c["session_id"]
-        t_ai = c["seats"][0]["seat_token"]
-        t_hu = c["seats"][1]["seat_token"]
-        self.assertEqual(self.host.act(
-            sid, t_ai, 0, "introduce",
-            {"display_name": "AI 玩家", "surface": "Codex Desktop"})["result"], "ok")
-        self.assertEqual(self.host.act(
-            sid, t_hu, 1, "introduce",
-            {"display_name": "人类玩家", "surface": "掌机 UI"})["result"], "ok")
-        with patch("game_host.secrets.randbits", return_value=1):
-            self.assertEqual(self.host.start_game(sid)["result"], "ok")
+        self.assertEqual(len(c["seats"]), 1)
+        sid, token = c["session_id"], c["seats"][0]["seat_token"]
+        with patch("game_host.secrets.randbits", return_value=5):
+            r = self.host.act(sid, token, 0, "introduce",
+                              {"display_name": "Test Keeper", "surface": "Test"})
+        self.assertEqual(r["status"], "playing")
+        self.assertEqual(r["waiting_for"], ["seat_a"])
+        r = self.host.act(sid, token, r["revision"], "run_shifts",
+                          {"focus": "tidy", "count": 6, "stop_on": []})
+        self.assertEqual(r["result"], "ok")
+        viewer = self.host.public_view(sid, after_seq=0)
+        self.assertNotIn("private_state", viewer)
+        self.assertNotIn("seat_token", json.dumps(viewer))
+        self.assertEqual(len(viewer["public_state"]["playback_entries"]),
+                         r["public_state"]["journal_total"])
+        self.assertEqual(self.host.act(sid, "viewer", r["revision"], "work_shift",
+                                      {"focus": "tidy"})["result"], "forbidden")
+        restarted = GameHost(self.host.db_path, ROOT / "cartridges")
+        self.assertEqual(restarted.observe(sid, token), self.host.observe(sid, token))
+        before = restarted.observe(sid, token)
+        rejected = restarted.act(sid, token, before["revision"], "run_shifts",
+                                  {"focus": "tidy", "count": 99})
+        self.assertEqual(rejected["result"], "rejected")
+        self.assertEqual(restarted.observe(sid, token), before)
 
-        ai = self.host.observe(sid, t_ai)
-        params = {"focus": "tidy", "mood": "专注",
-                  "public_line": "先把柜台擦干净。"}
-        first = self.host.act(sid, t_ai, ai["revision"], "work_shift", params)
-        self.assertEqual(first["result"], "ok")
-        human = self.host.observe(sid, t_hu)
-        self.assertTrue(human["public_state"]["door_waiting"])
-        self.assertEqual(human["legal_actions"], [{"action_id": "knock", "params": {}}])
-        self.assertNotIn('"event"', json.dumps(human, ensure_ascii=False))
-
-        # 门铃不阻塞 AI:它可以先再经营半日,门仍原样等着观看者。
-        ai = self.host.observe(sid, t_ai)
-        second = self.host.act(sid, t_ai, ai["revision"], "work_shift", params)
-        self.assertEqual(second["result"], "ok")
-        human = self.host.observe(sid, t_hu)
-        self.assertTrue(human["public_state"]["door_waiting"])
-        knocked = self.host.act(sid, t_hu, human["revision"], "knock", {})
-        self.assertEqual(knocked["result"], "ok")
-        self.assertFalse(knocked["public_state"]["door_waiting"])
-        self.assertEqual(len(knocked["public_state"]["door_history"]), 1)
+    def test_night_shop_v1_explicit_upgrade_preserves_save(self):
+        import store
+        c = self.host.create_session("pocket-circuit", "human_ai")
+        sid, token = c["session_id"], c["seats"][0]["seat_token"]
+        observer_token = c["seats"][1]["seat_token"]
+        conn = store.connect(self.host.db_path)
+        try:
+            conn.execute("UPDATE session SET cartridge_id=?,cartridge_version=? WHERE id=?",
+                         ("pocket-night-shop", "0.1.0", sid))
+        finally:
+            conn.close()
+        self.host.act(sid, token, 0, "introduce", {"display_name": "Keeper", "surface": "Test"})
+        self.host.act(sid, observer_token, 1, "introduce", {"display_name": "Viewer", "surface": "Test"})
+        self.assertEqual(self.host.start_game(sid)["result"], "ok")
+        conn = store.connect(self.host.db_path)
+        try:
+            row = store.get_session(conn, sid)
+            engine = json.loads(row["engine_state_json"])
+            old_state = engine["cartridge_state"]
+            old_state["resting"] = True
+            old_state["door_signal"] = {"id": "legacy_pending", "event": "leaf"}
+            store.update_session(conn, sid, row["status"], row["revision"],
+                                 json.dumps(engine), row["updated_at"])
+        finally:
+            conn.close()
+        before = self.host.observe(sid, token)
+        self.assertIn("upgrade_shop", [a["action_id"] for a in before["legal_actions"]])
+        denied = self.host.act(sid, observer_token, before["revision"], "upgrade_shop", {})
+        self.assertEqual(denied["result"], "rejected")
+        migrated = self.host.act(sid, token, before["revision"], "upgrade_shop", {})
+        self.assertEqual(migrated["result"], "ok")
+        self.assertEqual(migrated["cartridge"]["version"], "0.2.0")
+        self.assertTrue(migrated["public_state"]["resting"])
+        self.assertEqual(migrated["legal_actions"], [{"action_id": "reopen_shop", "params": {}}])
+        self.assertTrue(any("红叶" in x["text"] for x in migrated["public_state"]["recent_history"]))
+        for key in ("coins", "reputation", "day", "shop_level"):
+            self.assertEqual(migrated["public_state"][key], before["public_state"][key])
+        self.assertEqual([i["id"] for i in migrated["public_state"]["inventory"]],
+                         [i["id"] for i in before["public_state"]["inventory"]])
+        self.assertEqual(len(self.host.public_view(sid)["seats"]), 1)
+        self.assertEqual(self.host.observe(sid, observer_token)["result"], "forbidden")
+        self.assertEqual(GameHost(self.host.db_path, ROOT / "cartridges").observe(sid, token),
+                         self.host.observe(sid, token))
+        self.assertNotIn("upgrade_shop", [a["action_id"] for a in migrated["legal_actions"]])
 
     def test_human_sees_own_hand(self):
         o = self.obs(self.t_hu)

@@ -270,6 +270,14 @@ body {
 .night-log { display: grid; grid-template-columns: 92px 1fr; gap: .4rem; margin-top: .35rem; }
 .night-log.active { color: #3c422b; font-weight: 700; }
 .night-door-result { border-left: 4px solid #b28b36; }
+.night-dex-summary {
+  padding: .6rem; margin-top: .5rem; text-align: center; font-weight: 700;
+  background: #4c563a; color: #f3ecd8; border-radius: 8px;
+}
+.night-dex-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .5rem; margin-top: .5rem; }
+.night-dex-entry { padding: .6rem; background: #f3ecd8; border: 1px solid #b6ac8b; border-radius: 7px; }
+.night-dex-entry p { margin: .35rem 0; }
+.night-play-controls { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; margin: .5rem 0; }
 .cards-row { display: flex; justify-content: center; gap: .45rem; margin-top: .55rem; flex-wrap: wrap; }
 .pcard {
   width: 34px; height: 48px; border-radius: 5px; background: #f3ecd8;

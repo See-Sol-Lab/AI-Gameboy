@@ -32,8 +32,11 @@ mcp = MCPServer(
         "先 game_observe 看自己的桌面,再按 legal_actions 用 game_act 行动;"
         "第一步通常是 introduce 自我介绍。口袋电路对抗局中,人类会先锁牌;"
         "轮到你 play_card 时先调用 game_act,提交前不要在聊天里说出牌号或具体策略。"
-        "口袋夜铺中你是唯一店主,可以连续调用 work_shift 玩许多半日,不必等待人类;"
-        "想停时直接停在当前存档,下次凭同一令牌继续。门铃亮起也不阻塞经营。"
+        "口袋夜铺0.2只有一位AI玩家,介绍后自动开店,人类网页仅供观看。"
+        "work_shift经营一班,run_shifts连续淘货/修理/整理最多6班,"
+        "可设reserve与stop_on；遇到pending_event用choose_event自行决定。"
+        "图鉴永久保留,卖货也不会丢发现；探索不同地点补齐图鉴。"
+        "close_for_now歇业、reopen_shop续档,不必等待人类。"
     ),
 )
 
@@ -66,13 +69,15 @@ def game_act(session_id: str, seat_token: str, expected_revision: int,
       开局后如 play_card,params 形如 {"card": 3};口袋夜铺的 work_shift
       focus 必填,按需要填 item_id/goal;sell 必须由店主填写 asking_price;
       mood、public_line 完全可选,真想公开表达时才写;
+      run_shifts支持count(1-6)、reserve(现金保留线)、stop_on(new/rare/event);
+      choose_event回应当前event_id与choice;unlock_location用location解锁路线;
     - table_line:可选,一句公开桌边话(≤120 字),只随本次动作出现。
     动作是你自己的选择:牌桌不替你决定,也不把你的私牌给别人看。
     《口袋电路》中人类已经先锁牌且不能更改;你应先提交 play_card,
     等工具返回本轮揭示后再谈刚才的牌与理由,避免提前自曝策略。
     《口袋夜铺》中引擎会自动把行动与结果展示给观看者;沉默是正常玩法。
     mood/public_line 不是作业,只有真有反应时才写。每次工具返回后可继续下一班;
-    一天打烊后的黄昏可用 close_for_now 明确歇业存档,下次用 reopen_shop 继续。
+    随时可用 close_for_now 歇业,下次用 reopen_shop 继续。未决事件也能存档。
     """
     return host.act(session_id, seat_token, expected_revision,
                     action_id, params, table_line)
@@ -145,7 +150,11 @@ async def human_act(request: Request):
 
 @mcp.custom_route("/api/sessions/{sid}", methods=["GET"])
 async def session_view(request: Request):
-    return JSONResponse(host.public_view(request.path_params["sid"]))
+    after = request.query_params.get("after_seq")
+    if after is not None and not after.isdigit():
+        return JSONResponse({"result": "rejected", "reason": "after_seq 须为非负整数"}, status_code=400)
+    return JSONResponse(host.public_view(request.path_params["sid"],
+                                         int(after) if after is not None else None))
 
 
 @mcp.custom_route("/api/sessions/{sid}/start", methods=["POST"])

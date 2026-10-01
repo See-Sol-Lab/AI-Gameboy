@@ -89,7 +89,7 @@ class GameHost:
     # ---------------- 人类 UI 动作 ----------------
 
     # mode -> manifest.modes 里的能力名;人类×AI 时 seat_b 是人类席
-    MODES = {"ai_ai": "multi_ai", "human_ai": "human_ai"}
+    MODES = {"ai_ai": "multi_ai", "human_ai": "human_ai", "solo_ai": "solo_ai"}
 
     def create_session(self, cartridge_id: str = "pocket-circuit",
                        mode: str = "ai_ai") -> dict:
@@ -98,12 +98,13 @@ class GameHost:
         except CartridgeVersionMissing:
             return {"result": "rejected", "reason": "没有这张卡带"}
         if mode not in self.MODES:
-            return {"result": "rejected", "reason": "mode 只能是 ai_ai 或 human_ai"}
+            return {"result": "rejected", "reason": "mode 只能是 ai_ai、human_ai 或 solo_ai"}
         if self.MODES[mode] not in manifest.get("modes", []):
             return {"result": "rejected",
                     "reason": f"《{manifest.get('name', cartridge_id)}》不支持 {mode} 模式"}
-        participant = {"seat_a": "ai_window",
-                       "seat_b": "human" if mode == "human_ai" else "ai_window"}
+        participant = {"seat_a": "ai_window"}
+        if mode != "solo_ai":
+            participant["seat_b"] = "human" if mode == "human_ai" else "ai_window"
         sid = datetime.now().strftime("%Y%m%d") + "-" + secrets.token_hex(3)
         now = _now()
         engine = {"events": [], "cartridge_state": None}
@@ -114,7 +115,7 @@ class GameHost:
             store.insert_session(conn, sid, cartridge_id, manifest["version"],
                                  "lobby", 0, json.dumps(engine, ensure_ascii=False),
                                  now, now)
-            for seat_id in ("seat_a", "seat_b"):
+            for seat_id in participant:
                 token = secrets.token_urlsafe(24)
                 store.insert_seat(conn, sid, seat_id, participant[seat_id],
                                   _hash(token), now)
@@ -289,8 +290,10 @@ class GameHost:
         finally:
             conn.close()
 
-    def public_view(self, session_id: str) -> dict:
+    def public_view(self, session_id: str, after_seq: int | None = None) -> dict:
         """人类页面的公开视图:不含任何席位私牌(§4.2)。"""
+        if after_seq is not None and (type(after_seq) is not int or after_seq < 0):
+            return {"result": "rejected", "reason": "after_seq 须为非负整数"}
         conn = store.connect(self.db_path)
         try:
             srow = store.get_session(conn, session_id)
@@ -308,6 +311,8 @@ class GameHost:
             if state is not None:
                 ob = rules.observe(state, state["seats"][0])
                 public_state = ob["public_state"]
+                if after_seq is not None and hasattr(rules, "history_since"):
+                    public_state["playback_entries"] = rules.history_since(state, after_seq)
                 waiting = [] if srow["status"] == "finished" else ob["waiting_for"]
             else:
                 public_state = self._lobby_public(seats)
@@ -425,6 +430,30 @@ class GameHost:
                     "public_anchors": profile["public_anchors"],
                 })
                 display_name = profile["display_name"]
+                if len(seats) == 1:
+                    engine["cartridge_state"] = rules.new_game([seat_id], secrets.randbits(32))
+                    new_status = "playing"
+                    self._push_event(engine, {"kind": "start"})
+            elif (action_id == "upgrade_shop" and srow["cartridge_id"] == "pocket-night-shop"
+                  and srow["cartridge_version"] == "0.1.0" and srow["status"] == "playing"):
+                if seat_id != seats[0]["seat_id"]:
+                    return rejected("只有店主可以升级存档")
+                _, current_rules = self._load_cartridge("pocket-night-shop", "0.2.0")
+                old = engine["cartridge_state"]
+                # 升级把待开的旧门铃自动结算一次，结果保留在经营记录中。
+                if old.get("door_signal"):
+                    before_coins, before_rep = old["coins"], old["reputation"]
+                    rules._knock(old)
+                    old["door_history"][-1].update(
+                        coins_delta=old["coins"] - before_coins,
+                        reputation_delta=old["reputation"] - before_rep)
+                engine["cartridge_state"] = current_rules.migrate(old)
+                conn.execute("UPDATE session SET cartridge_version=? WHERE id=?",
+                             ("0.2.0", session_id))
+                conn.execute("DELETE FROM seat WHERE session_id=? AND seat_id<>?",
+                             (session_id, seat_id))
+                display_name = seat["display_name"]
+                self._push_event(engine, {"kind": "upgrade", "version": "0.2.0"})
             elif srow["status"] == "lobby":
                 return rejected("牌局尚未开始:大厅里唯一的动作是 introduce")
             else:
@@ -483,6 +512,11 @@ class GameHost:
             private_state = ob["private_state"]
             legal = ob["legal_actions"]
             waiting = ob["waiting_for"]
+            if (srow["cartridge_id"] == "pocket-night-shop"
+                    and srow["cartridge_version"] == "0.1.0"
+                    and my_seat_id == state["shopkeeper"] and srow["status"] == "playing"):
+                legal.append({"action_id": "upgrade_shop", "params": {},
+                              "description": "升级到0.2：保留店铺；现存旧物补入图鉴；旧门铃自动结算；移除观看者操作权"})
             if srow["status"] == "finished":
                 legal, waiting = [], []
         else:
