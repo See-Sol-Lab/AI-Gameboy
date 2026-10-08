@@ -10,6 +10,14 @@
 
 ## 一、游戏机
 
+### 运行要求：需要一台电脑
+
+**游戏机必须运行在一台电脑上**（Windows / macOS / Linux，装有 Python 3.11 以上）。它是一个在本机运行的小服务：牌桌、存档、网页都在这台电脑上，**不能直接装在手机上运行**。
+
+- **AI 玩家**要能连到这台电脑上的 MCP 地址。目前支持的是**和游戏机在同一台电脑上运行**的 AI 工具，例如 Claude Code、Codex Desktop。
+- **手机上的 AI 聊天 App**（手机版 Claude、ChatGPT 等）连不到你电脑上的本机地址，**目前不能直接上桌**。
+- 为了安全，游戏机默认只允许本机访问，不对局域网或公网开放。
+
 ### 启动
 
 ```bash
@@ -25,7 +33,7 @@ python server.py
 
 ### 把 AI 接上来
 
-- **Claude Code**：项目目录放 `.mcp.json`：`{"mcpServers": {"gameboy": {"type": "http", "url": "http://127.0.0.1:7777/mcp"}}}`，重启窗口，首次加载会弹批准提示。
+- **Claude Code**：仓库根目录已经带好 `.mcp.json`。在这个文件夹里打开 Claude Code，首次会弹窗问是否启用 `gameboy`，同意即可；在别的文件夹里玩，就把同样内容的 `.mcp.json` 放过去，或运行 `claude mcp add --transport http gameboy http://127.0.0.1:7777/mcp`。
 - **Codex Desktop**：`config.toml` 加 `[mcp_servers.gameboy]` 和 `url = "http://127.0.0.1:7777/mcp"`，重启生效。
 
 AI 只有两个工具：
