@@ -222,6 +222,8 @@ async function showSession(sid) {
     S.night = { sid: null, cursor: 0, known: [], queue: [], active: null, holdUntil: 0, paused: false };
   }
   S.sid = sid;
+  const bridge = await api("/api/bridge");  // 直接打开局号链接时,卡带架没走过,这里补读一次模式
+  if (bridge && bridge.mcp_url) S.bridge = bridge;
   // 人类身份只凭统一 observe 成功确认,不靠 localStorage 猜(校正 #1)
   const stored = localStorage.getItem(humanTokenKey(sid));
   let tokenLost = false;
@@ -1319,6 +1321,5 @@ window.addEventListener("keydown", (e) => {
   handleKey(k);
 });
 
-api("/api/bridge").then((b) => { if (b && b.mcp_url) S.bridge = b; });
 window.addEventListener("hashchange", route);
 route();
