@@ -1,5 +1,7 @@
 # 维护说明（给维护这个仓库的人和 AI）
 
+> 如果你是来帮人类玩游戏机、或和人类一起做卡带的 AI，请先读 [AGENT_GUIDE.md](AGENT_GUIDE.md)，下面的内容是给仓库维护者的。
+
 - 本仓库按 PolyForm Noncommercial 1.0.0 授权；社区卡带通过 PR 进入，规则见 README「卡带共创」。
 - 合并卡带 PR 前：
   1. `python tools/check_cartridge.py <卡带id>` 全过（GitHub 上会对改到的卡带自动跑，首发内置的卡带除外）；
