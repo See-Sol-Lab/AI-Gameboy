@@ -267,6 +267,11 @@ body {
   background: rgba(243,236,216,.42); color: #5d6647; font-size: .78rem;
 }
 .night-history summary { cursor: pointer; font-weight: 700; text-align: center; }
+.night-journal { border: 1px solid #9ca278; }
+#night-journal-scroll { max-height: 420px; overflow-y: auto; overflow-anchor: none; }
+.night-journal-entry { margin-top: .5rem; padding: .6rem; border-radius: 6px; background: #f3ecd8; }
+.night-journal-entry summary { text-align: left; line-height: 1.7; }
+.night-journal-entry p { margin: .5rem 0; line-height: 1.7; }
 .night-log { display: grid; grid-template-columns: 92px 1fr; gap: .4rem; margin-top: .35rem; }
 .night-log.active { color: #3c422b; font-weight: 700; }
 .night-door-result { border-left: 4px solid #b28b36; }

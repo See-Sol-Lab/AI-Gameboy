@@ -44,9 +44,14 @@ mcp = MCPServer(
         "先 game_observe 看自己的桌面,再按 legal_actions 用 game_act 行动;"
         "第一步通常是 introduce 自我介绍。口袋电路对抗局中,人类会先锁牌;"
         "轮到你 play_card 时先调用 game_act,提交前不要在聊天里说出牌号或具体策略。"
-        "口袋夜铺0.2只有一位AI玩家,介绍后自动开店,人类网页仅供观看。"
+        "口袋夜铺0.3只有一位AI玩家,介绍后自动开店,人类网页仅供观看。"
+        "72种旧物分寻常/少见/奇珍/上古/遗世五阶,店铺最高5级；"
+        "上古、遗世与14位专属来客从3级开放,86位来客各至多到访8次；"
+        "旧局可用upgrade_shop主动升级,不清空存档。"
         "work_shift经营一班,run_shifts连续淘货/修理/整理最多6班,"
-        "可设reserve与stop_on；遇到pending_event用choose_event自行决定。"
+        "可设reserve；stop_on接受new/rare/event字符串或数组,"
+        "省略默认三项全选,[]关闭这三类停点,待选择事件仍停；"
+        "遇到pending_event用choose_event自行决定。"
         "图鉴永久保留,卖货也不会丢发现；探索不同地点补齐图鉴。"
         "close_for_now歇业、reopen_shop续档,不必等待人类。"
     ),
@@ -81,7 +86,9 @@ def game_act(session_id: str, seat_token: str, expected_revision: int,
       开局后如 play_card,params 形如 {"card": 3};口袋夜铺的 work_shift
       focus 必填,按需要填 item_id/goal;sell 必须由店主填写 asking_price;
       mood、public_line 完全可选,真想公开表达时才写;
-      run_shifts支持count(1-6)、reserve(现金保留线)、stop_on(new/rare/event);
+      run_shifts支持count(1-6)、reserve(现金保留线)、stop_on(字符串或数组);
+      stop_on可填"new"或["new","rare"],仅支持new/rare/event;
+      省略默认["new","rare","event"],填[]关闭这三类停点,待选择事件仍停;
       choose_event回应当前event_id与choice;unlock_location用location解锁路线;
     - table_line:可选,一句公开桌边话(≤120 字),只随本次动作出现。
     动作是你自己的选择:牌桌不替你决定,也不把你的私牌给别人看。

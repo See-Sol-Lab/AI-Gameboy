@@ -152,6 +152,23 @@ class TestHumanSeat(unittest.TestCase):
         self.assertEqual(rejected["result"], "rejected")
         self.assertEqual(restarted.observe(sid, token), before)
 
+    def test_night_shop_string_stop_on_survives_host_and_save(self):
+        c = self.host.create_session("pocket-night-shop", "solo_ai")
+        sid, token = c["session_id"], c["seats"][0]["seat_token"]
+        with patch("game_host.secrets.randbits", return_value=13):
+            before = self.host.act(sid, token, 0, "introduce",
+                                   {"display_name": "Test Keeper", "surface": "Test"})
+        rejected = self.host.act(sid, token, before["revision"], "run_shifts",
+                                 {"focus": "scavenge", "count": 6, "stop_on": "unknown"})
+        self.assertEqual(rejected["result"], "rejected")
+        self.assertEqual(self.host.observe(sid, token), before)
+        result = self.host.act(sid, token, before["revision"], "run_shifts",
+                               {"focus": "scavenge", "count": 6, "stop_on": "new"})
+        self.assertEqual(result["result"], "ok")
+        self.assertEqual(result["revision"], before["revision"] + 1)
+        restarted = GameHost(self.host.db_path, ROOT / "cartridges")
+        self.assertEqual(restarted.observe(sid, token), self.host.observe(sid, token))
+
     def test_night_shop_v1_explicit_upgrade_preserves_save(self):
         import store
         c = self.host.create_session("pocket-circuit", "human_ai")
@@ -183,7 +200,7 @@ class TestHumanSeat(unittest.TestCase):
         self.assertEqual(denied["result"], "rejected")
         migrated = self.host.act(sid, token, before["revision"], "upgrade_shop", {})
         self.assertEqual(migrated["result"], "ok")
-        self.assertEqual(migrated["cartridge"]["version"], "0.2.0")
+        self.assertEqual(migrated["cartridge"]["version"], "0.3.0")
         self.assertTrue(migrated["public_state"]["resting"])
         self.assertEqual(migrated["legal_actions"], [{"action_id": "reopen_shop", "params": {}}])
         self.assertTrue(any("红叶" in x["text"] for x in migrated["public_state"]["recent_history"]))
@@ -196,6 +213,30 @@ class TestHumanSeat(unittest.TestCase):
         self.assertEqual(GameHost(self.host.db_path, ROOT / "cartridges").observe(sid, token),
                          self.host.observe(sid, token))
         self.assertNotIn("upgrade_shop", [a["action_id"] for a in migrated["legal_actions"]])
+
+    def test_night_shop_v2_is_pinned_until_explicit_upgrade(self):
+        import store
+        c = self.host.create_session("pocket-night-shop", "solo_ai")
+        sid, token = c["session_id"], c["seats"][0]["seat_token"]
+        conn = store.connect(self.host.db_path)
+        try:
+            conn.execute("UPDATE session SET cartridge_version=? WHERE id=?", ("0.2.0", sid))
+        finally:
+            conn.close()
+        with patch("game_host.secrets.randbits", return_value=13):
+            before = self.host.act(sid, token, 0, "introduce",
+                                   {"display_name": "Test Keeper", "surface": "Test"})
+        self.assertEqual(before["cartridge"]["version"], "0.2.0")
+        self.assertEqual(before["public_state"]["collection"]["total"], 16)
+        before = self.host.act(sid, token, before["revision"], "close_for_now", {})
+        upgraded = self.host.act(sid, token, before["revision"], "upgrade_shop", {})
+        self.assertEqual(upgraded["result"], "ok")
+        self.assertEqual(upgraded["cartridge"]["version"], "0.3.0")
+        self.assertEqual(upgraded["public_state"]["collection"]["total"], 72)
+        for field in ("inventory", "customer_book", "coins", "day", "current_goal", "resting"):
+            self.assertEqual(before["public_state"][field], upgraded["public_state"][field])
+        restarted = GameHost(self.host.db_path, ROOT / "cartridges")
+        self.assertEqual(restarted.observe(sid, token), upgraded)
 
     def test_human_sees_own_hand(self):
         o = self.obs(self.t_hu)

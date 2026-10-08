@@ -19,7 +19,8 @@ def work(s, focus="tidy", **params):
 def resolve(s):
     if s["pending_event"]:
         key = s["pending_event"]["kind"]
-        choice = "decline" if key == "parcel" else "leave"
+        choice = next(option_id for option_id, option in rules.EVENTS[key]["choices"].items()
+                      if option["cost"] == 0)
         return rules.apply(s, "seat_a", "choose_event",
                            {"event_id": s["pending_event"]["id"], "choice": choice})
     return s
@@ -29,7 +30,10 @@ def pending_game():
     s = rules.new_game(SEATS, 5)
     for _ in range(80):
         if s["pending_event"]:
-            return s
+            options = rules.EVENTS[s["pending_event"]["kind"]]["choices"].values()
+            if any(option["cost"] > 0 for option in options):
+                return s
+            s = resolve(s)
         s = work(s)
     raise AssertionError("固定种子没有产生选择事件")
 
@@ -144,7 +148,8 @@ class TestNightShop(unittest.TestCase):
             s["inventory"].append(deepcopy(s["inventory"][0]))
         view = rules.observe(s, "seat_a")["public_state"]["pending_event"]
         self.assertTrue(any(c["available"] and c["cost"] == 0 for c in view["choices"]))
-        paid = "accept" if s["pending_event"]["kind"] == "parcel" else "open"
+        paid = next(option_id for option_id, option in rules.EVENTS[s["pending_event"]["kind"]]["choices"].items()
+                    if option["cost"] > 0)
         with self.assertRaises(rules.IllegalAction):
             rules.apply(s, "seat_a", "choose_event",
                         {"event_id": s["pending_event"]["id"], "choice": paid})
@@ -156,7 +161,8 @@ class TestNightShop(unittest.TestCase):
         s = resolve(s)
         s["pending_event"] = {"kind": key, "id": "another_visit", "_location": "lane"}
         s["coins"] = 30
-        paid = "accept" if key == "parcel" else "open"
+        paid = next(option_id for option_id, option in rules.EVENTS[key]["choices"].items()
+                    if option["cost"] > 0)
         s = rules.apply(s, "seat_a", "choose_event", {"event_id": "another_visit", "choice": paid})
         self.assertEqual(len(s["encounters"][key]["outcomes"]), 2)
 
@@ -211,6 +217,35 @@ class TestNightShop(unittest.TestCase):
         self.assertEqual(result["last_run"]["stop_reason"], "reserve")
         self.assertEqual(result["shift_count"], 1)
 
+    def test_batch_stop_on_string_matches_single_element_list(self):
+        for marker in ("new", "rare", "event"):
+            with self.subTest(stop_on=marker):
+                s = rules.new_game(SEATS, 13)
+                self.assertEqual(
+                    rules.apply(s, "seat_a", "run_shifts",
+                                {"focus": "scavenge", "count": 6, "stop_on": marker}),
+                    rules.apply(s, "seat_a", "run_shifts",
+                                {"focus": "scavenge", "count": 6, "stop_on": [marker]}))
+
+    def test_batch_stop_on_default_matches_all_markers(self):
+        s = rules.new_game(SEATS, 13)
+        self.assertEqual(
+            rules.apply(s, "seat_a", "run_shifts", {"focus": "scavenge", "count": 6}),
+            rules.apply(s, "seat_a", "run_shifts",
+                        {"focus": "scavenge", "count": 6,
+                         "stop_on": ["new", "rare", "event"]}))
+
+    def test_batch_invalid_stop_on_preserves_state(self):
+        s = rules.new_game(SEATS, 13)
+        before = deepcopy(s)
+        for value in (None, True, 1, "", "new/rare/event", "unknown",
+                      {}, ["new", "unknown"], [["new"]]):
+            with self.subTest(stop_on=value):
+                with self.assertRaisesRegex(rules.IllegalAction, "stop_on"):
+                    rules.apply(s, "seat_a", "run_shifts",
+                                {"focus": "tidy", "count": 6, "stop_on": value})
+                self.assertEqual(s, before)
+
     def test_batch_stops_at_full_inventory(self):
         s = rules.new_game(SEATS, 2)
         while len(s["inventory"]) < rules._capacity(s):
@@ -244,6 +279,43 @@ class TestNightShop(unittest.TestCase):
         s = resolve(s)
         s = work(s, mood="专注", public_line="这件东西值得留下。")
         self.assertEqual(s["history"][-1]["reaction"]["text"], "这件东西值得留下。")
+
+    def test_journal_keeps_customer_goal_and_failed_offer_without_private_data(self):
+        s = rules.new_game(SEATS, 4)
+        item = s["inventory"][0]
+        s["customer"]["_wants"] = []
+        customer = deepcopy(rules._public_customer(s))
+        s = work(s, "sell", item_id=item["id"], asking_price=99, goal="先给旧物找到合适的客人")
+        entry = s["history"][-1]
+        self.assertEqual(entry["customer"], customer)
+        self.assertEqual(entry["goal"], "先给旧物找到合适的客人")
+        self.assertEqual(entry["offer"], {"item_name": item["name"], "asking_price": 99})
+        self.assertIn("不合需要", entry["text"])
+        self.assertIsNone(entry["reaction"])
+        self.assertNotIn("_wants", json.dumps(entry))
+        self.assertNotIn("_budget", json.dumps(entry))
+        s["customer"]["request"] = "后来的需求"
+        self.assertEqual(entry["customer"], customer)
+
+    def test_journal_distinguishes_served_customer_from_next_arrival(self):
+        s = rules.new_game(SEATS, 4)
+        item = s["inventory"][0]
+        s["customer"]["_wants"] = [item["kind"]]
+        customer = deepcopy(rules._public_customer(s))
+        s = work(s, "sell", item_id=item["id"], asking_price=1)
+        entry = s["history"][-1]
+        self.assertEqual(entry["customer"], customer)
+        self.assertEqual(entry["customer_arrived"], rules._public_customer(s))
+        self.assertNotEqual(entry["customer_arrived"], customer)
+
+    def test_event_journal_names_event_and_selected_option(self):
+        s = pending_game()
+        kind = s["pending_event"]["kind"]
+        event = rules.EVENTS[kind]
+        s = resolve(s)
+        entry = s["history"][-1]
+        self.assertEqual(entry["event_name"], event["name"])
+        self.assertIn(entry["choice"], [choice["label"] for choice in event["choices"].values()])
 
     def test_long_save_paging_and_weekly_checkpoint(self):
         s = rules.new_game(SEATS, 9)

@@ -435,10 +435,11 @@ class GameHost:
                     new_status = "playing"
                     self._push_event(engine, {"kind": "start"})
             elif (action_id == "upgrade_shop" and srow["cartridge_id"] == "pocket-night-shop"
-                  and srow["cartridge_version"] == "0.1.0" and srow["status"] == "playing"):
+                  and srow["cartridge_version"] in ("0.1.0", "0.2.0") and srow["status"] == "playing"):
                 if seat_id != seats[0]["seat_id"]:
                     return rejected("只有店主可以升级存档")
-                _, current_rules = self._load_cartridge("pocket-night-shop", "0.2.0")
+                target_version = self._load_manifest("pocket-night-shop")["version"]
+                _, current_rules = self._load_cartridge("pocket-night-shop", target_version)
                 old = engine["cartridge_state"]
                 # 升级把待开的旧门铃自动结算一次，结果保留在经营记录中。
                 if old.get("door_signal"):
@@ -449,11 +450,11 @@ class GameHost:
                         reputation_delta=old["reputation"] - before_rep)
                 engine["cartridge_state"] = current_rules.migrate(old)
                 conn.execute("UPDATE session SET cartridge_version=? WHERE id=?",
-                             ("0.2.0", session_id))
+                             (target_version, session_id))
                 conn.execute("DELETE FROM seat WHERE session_id=? AND seat_id<>?",
                              (session_id, seat_id))
                 display_name = seat["display_name"]
-                self._push_event(engine, {"kind": "upgrade", "version": "0.2.0"})
+                self._push_event(engine, {"kind": "upgrade", "version": target_version})
             elif srow["status"] == "lobby":
                 return rejected("牌局尚未开始:大厅里唯一的动作是 introduce")
             else:
@@ -513,10 +514,10 @@ class GameHost:
             legal = ob["legal_actions"]
             waiting = ob["waiting_for"]
             if (srow["cartridge_id"] == "pocket-night-shop"
-                    and srow["cartridge_version"] == "0.1.0"
+                    and srow["cartridge_version"] in ("0.1.0", "0.2.0")
                     and my_seat_id == state["shopkeeper"] and srow["status"] == "playing"):
                 legal.append({"action_id": "upgrade_shop", "params": {},
-                              "description": "升级到0.2：保留店铺；现存旧物补入图鉴；旧门铃自动结算；移除观看者操作权"})
+                              "description": "升级到0.3：保留存档和到访次数；72种旧物、86位来客、五阶店铺；旧门铃自动结算"})
             if srow["status"] == "finished":
                 legal, waiting = [], []
         else:
