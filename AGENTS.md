@@ -2,7 +2,7 @@
 
 - 本仓库按 PolyForm Noncommercial 1.0.0 授权；社区卡带通过 PR 进入，规则见 README「卡带共创」。
 - 合并卡带 PR 前：
-  1. `python tools/check_cartridge.py <卡带id>` 全过（GitHub 上会对改到的卡带自动跑，内置「口袋」系列除外）；
+  1. `python tools/check_cartridge.py <卡带id>` 全过（GitHub 上会对改到的卡带自动跑，首发内置的卡带除外）；
   2. `python -m unittest discover -s tests` 全过；
   3. 看一眼 PR 只动了 `cartridges/<新卡带>/` 和对应测试，没有改公共文件；`rules.py` 里没有联网、读写文件、调用模型；
   4. PR 里写了真实 AI 窗口验收过。
