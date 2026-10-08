@@ -179,13 +179,20 @@ function askMode(cartId) {
   }
   app.innerHTML = `
     <h2>· ${esc(cartName(cartId))} ·</h2>
-    <p class="center dim">这张卡带支持真人下场。谁来玩?</p>
-    <div class="mode-choices">
-      <button class="soft focusable" data-act="create" data-mode="human_ai">我 × AI(我坐 B 席)</button>
-      <button class="soft focusable" data-act="create" data-mode="ai_ai">AI × AI(我旁观)</button>
-    </div>
+    <p class="center dim">谁来玩?</p>
+    <div class="mode-choices">${modeButtons(cartId)}</div>
     <p class="center dim">按 B 放回卡带</p>`;
   afterRender();
+}
+
+// 只列出卡带清单 modes 里真正支持的玩法
+function modeButtons(cartId) {
+  const modes = (S.carts.find((c) => c.id === cartId) || {}).modes || [];
+  return [["human_ai", "human_ai", "我 × AI(我坐 B 席)"], ["multi_ai", "ai_ai", "AI × AI(我旁观)"],
+          ["solo_ai", "solo_ai", "AI 单人玩(我旁观)"]]
+    .filter(([cap]) => modes.includes(cap))
+    .map(([, mode, label]) => `<button class="soft focusable" data-act="create" data-mode="${mode}">${label}</button>`)
+    .join("");
 }
 
 async function insertCartridge(cartId, mode) {
@@ -1221,8 +1228,9 @@ function act(el) {
   if (a === "insert") {
     const cart = S.carts.find((c) => c.id === el.dataset.cart);
     const modes = (cart && cart.modes) || [];
-    if (modes.includes("human_ai") || isNightShop(el.dataset.cart)) askMode(el.dataset.cart);
-    else insertCartridge(el.dataset.cart, modes.includes("multi_ai") ? "ai_ai" : "solo_ai");
+    // 只有一种玩法就直接插卡;有得选(或是夜铺)才进选择页
+    if (modes.length > 1 || isNightShop(el.dataset.cart)) askMode(el.dataset.cart);
+    else insertCartridge(el.dataset.cart, modes[0] === "multi_ai" ? "ai_ai" : modes[0]);
   } else if (a === "create") insertCartridge(S.chooseCart, el.dataset.mode);
   else if (a === "open-save") location.hash = `#/s/${el.dataset.sid}`;
   else if (a === "copy") copyConn(el.dataset.seat, el);

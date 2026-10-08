@@ -205,21 +205,31 @@ async def bridge_info(request: Request):
                          "mcp_url": BRIDGE["mcp_url"] or f"http://{HOST}:{PORT}/mcp"})
 
 
-class TunnelOnlyMcp:
-    """经隧道进来的请求(cloudflared 会带 cf-connecting-ip)只许访问 /mcp。
+class Guard:
+    """两道门:
+    1. 经隧道进来的请求(cloudflared 会带 cf-connecting-ip)只许访问 /mcp;
+       MCP 动作本身要席位令牌,人类页面、建局、收局等接口不对公网开放。
+    2. 别的网站借浏览器偷偷发来的改动请求一律拒绝:浏览器跨站发请求会带上 Origin,
+       只有掌机自己的页面(本机地址)能建局、开局、收局。"""
 
-    MCP 动作本身要席位令牌;人类页面、建局、收局等接口不对公网开放。"""
+    LOCAL_ORIGINS = {f"http://{HOST}:{PORT}".encode(), f"http://localhost:{PORT}".encode()}
 
     def __init__(self, app):
         self.app = app
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http":
-            via_tunnel = any(k == b"cf-connecting-ip" for k, _ in scope["headers"])
+            headers = dict(scope["headers"])
             path = scope["path"]
-            if via_tunnel and path != "/mcp" and not path.startswith("/mcp/"):
-                await JSONResponse({"result": "forbidden",
-                                    "reason": "开桥模式下公网只开放 /mcp"}, status_code=403)(scope, receive, send)
+            reason = None
+            if b"cf-connecting-ip" in headers and path != "/mcp" and not path.startswith("/mcp/"):
+                reason = "开桥模式下公网只开放 /mcp"
+            elif (path.startswith("/api/") and scope["method"] != "GET"
+                  and b"origin" in headers and headers[b"origin"] not in self.LOCAL_ORIGINS):
+                reason = "只接受掌机本机页面发来的操作"
+            if reason:
+                await JSONResponse({"result": "forbidden", "reason": reason},
+                                   status_code=403)(scope, receive, send)
                 return
         await self.app(scope, receive, send)
 
@@ -273,7 +283,7 @@ def serve(bridge: bool) -> None:
         origins.append(f"https://{public}")
     security = TransportSecuritySettings(enable_dns_rebinding_protection=True,
                                          allowed_hosts=hosts, allowed_origins=origins)
-    app = TunnelOnlyMcp(mcp.streamable_http_app(transport_security=security, host=HOST))
+    app = Guard(mcp.streamable_http_app(transport_security=security, host=HOST))
     print(f"人类页面(只有本机能打开):http://{HOST}:{PORT}/")
     if bridge:
         print("【开桥模式】给不在这台电脑上的 AI 用的 MCP 网址:")

@@ -61,7 +61,10 @@ def check(cid: str) -> list[str]:
     if problems:
         return problems
 
-    rules = load_rules(folder)
+    try:
+        rules = load_rules(folder)
+    except Exception as e:
+        return [f"rules.py 载入失败:{type(e).__name__}: {e}"]
     for name in ("new_game", "observe", "apply", "sample_actions", "IllegalAction"):
         if not hasattr(rules, name):
             bad(f"rules.py 缺少 {name}")
@@ -72,7 +75,10 @@ def check(cid: str) -> list[str]:
     for n in seat_counts:
         seats = ["seat_a", "seat_b"][:n]
         for seed in SEEDS:
-            problems += play_through(rules, seats, seed)
+            try:
+                problems += play_through(rules, seats, seed)
+            except Exception as e:  # 规则自己出错:说清楚在哪,不甩一屏报错
+                problems.append(f"[{n} 人 · seed {seed}] 规则运行时出错:{type(e).__name__}: {e}")
             if problems:
                 return problems
 
