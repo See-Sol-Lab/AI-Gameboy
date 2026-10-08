@@ -235,6 +235,7 @@ async function showSession(sid) {
       return;
     }
     S.currentCartridgeId = v.cartridge.id;
+    await ensureCartUi(v.cartridge.id);
     if (v.status === "finished") { location.replace(`#/m/${sid}`); return; }
     let mine = null;
     if (S.human) {
@@ -437,7 +438,21 @@ function eventLine(e) {
   return "";
 }
 
-/* ---------------- CART_UI:唯一的卡带渲染映射 ---------------- */
+/* ---------------- CART_UI:卡带渲染映射 ----------------
+   内置卡带的界面写在下面;其他卡带把界面放在 cartridges/<id>/ui.js,显示前按需加载一次,
+   加载不到就用 _fallback 通用显示。 */
+
+const uiTried = new Set();
+function ensureCartUi(id) {
+  if (CART_UI[id] || uiTried.has(id)) return Promise.resolve();
+  uiTried.add(id);
+  return new Promise((resolve) => {
+    const tag = document.createElement("script");
+    tag.src = `/cartridges/${encodeURIComponent(id)}/ui.js`;
+    tag.onload = tag.onerror = () => resolve();
+    document.head.appendChild(tag);
+  });
+}
 
 function nightCollection(ps) {
   if (!ps.collection) return '<p class="dim">旧版存档可由店主用 upgrade_shop 升级到图鉴版。</p>';
@@ -583,64 +598,6 @@ const CART_UI = {
       };
     },
   },
-  "pocket-circuit": {
-    felt(v) {
-      const ps = v.public_state;
-      const [a, b] = v.seats;
-      const rows = (ps.revealed || []).map((r) => `
-        <div class="mem-round">
-          <span class="dim">节点 ${r.node} · 电荷 ${r.stake}</span>
-          <span class="pcard ${r.winner === a.seat_id ? "win" : ""}">${r.cards[a.seat_id]}</span>
-          <span class="dim">vs</span>
-          <span class="pcard ${r.winner === b.seat_id ? "win" : ""}">${r.cards[b.seat_id]}</span>
-          <span class="w">${r.winner
-            ? `${esc(nameOf(v, r.winner))} 接走 ${r.points}`
-            : "平局 · 电荷滚存"}</span>
-        </div>`).join("");
-      return `
-        <div class="score">${esc(nameOf(v, a.seat_id))} ${ps.scores?.[a.seat_id] ?? 0}
-          <span class="colon">:</span>${ps.scores?.[b.seat_id] ?? 0} ${esc(nameOf(v, b.seat_id))}</div>
-        <div class="round-line">第 ${ps.round} / ${ps.total_rounds} 轮 ·
-          当前节点 ${ps.current_node} · 可争电荷 ${ps.stake}</div>
-        <div class="rounds-mini">${rows}</div>`;
-    },
-    myPanel(v, mine) {
-      if (v.status !== "playing" || !mine) return "";
-      const pending = mine.private_state.my_pending;
-      if (pending !== null && pending !== undefined) {
-        return `<div class="my-panel"><div class="dim center">
-          你已锁定电压 <strong>${pending}</strong>。牌面不会交给 AI，提醒它落子即可。</div></div>`;
-      }
-      const la = mine.legal_actions && mine.legal_actions[0];
-      if (!la) return `<div class="my-panel"><div class="dim center">等待对面落子……</div></div>`;
-      const cards = (mine.private_state.hand || []).map((card) => `
-        <button class="pcard focusable" data-act="circuit-card" data-card="${card}">${card}</button>`).join("");
-      return `<div class="my-panel">
-        <div class="dim center">你先锁牌 · 对面只能看见“已提交”，不能看见数字</div>
-        <div class="hand-row">${cards}</div>
-        <input id="circuit-line" maxlength="60" placeholder="桌边话(可空，不要写自己的牌)">
-      </div>`;
-    },
-    memorial(v) {
-      const ps = v.public_state;
-      const [a, b] = v.seats;
-      const rounds = (ps.revealed || []).map((r) => `
-        <div class="mem-round">
-          <span class="dim">节点 ${r.node} · 电荷 ${r.stake}</span>
-          <span class="pcard ${r.winner === a.seat_id ? "win" : ""}">${r.cards[a.seat_id]}</span>
-          <span class="dim">vs</span>
-          <span class="pcard ${r.winner === b.seat_id ? "win" : ""}">${r.cards[b.seat_id]}</span>
-          <span class="w">${r.winner ? esc(nameOf(v, r.winner)) : "平局滚存"}</span>
-        </div>`).join("");
-      const champ = ps.phase === "finished" && ps.winner
-        ? `胜者 · ${esc(nameOf(v, ps.winner))} 🏆`
-        : ps.phase === "finished" ? "平局 · 电路未分胜负" : "本局由人类提前收起";
-      return { rounds, champ,
-               scoreLine: `${esc(nameOf(v, a.seat_id))} ${ps.scores?.[a.seat_id] ?? 0}
-                 : ${ps.scores?.[b.seat_id] ?? 0} ${esc(nameOf(v, b.seat_id))}` };
-    },
-  },
-
   "four-things-in-my-pocket": {
     felt(v) {
       const ps = v.public_state;
@@ -1009,10 +966,47 @@ const CART_UI = {
     },
   },
 
+  // 没有自带界面的卡带:通用显示。公开局面照原样列出;人类席把 legal_actions 一项项变成按钮。
   _fallback: {
-    felt(v) { return `<div class="dim center">未知卡带 ${esc(v.cartridge.id)}</div>`; },
-    myPanel() { return ""; },
-    memorial(v) { return { rounds: "", champ: "", scoreLine: "" }; },
+    felt(v) {
+      const ps = v.public_state || {};
+      const rows = Object.entries(ps).map(([k, val]) => `
+        <div class="kv"><span class="dim">${esc(k)}</span>
+          <span>${esc(typeof val === "object" ? JSON.stringify(val) : val)}</span></div>`).join("");
+      const waiting = (v.waiting_for || []).map((id) => esc(nameOf(v, id))).join("、");
+      return `<div class="generic-felt">${rows}
+        ${waiting ? `<div class="round-line">轮到:${waiting}</div>` : ""}</div>`;
+    },
+    myPanel(v, mine) {
+      if (v.status !== "playing" || !mine) return "";
+      const acts = mine.legal_actions || [];
+      if (!acts.length) return `<div class="my-panel"><div class="dim center">等待对面……</div></div>`;
+      return `<div class="my-panel">
+        <div class="dim center">你的私有信息:${esc(JSON.stringify(mine.private_state))}</div>
+        ${acts.map((a, i) => `<div class="generic-act">
+          <button class="soft focusable" data-act="generic-act" data-i="${i}">${esc(a.action_id)}</button>
+          <span class="dim">${esc(JSON.stringify(a.params || {}))}</span></div>`).join("")}
+        <input id="tl-input" maxlength="120" placeholder="桌边话(可空)">
+      </div>`;
+    },
+    memorial(v) {
+      return { rounds: this.felt(v), champ: v.public_state?.phase === "finished" ? "已结算" : "本局提前收起",
+               scoreLine: "" };
+    },
+    async onAct(name, el) {
+      if (name !== "generic-act") return;
+      const o = await api(`/api/sessions/${S.sid}/observe`, "POST", { seat_token: S.human.token });
+      const a = o.result === "ok" && (o.legal_actions || [])[Number(el.dataset.i)];
+      if (!a) return;
+      const hint = JSON.stringify(a.params || {}, null, 1);
+      const text = prompt(`${a.action_id} 的参数(JSON)。说明:
+${hint}`, "{}");
+      if (text === null) return;
+      let params;
+      try { params = JSON.parse(text || "{}"); } catch { alert("不是合法的 JSON"); return; }
+      const line = (document.getElementById("tl-input")?.value || "").trim();
+      await humanAct(a.action_id, params, line);
+    },
   },
 };
 
@@ -1029,6 +1023,7 @@ async function showMemorial(sid) {
     app.innerHTML = `<p class="center">读不到这局(${esc(v.result)})。按 B 回卡带架。</p>`;
     return;
   }
+  await ensureCartUi(v.cartridge.id);
   const ui = CART_UI[v.cartridge.id] || CART_UI._fallback;
   const m = ui.memorial(v);
   const events = v.public_events || v.recent_public_events || [];
@@ -1118,12 +1113,6 @@ async function humanJudge(verdict) {
 
 async function humanDraw(itemId) {
   await humanAct("draw_pick", { item_id: itemId });
-}
-
-async function circuitPlay(card) {
-  if (!confirm(`锁定电压 ${card}？本轮不能更改。`)) return;
-  const line = (document.getElementById("circuit-line")?.value || "").trim();
-  await humanAct("play_card", { card }, line);
 }
 
 async function nightKnock() {
@@ -1226,8 +1215,9 @@ function act(el) {
   const a = el.dataset.act;
   if (a === "insert") {
     const cart = S.carts.find((c) => c.id === el.dataset.cart);
-    if (cart && ((cart.modes || []).includes("human_ai") || isNightShop(cart.id))) askMode(cart.id);
-    else insertCartridge(el.dataset.cart, "ai_ai");
+    const modes = (cart && cart.modes) || [];
+    if (modes.includes("human_ai") || isNightShop(el.dataset.cart)) askMode(el.dataset.cart);
+    else insertCartridge(el.dataset.cart, modes.includes("multi_ai") ? "ai_ai" : "solo_ai");
   } else if (a === "create") insertCartridge(S.chooseCart, el.dataset.mode);
   else if (a === "open-save") location.hash = `#/s/${el.dataset.sid}`;
   else if (a === "copy") copyConn(el.dataset.seat, el);
@@ -1239,7 +1229,6 @@ function act(el) {
   else if (a === "hu-endorse") humanJudge("endorse");
   else if (a === "hu-doubt") humanJudge("doubt");
   else if (a === "pick-draw") humanDraw(el.dataset.item);
-  else if (a === "circuit-card") circuitPlay(Number(el.dataset.card));
   else if (a === "night-knock") nightKnock();
   else if (a === "night-pause") { S.night.paused = !S.night.paused; S.lastSnap = ""; }
   else if (a === "bc-fact") { S.bc.fact = el.dataset.id; S.lastSnap = ""; redrawSoon(); }
@@ -1250,6 +1239,7 @@ function act(el) {
   else if (a === "pc-intent") { S.pc.intent = el.dataset.id; S.lastSnap = ""; redrawSoon(); }
   else if (a === "pc-submit") pcSubmit();
   else if (a === "pc-narrate") pcNarrate(el);
+  else (CART_UI[S.currentCartridgeId] || CART_UI._fallback).onAct?.(a, el);
 }
 
 let redrawTimer = null;

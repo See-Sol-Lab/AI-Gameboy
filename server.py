@@ -10,6 +10,7 @@ MCP 入口:http://127.0.0.1:7777/mcp
 人类页面:http://127.0.0.1:7777/
 """
 
+import re
 from pathlib import Path
 
 from mcp.server import MCPServer
@@ -102,6 +103,16 @@ async def app_js(request: Request):
 @mcp.custom_route("/web/style.css", methods=["GET"])
 async def style_css(request: Request):
     return FileResponse(WEB / "style.css", headers=_STATIC_HEADERS)
+
+
+@mcp.custom_route("/cartridges/{cid}/ui.js", methods=["GET"])
+async def cartridge_ui(request: Request):
+    """卡带自带的界面(可选):cartridges/<id>/ui.js,没有就用掌机的通用显示。"""
+    cid = request.path_params["cid"]
+    path = BASE / "cartridges" / cid / "ui.js"
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,47}", cid) or not path.is_file():
+        return JSONResponse({"result": "not_found"}, status_code=404)
+    return FileResponse(path, media_type="text/javascript", headers=_STATIC_HEADERS)
 
 
 async def _json_body(request: Request) -> dict:

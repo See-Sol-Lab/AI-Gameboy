@@ -513,3 +513,8 @@ label.chip.need input { accent-color: #d8a736; }
   .ss-bar { order: 3; grid-column: 1 / -1; padding-top: .6rem; }
   .slots, .table-top { grid-template-columns: 1fr; }
 }
+
+/* 通用显示:没有自带界面的卡带 */
+.generic-felt .kv { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; font-size: 13px; }
+.generic-felt .kv span:last-child { text-align: right; word-break: break-all; }
+.generic-act { display: flex; align-items: center; gap: 8px; margin: 6px 0; }

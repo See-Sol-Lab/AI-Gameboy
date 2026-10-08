@@ -3,7 +3,7 @@
   "name": "盲区同行",
   "version": "0.1.0",
   "author": "See Sol Lab",
-  "license": "private-prototype",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "players": { "min": 2, "max": 2 },
   "minutes": 20,
   "dealer": "none",

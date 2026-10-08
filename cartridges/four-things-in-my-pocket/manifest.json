@@ -3,7 +3,7 @@
   "name": "口袋里的四样东西",
   "version": "0.2.0",
   "author": "See Sol Lab",
-  "license": "private-prototype",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "players": { "min": 2, "max": 2 },
   "minutes": 15,
   "dealer": "none",

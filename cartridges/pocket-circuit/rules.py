@@ -138,3 +138,10 @@ def _winner(s):
     if s["scores"][a] == s["scores"][b]:
         return None
     return a if s["scores"][a] > s["scores"][b] else b
+
+
+def sample_actions(full_state, seat_id):
+    """此刻这一席能做的具体动作(给检查工具和测试用,AI 玩家看不到)。"""
+    if full_state["phase"] != "playing" or seat_id != _expected_seat(full_state):
+        return []
+    return [("play_card", {"card": card}) for card in full_state["hands"][seat_id]]
