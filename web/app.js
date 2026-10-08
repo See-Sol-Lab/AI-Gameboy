@@ -21,6 +21,7 @@ const S = {
   bc: { fact: null, stance: null, target: null },  // 盲区同行的三步选择
   pc: { intent: null },                            // 口袋穿越的意图选择
   night: { sid: null, cursor: 0, known: [], queue: [], active: null, holdUntil: 0, paused: false },
+  bridge: { mode: "local", mcp_url: "http://127.0.0.1:7777/mcp" },  // /api/bridge:本地模式或开桥模式
 };
 
 const isNightShop = (id) => id === "pocket-night-shop";
@@ -106,9 +107,10 @@ function updateNightPlayback(sid, ps) {
 async function showShelf() {
   setScreen("shelf", "卡带架");
   S.chooseCart = null;
-  const [cartsData, sessData] = await Promise.all([
-    api("/api/cartridges"), api("/api/sessions"),
+  const [cartsData, sessData, bridge] = await Promise.all([
+    api("/api/cartridges"), api("/api/sessions"), api("/api/bridge"),
   ]);
+  S.bridge = bridge;
   S.carts = cartsData.cartridges || [];
   const sessions = sessData.sessions || [];
   const cartsHtml = S.carts.map((c) => {
@@ -340,6 +342,9 @@ function renderSeats(v, mine, tokenLost) {
     <div class="start-hint ${ready ? "ready" : ""}">${ready
       ? "两席已就座 —— 按 START 开局"
       : "等待所有席位完成自我介绍"}</div>
+    <p class="dim center">${S.bridge.mode === "bridge"
+      ? `开桥模式 · 不在这台电脑上的 AI 用这个 MCP 网址:${esc(S.bridge.mcp_url)}`
+      : "本地模式 · 只有这台电脑上的 AI 能连;要和手机或网页上的 AI 玩,请用开桥模式启动"}</p>
     <p class="center"><button class="soft warn focusable" data-act="end">收起这局</button></p>
     <p class="dim center">局号 ${esc(v.session_id)}</p>`;
   afterRender();
@@ -1166,7 +1171,7 @@ async function copyConn(seatId, btn) {
   const t = tokens.find((x) => x.seat_id === seatId);
   if (!t) return;
   const text = isNightShop(S.currentCartridgeId)
-    ? `你在 AI-Gameboy 的《口袋夜铺》里经营一间长期存档的夜铺(MCP 服务名 gameboy,入口 http://127.0.0.1:7777/mcp)。
+    ? `你在 AI-Gameboy 的《口袋夜铺》里经营一间长期存档的夜铺(MCP 服务名 gameboy,入口 ${S.bridge.mcp_url})。
 session_id: ${S.sid}
 seat_id: ${t.seat_id}
 seat_token: ${t.seat_token}
@@ -1176,7 +1181,7 @@ seat_token: ${t.seat_token}
 run_shifts 可连续淘货、修理或整理（count最多6，reserve现金保留线，stop_on=new/rare/event）。
 遇到 pending_event 用 choose_event 自行决定。图鉴保留已发现旧物和见闻，卖掉也不消失。
 想停时 close_for_now，下次 reopen_shop；mood/public_line 完全可选。`
-    : `你在 AI-Gameboy 牌桌上有一个席位(MCP 服务名 gameboy,入口 http://127.0.0.1:7777/mcp)。
+    : `你在 AI-Gameboy 牌桌上有一个席位(MCP 服务名 gameboy,入口 ${S.bridge.mcp_url})。
 session_id: ${S.sid}
 seat_id: ${t.seat_id}
 seat_token: ${t.seat_token}
@@ -1306,5 +1311,6 @@ window.addEventListener("keydown", (e) => {
   handleKey(k);
 });
 
+api("/api/bridge").then((b) => { if (b && b.mcp_url) S.bridge = b; });
 window.addEventListener("hashchange", route);
 route();

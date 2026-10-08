@@ -10,40 +10,63 @@
 
 ## 一、游戏机
 
-### 运行要求：需要一台电脑
+### 先选模式：本地模式还是开桥模式
 
-**游戏机必须运行在一台电脑上**（Windows / macOS / Linux，装有 Python 3.11 以上）。它是一个在本机运行的小服务：牌桌、存档、网页都在这台电脑上，**不能直接装在手机上运行**。
+游戏机**必须运行在一台电脑上**（Windows / macOS / Linux，Python 3.11 以上），不能装在手机上。牌桌、存档和人类看的掌机网页都在这台电脑上。
 
-- **AI 玩家**要能连到这台电脑上的 MCP 地址。目前支持的是**和游戏机在同一台电脑上运行**的 AI 工具，例如 Claude Code、Codex Desktop。
-- **手机上的 AI 聊天 App**（手机版 Claude、ChatGPT 等）连不到你电脑上的本机地址，**目前不能直接上桌**。
-- 为了安全，游戏机默认只允许本机访问，不对局域网或公网开放。
+选哪种模式，只看一件事：**有没有哪个 AI 不在这台电脑上？**
 
-### 启动
+| 情况 | 用哪个模式 |
+|---|---|
+| 你和电脑上的 AI 玩（Claude Code、Codex Desktop 等） | **本地模式** |
+| 电脑上的两个 AI 对局（比如 Claude Code × Codex） | **本地模式** |
+| 你和**手机或网页上**的 AI 玩（手机版 / 网页版 GPT、Claude 等） | **开桥模式** |
+| 两个 AI 对局，**其中任何一个**在手机或网页上 | **开桥模式** |
+
+手机或网页上的 AI 调用工具时，请求是从 AI 公司的服务器发出来的，不是从你的手机，所以它们连不到你电脑上的本机地址，局域网也不行，只能通过开桥模式给出的公网网址连进来。
+
+#### 本地模式（默认，最安全）
 
 ```bash
 python -m pip install mcp
 python server.py
 ```
 
-或双击 `start_server.bat`。启动后：
+或双击 `start_server.bat`。只有这台电脑能连，不开放任何网络。
 
 - 人类的掌机页面：`http://127.0.0.1:7777/`
-- AI 连接的 MCP 地址：`http://127.0.0.1:7777/mcp`（所有 AI 窗口连同一个地址）
-- 存档：`data/gameboy.db`（本机运行时生成，不进版本库）
+- AI 的 MCP 地址：`http://127.0.0.1:7777/mcp`
+  - **Claude Code**：仓库根目录已经带好 `.mcp.json`，在这个文件夹里打开 Claude Code，弹窗问是否启用 `gameboy` 时同意即可；在别的文件夹里玩，运行 `claude mcp add --transport http gameboy http://127.0.0.1:7777/mcp`。
+  - **Codex Desktop**：`config.toml` 加 `[mcp_servers.gameboy]` 和 `url = "http://127.0.0.1:7777/mcp"`，重启生效。
 
-### 把 AI 接上来
+#### 开桥模式（给不在这台电脑上的 AI）
 
-- **Claude Code**：仓库根目录已经带好 `.mcp.json`。在这个文件夹里打开 Claude Code，首次会弹窗问是否启用 `gameboy`，同意即可；在别的文件夹里玩，就把同样内容的 `.mcp.json` 放过去，或运行 `claude mcp add --transport http gameboy http://127.0.0.1:7777/mcp`。
-- **Codex Desktop**：`config.toml` 加 `[mcp_servers.gameboy]` 和 `url = "http://127.0.0.1:7777/mcp"`，重启生效。
+先安装 [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)（Windows：`winget install Cloudflare.cloudflared`；macOS：`brew install cloudflared`），然后：
 
-AI 只有两个工具：
+```bash
+python server.py --bridge
+```
+
+或双击 `start_bridge.bat`。窗口里会打印一个公网 MCP 网址，形如 `https://xxxx.trycloudflare.com/mcp`：
+
+1. 把这个网址加进那个 AI 的连接器：网页版 / 手机版 GPT 在开发者模式里新建一个 App 填这个网址；Claude 在设置的「连接器」里添加自定义连接器。电脑上的 AI 照样用本地地址，不受影响。
+2. 掌机页面仍然在电脑上打开 `http://127.0.0.1:7777/`，照常插卡开局，把席位连接信息发给那个 AI（复制出来的信息里已经带着这个网址）。
+
+**开桥模式的安全须知**（请一定读完）：
+
+- 公网**只开放 `/mcp`**。掌机网页、开局、收局这些操作只有你这台电脑能做，别人拿到网址也打不开。
+- 拿到网址的人能连上 MCP，但**没有席位令牌就动不了任何一局**，也看不到任何局面。令牌只在你的掌机页面上显示一次，只发给你要邀请的那个 AI，别贴到公开的地方。
+- 网址只在开桥的窗口开着时有效：**关掉窗口，隧道立即断开**。不玩的时候请关掉；下次开桥会换一个新网址，要在 AI 的连接器里重新填。
+- 隧道由 Cloudflare 提供（免费临时隧道），游戏数据仍然只存在你自己的电脑上。
+
+### AI 的两个工具
 
 - `game_observe(session_id, seat_token)`：看自己这一席的桌面（公开局面、自己的私有信息、现在能做的动作、在等谁）。只读，随时可调。
 - `game_act(session_id, seat_token, expected_revision, action_id, params, table_line?)`：提交动作。局面已变会返回 `stale_revision` 和新的桌面；不合法会返回 `rejected` 且局面不变；令牌不对返回 `forbidden`，什么都不泄露。
 
 ### 怎么玩一局
 
-1. 打开掌机页面，在卡带架上选一张卡带，按 A 插入，选模式：**AI × AI**（你旁观）、**我 × AI**（你坐 B 席）或**单人**（一个 AI 自己玩）。
+1. 按上面选好的模式启动，打开掌机页面，在卡带架上选一张卡带，按 A 插入，选模式：**AI × AI**（你旁观）、**我 × AI**（你坐 B 席）或**单人**（一个 AI 自己玩）。
 2. 页面给出每个 AI 席位一次性的连接信息（局号 + 席位令牌）。每份只粘贴给一个 AI 窗口。
 3. AI 先 `game_observe` 看桌，再用 `introduce` 入座（称呼、所在窗口必填）。
 4. 都入座后，人类按 START 开局（单人卡带入座即开）。

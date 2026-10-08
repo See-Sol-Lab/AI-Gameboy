@@ -5,21 +5,32 @@
 - 人类侧极简页面:建局、复制席位连接信息、开局、旁观、手动结束;
 - 卡带架从 cartridges/* 动态读取,当前包含对抗、合作与 AI 单机经营卡。
 
-运行:python server.py  (或双击 start_server.bat)
+两种模式:
+  本地模式  python server.py           (或双击 start_server.bat)
+            只有这台电脑能连。AI 也在这台电脑上(Claude Code、Codex 等)时用它。
+  开桥模式  python server.py --bridge  (或双击 start_bridge.bat)
+            另开一条 cloudflared 临时隧道,给出一个公网 MCP 网址,让不在这台电脑上的 AI
+            (手机或网页上的 GPT、Claude 等)也能入座。公网只开放 /mcp;
+            人类页面和管理接口仍只有本机能打开。关掉窗口,隧道和网址一起失效。
 MCP 入口:http://127.0.0.1:7777/mcp
 人类页面:http://127.0.0.1:7777/
 """
 
 import re
+import shutil
+import subprocess
+import sys
+import threading
 from pathlib import Path
 
 from mcp.server import MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse
 
 from game_host import GameHost
 
-HOST = "127.0.0.1"  # 只绑回环地址,不开局域网/公网(蓝图 §15.4)
+HOST = "127.0.0.1"  # 只绑回环地址;公网只能经开桥模式的隧道进来,且只到 /mcp
 PORT = 7777
 BASE = Path(__file__).parent
 WEB = BASE / "web"
@@ -183,8 +194,100 @@ async def session_narrate(request: Request):
     return JSONResponse(host.narrate(request.path_params["sid"]))
 
 
+# ---------------- 开桥模式 ----------------
+
+BRIDGE = {"mcp_url": None}
+
+
+@mcp.custom_route("/api/bridge", methods=["GET"])
+async def bridge_info(request: Request):
+    return JSONResponse({"mode": "bridge" if BRIDGE["mcp_url"] else "local",
+                         "mcp_url": BRIDGE["mcp_url"] or f"http://{HOST}:{PORT}/mcp"})
+
+
+class TunnelOnlyMcp:
+    """经隧道进来的请求(cloudflared 会带 cf-connecting-ip)只许访问 /mcp。
+
+    MCP 动作本身要席位令牌;人类页面、建局、收局等接口不对公网开放。"""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            via_tunnel = any(k == b"cf-connecting-ip" for k, _ in scope["headers"])
+            path = scope["path"]
+            if via_tunnel and path != "/mcp" and not path.startswith("/mcp/"):
+                await JSONResponse({"result": "forbidden",
+                                    "reason": "开桥模式下公网只开放 /mcp"}, status_code=403)(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+
+def find_cloudflared() -> str | None:
+    for candidate in (shutil.which("cloudflared"),
+                      r"C:\Program Files (x86)\cloudflared\cloudflared.exe",
+                      r"C:\Program Files\cloudflared\cloudflared.exe"):
+        if candidate and Path(candidate).is_file():
+            return candidate
+    return None
+
+
+def open_tunnel() -> tuple[subprocess.Popen, str]:
+    """起一条 cloudflared 临时隧道指向本机端口,返回进程和公网主机名。"""
+    exe = find_cloudflared()
+    if not exe:
+        sys.exit("没找到 cloudflared。先安装它(Windows:winget install Cloudflare.cloudflared;"
+                 "macOS:brew install cloudflared),再重新开桥。")
+    proc = subprocess.Popen([exe, "tunnel", "--no-autoupdate", "--url", f"http://{HOST}:{PORT}"],
+                            stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True,
+                            encoding="utf-8", errors="replace")
+    found = threading.Event()
+    result = {}
+
+    def read():
+        for line in proc.stderr:  # 一直读完,免得管道写满卡住隧道
+            m = re.search(r"https://([a-z0-9-]+\.trycloudflare\.com)", line)
+            if m and not found.is_set():
+                result["host"] = m.group(1)
+                found.set()
+
+    threading.Thread(target=read, daemon=True).start()
+    if not found.wait(60):
+        proc.terminate()
+        sys.exit("隧道 60 秒内没建好,检查网络后重试。")
+    return proc, result["host"]
+
+
+def serve(bridge: bool) -> None:
+    import uvicorn
+
+    hosts = [f"{HOST}:{PORT}", f"localhost:{PORT}"]
+    origins = [f"http://{HOST}:{PORT}", f"http://localhost:{PORT}"]
+    tunnel = None
+    print("AI-Gameboy")
+    if bridge:
+        tunnel, public = open_tunnel()
+        BRIDGE["mcp_url"] = f"https://{public}/mcp"
+        hosts.append(public)
+        origins.append(f"https://{public}")
+    security = TransportSecuritySettings(enable_dns_rebinding_protection=True,
+                                         allowed_hosts=hosts, allowed_origins=origins)
+    app = TunnelOnlyMcp(mcp.streamable_http_app(transport_security=security, host=HOST))
+    print(f"人类页面(只有本机能打开):http://{HOST}:{PORT}/")
+    if bridge:
+        print("【开桥模式】给不在这台电脑上的 AI 用的 MCP 网址:")
+        print(f"    {BRIDGE['mcp_url']}")
+        print("把它加进那个 AI 的连接器/开发者应用里,再把席位连接信息发给它。")
+        print("这个网址只在本窗口开着时有效;关掉窗口,隧道立即失效,下次开桥会换新网址。")
+    else:
+        print(f"【本地模式】MCP 入口(只有本机能连):http://{HOST}:{PORT}/mcp")
+    try:
+        uvicorn.run(app, host=HOST, port=PORT)
+    finally:
+        if tunnel:
+            tunnel.terminate()
+
+
 if __name__ == "__main__":
-    print(f"AI-Gameboy Stage B 内部纸桌")
-    print(f"MCP 入口:http://{HOST}:{PORT}/mcp")
-    print(f"人类页面:http://{HOST}:{PORT}/")
-    mcp.run(transport="streamable-http", host=HOST, port=PORT)
+    serve(bridge="--bridge" in sys.argv[1:])

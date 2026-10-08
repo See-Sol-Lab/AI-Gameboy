@@ -1,5 +1,6 @@
 @echo off
 cd /d "%~dp0"
-echo AI-Gameboy Stage A server: http://127.0.0.1:7777/mcp
+chcp 65001 >nul
+echo AI-Gameboy 本地模式: 只有这台电脑能连
 python server.py
 pause
