@@ -78,6 +78,9 @@ class TestHumanSeat(unittest.TestCase):
                           {"focus": "tidy", "count": 6, "stop_on": []})
         self.assertEqual(r["result"], "ok")
         viewer = self.host.public_view(sid, after_seq=0)
+        self.assertIn("customer_book", viewer["public_state"])            # 网页给人类看客人簿
+        self.assertNotIn("customer_book", self.host.observe(sid, token)["public_state"])   # AI 看不到
+        self.assertNotIn("customer_book", r["public_state"])
         self.assertNotIn("private_state", viewer)
         self.assertNotIn("seat_token", json.dumps(viewer))
         self.assertEqual(len(viewer["public_state"]["playback_entries"]),

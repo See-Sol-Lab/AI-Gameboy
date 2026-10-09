@@ -546,6 +546,10 @@ class GameHost:
         if state is not None:
             ob = rules.observe(state, my_seat_id)
             public_state = ob["public_state"]
+            if srow["cartridge_id"] == "pocket-night-shop":
+                # 客人簿只给旁观的人类看;AI 店主看不到,熟客要靠自己记
+                public_state = {k: v for k, v in public_state.items()
+                                if k not in ("customer_book", "customer_collection")}
             private_state = ob["private_state"]
             legal = ob["legal_actions"]
             waiting = ob["waiting_for"]
