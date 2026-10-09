@@ -1,0 +1,123 @@
+"""口袋夜铺 · 单文件盲玩版 @@VERSION@@
+
+给 AI 玩家：你需要有 Python 代码执行能力；Python 3.11+，无需第三方依赖。
+下载这个文件后即可玩，不需要整个仓库、MCP、网络或模型 API Key。
+
+    import pocket_night_shop as shop
+    print(shop.cmd("help"))
+    print(shop.cmd("observe"))
+    print(shop.cmd('run_shifts {"focus":"scavenge","count":6,"stop_on":"new"}'))
+
+只根据 observe 返回的 legal_actions 和结果自己决定；无需每轮发表感想。
+不要解码下面的 _RULES_B64，也不要打开原仓库规则或读取存档里的隐藏字段，
+那会提前揭露旧物、秘密与客人需求。通过淘货、修复和相遇慢慢发现。
+这只是防误读的盲玩包装，不是加密或防作弊安全措施。
+
+每次行动自动保存到本文件旁的 pocket_night_shop.save.sqlite3。
+下次导入同一文件并调用 observe 即可继续。无需保持 Python 进程一直运行。
+保存目录需可写；只复制 .py 不会带走已有存档，迁移时也要备份 .sqlite3。
+独立版与掌机各有自己的存档，本版没有掌机网页。
+
+命令行也能用：python pocket_night_shop.py observe
+本文件由 tools/build_night_shop.py 生成，请维护原规则和模板后重新生成。
+Copyright See-Sol-Lab and the AI-Gameboy contributors.
+License: PolyForm Noncommercial 1.0.0，完整协议附在文件末尾。
+"""
+import base64 as _base64
+from contextlib import closing as _closing
+import json as _json
+from pathlib import Path as _Path
+import secrets as _secrets
+import sqlite3 as _sqlite3
+import sys as _sys
+import zlib as _zlib
+
+VERSION = "@@VERSION@@"
+SAVE_PATH = _Path(__file__).resolve().with_name("pocket_night_shop.save.sqlite3")
+_RULES_B64 = (
+@@BLOB@@
+)
+_engine = {"__name__": "_night_shop_rules"}
+exec(compile(_zlib.decompress(_base64.b64decode(_RULES_B64)).decode("utf-8"),
+             "<night-shop-blind-rules>", "exec"), _engine)
+
+_HELP = """口袋夜铺 · 你是独自经营旧物铺的店主。
+observe / status：看店况、库存、当前客人和 legal_actions（可做动作）。
+行动格式：动作名 + JSON对象。按刚才的 legal_actions 填参数，例如：
+  work_shift {"focus":"tidy"}
+  run_shifts {"focus":"scavenge","count":6,"stop_on":"new"}
+  work_shift {"focus":"repair","item_id":"从库存选"}
+  work_shift {"focus":"sell","item_id":"从库存选","asking_price":5}
+遇到 pending_event，先 choose_event，event_id 和 choice 从观察中选。
+close_for_now：歇业；reopen_shop：接着开店。随时退出，动作已经自动保存。
+collection / encounters / customers：只查已经发现的图鉴、见闻、顾客簿。
+history 0：从头查公开经营记录，每次最多100条；history 100 继续往后查。
+new_game {"seed":17}：仅在没有存档时创建指定种子的新局；绝不覆盖旧档。
+未开局时 observe 会自动创建一局。没有必须完成的回合数，店主自己决定目标。
+stop_on 接受 new/rare/event 字符串或数组；省略默认三项全选，[]关闭这三类
+停点，遇到必须选择的事件仍会停。公开目标 goal、心情 mood、public_line 都可省略。
+请通过指令探索，不要解码引擎或查看存档里的隐藏资料。"""
+
+
+def cmd(line="help"):
+    """执行一条指令，返回可直接 print 的文字；每个动作完成后存档。"""
+    if not isinstance(line, str):
+        return _json.dumps({"result": "rejected", "message": "指令须为字符串"}, ensure_ascii=False)
+    action, _, raw = (line.strip() or "help").partition(" ")
+    if action == "help":
+        return _HELP
+    try:
+        if action == "history":
+            after = int(raw or "0")
+            if after < 0:
+                raise ValueError("历史游标须为非负整数")
+            params = {}
+        else:
+            params = _json.loads(raw) if raw.strip() else {}
+            if not isinstance(params, dict):
+                raise ValueError("动作参数须为JSON对象")
+        allowed = {"observe", "status", "collection", "encounters", "customers", "history", "new_game",
+                   "work_shift", "run_shifts", "choose_event", "unlock_location", "close_for_now", "reopen_shop"}
+        if action not in allowed:
+            raise ValueError("未知指令，请先 cmd('help')")
+        with _closing(_sqlite3.connect(str(SAVE_PATH))) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute("CREATE TABLE IF NOT EXISTS shop (id INTEGER PRIMARY KEY CHECK(id=1), version TEXT NOT NULL, state TEXT NOT NULL)")
+            row = conn.execute("SELECT version,state FROM shop WHERE id=1").fetchone()
+            if row and row[0] != VERSION:
+                raise ValueError("存档版本与游戏不一致，请使用对应版本的单文件；旧档保持不变")
+            if row and action == "new_game":
+                raise ValueError("已有存档，new_game不会覆盖；请继续observe，或在另一目录建立新铺子")
+            if row:
+                state = _json.loads(row[1])
+            else:
+                seed = params.get("seed", _secrets.randbits(32)) if action == "new_game" else _secrets.randbits(32)
+                if type(seed) is not int:
+                    raise ValueError("seed须为整数")
+                state = _engine["new_game"](["seat_a"], seed)
+            if action in {"work_shift", "run_shifts", "choose_event", "unlock_location", "close_for_now", "reopen_shop"}:
+                state = _engine["apply"](state, "seat_a", action, params)
+            view = _engine["observe"](state, "seat_a")
+            public = view["public_state"]
+            if action == "history":
+                result = {"result": "ok", "total": public["journal_total"],
+                          "entries": _engine["history_since"](state, after)}
+            elif action in ("collection", "encounters"):
+                result = {"result": "ok", action: public[action]}
+            elif action == "customers":
+                result = {"result": "ok", "summary": public["customer_collection"], "entries": public["customer_book"]}
+            else:
+                result = {"result": "ok", "version": VERSION, **view}
+            conn.execute("INSERT INTO shop VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state",
+                         (VERSION, _json.dumps(state, ensure_ascii=False)))
+        return _json.dumps(result, ensure_ascii=False, indent=2)
+    except (ValueError, _engine["IllegalAction"], _sqlite3.Error, OSError) as error:
+        return _json.dumps({"result": "rejected", "message": str(error)}, ensure_ascii=False)
+
+
+_LICENSE = """@@LICENSE@@"""
+
+if __name__ == "__main__":
+    if hasattr(_sys.stdout, "reconfigure"):
+        _sys.stdout.reconfigure(encoding="utf-8")
+    print(cmd(" ".join(_sys.argv[1:]) or "help"))

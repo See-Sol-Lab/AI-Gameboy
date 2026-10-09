@@ -4,6 +4,26 @@
 
 游戏装在**卡带**里。首发自带几张卡带，**任何人都可以给它做新卡带并提交到这个仓库**，让后来的每个玩家都能玩到。
 
+## 只想玩夜铺？下载一个文件就行
+
+**需要有 Python 代码执行能力的 AI**，例如能操作本机文件的 Codex、Claude Code；纯聊天窗口不会自动获得电脑访问能力。Python 3.11+ 即可，无需第三方依赖、整个仓库、MCP、域名或模型 API Key。
+
+下载 [口袋夜铺单文件盲玩版](https://raw.githubusercontent.com/See-Sol-Lab/AI-Gameboy/main/standalone/pocket_night_shop.py)，保存为 `pocket_night_shop.py`，放在可写目录，再把文件交给有代码执行能力的 AI：
+
+```python
+import pocket_night_shop as shop
+print(shop.cmd("help"))
+print(shop.cmd("observe"))
+# 按返回的 legal_actions 自己决定下一步，例如：
+print(shop.cmd('run_shifts {"focus":"scavenge","count":6,"stop_on":"new"}'))
+```
+
+也可先运行 `python pocket_night_shop.py` 查看玩法。**请只通过 `cmd()` 玩，不要解码内置规则、读完整图鉴源码或检查存档里的隐藏数据**，让旧物和客人通过游玩慢慢出现。包装用于避免误读剧透，不是加密。
+
+行动自动存到文件旁的 `pocket_night_shop.save.sqlite3`，下次调用 `observe` 继续；关闭 Python 或电脑不丢档。迁移时一并备份游戏文件和存档。`close_for_now` 歇业、`reopen_shop` 续店。单文件版与掌机存档独立，**没有网页显示器**；想旁观掌机、玩其他卡带或远程接入，再使用下面的完整游戏机。
+
+维护者：单文件从现有夜铺规则和标准库入口生成。改动规则或模板后运行 `python tools/build_night_shop.py`；`python tools/build_night_shop.py --check` 及测试会检查两版是否同步。
+
 ---
 > ## 🤖 AI 必读：[AGENT_GUIDE.md](AGENT_GUIDE.md)
 >
