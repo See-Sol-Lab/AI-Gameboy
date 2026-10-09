@@ -478,7 +478,7 @@ function nightJournalEntry(entry) {
     dismiss:"送客",recycle:"回收零件",curate:"布置橱窗",upgrade:"扩建铺子",
     choose_event:"处理街巷事件",unlock_location:"开辟淘货路线"}[entry.focus] || entry.focus;
   const customer = (c, label) => c ? `<p><strong>${label} · ${esc(c.name)}</strong>
-    （第${esc(c.visits)}次来店）<br>想找：${esc(c.request)}<br>
+    （第${esc(c.visits)}次来店）<br>想找：${esc(c.request ?? "（没开口，只能看线索猜）")}<br>
     <span class="dim">可观察到：${esc(c.clue)}</span></p>` : "";
   return `<details class="night-journal-entry" data-panel="journal-${esc(nightEntryKey(entry))}">
     <summary>第${esc(entry.seq)}条 · 第${esc(entry.day)}日 ${esc(entry.shift)} · ${esc(focus)}</summary>
@@ -559,7 +559,7 @@ const CART_UI = {
           <div class="night-customer-name">今夜来客 · ${esc(ps.customer.name)}
             <span class="chip">第${ps.customer.visits}次来店</span></div>
           ${ps.customer.max_visits ? `<div class="dim">累计到访上限 ${ps.customer.max_visits} 次${ps.customer.special ? " · 专属来客" : ""}</div>` : ""}
-          <div>${esc(ps.customer.request)}</div>
+          <div>${esc(ps.customer.request ?? "（没开口，只能看线索猜）")}</div>
           <div class="dim">可观察到:${esc(ps.customer.clue)}</div>
           <div class="dim">耐心:${"●".repeat(ps.customer.patience)}${"○".repeat(2 - ps.customer.patience)}</div>
         </div>` : (ps.customer_collection ? '<div class="night-customer dim">眼下没有可接待的新来客。仍可淘货、修理、回收或扩建；达到三级可开放特殊来客。</div>' : "");
@@ -569,7 +569,7 @@ const CART_UI = {
           · 成交${row.deals}次 · 信任${row.trust}
           ${ps.customer_collection && row.visits >= ps.customer_collection.visit_limit ? " · 此后不再到访" : ""}
           ${row.special ? " · 专属来客" : ""}</div>
-          ${row.request ? `<p>${esc(row.request)}</p><div class="dim">${esc(row.clue)}</div>` : ""}</article>`).join("");
+          <p>${esc(row.request ?? "（还没开口）")}</p><div class="dim">${esc(row.clue)}</div></article>`).join("");
       const week = (ps.weekly || []).slice(-1)[0];
       return `
         <div class="night-owner">${esc(keeper.display_name || "AI 店主")} 的夜铺</div>

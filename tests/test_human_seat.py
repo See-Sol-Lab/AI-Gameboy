@@ -87,6 +87,24 @@ class TestHumanSeat(unittest.TestCase):
         self.assertEqual(rejected["result"], "rejected")
         self.assertEqual(restarted.observe(sid, token), before)
 
+    def test_night_shop_calls_capped_until_human_said(self):
+        from console import game_host
+        c = self.host.create_session("pocket-night-shop", "solo_ai")
+        sid, token = c["session_id"], c["seats"][0]["seat_token"]
+        r = self.host.act(sid, token, 0, "introduce", {"display_name": "K", "surface": "T"})
+        r = self.host.act(sid, token, r["revision"], "roll_start_funds", {"human_words": "掷"})
+        self.host._calls[sid] = game_host.CALL_LIMIT
+        blocked = self.host.act(sid, token, r["revision"], "work_shift", {"focus": "tidy"})
+        self.assertEqual(blocked["result"], "rejected")
+        self.assertIn("token", blocked["reason"])
+        self.assertEqual(self.host.act(sid, token, r["revision"], "human_said",
+                                       {"human_words": ""})["result"], "rejected")
+        ok = self.host.act(sid, token, r["revision"], "human_said", {"human_words": "继续"})
+        self.assertEqual(ok["result"], "ok")
+        self.assertEqual(ok["revision"], r["revision"])
+        self.assertEqual(self.host.act(sid, token, r["revision"], "work_shift",
+                                       {"focus": "tidy"})["result"], "ok")
+
     def test_night_shop_string_stop_on_survives_host_and_save(self):
         c = self.host.create_session("pocket-night-shop", "solo_ai")
         sid, token = c["session_id"], c["seats"][0]["seat_token"]

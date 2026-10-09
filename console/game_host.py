@@ -52,11 +52,20 @@ class CartridgeVersionMissing(Exception):
     pass
 
 
+CALL_LIMIT = 80
+CALL_LIMIT_TEXT = ("这一轮已经连续行动80次了,先停一停。上限是为了你的人类:一是替人类省 token 余额"
+                   "(脚本连刷很快就会把额度烧光),二是游戏是陪人类玩的——请回去跟人类说说夜铺的近况,"
+                   '等人类回你话后,用动作 human_said {"human_words":"人类的原话"} 登记,计数清零再继续。'
+                   "不得替人类编原话。")
+
+
 class GameHost:
     def __init__(self, db_path, cartridges_dir):
         self.db_path = str(db_path)
         self.cartridges_dir = Path(cartridges_dir)
         self._rules_cache: dict = {}
+        # ponytail: 夜铺调用计数只放内存,宿主重启即清零;要跨重启再落库
+        self._calls: dict = {}
 
     # ---------------- 卡带装载(版本钉死,§9) ----------------
 
@@ -388,6 +397,22 @@ class GameHost:
                 conn.execute("ROLLBACK")
                 return {"result": "rejected", "reason": reason,
                         **self._observation(srow, seats, seat_id)}
+
+            # 夜铺:两次人类说话之间最多 CALL_LIMIT 次动作,为人类省 token、也为了别玩上头忘了陪人类
+            if srow["cartridge_id"] == "pocket-night-shop":
+                if action_id == "human_said":
+                    words = params.get("human_words")
+                    if not isinstance(words, str) or not words.strip():
+                        return rejected('human_said 要填人类刚说的原话:{"human_words":"……"}')
+                    self._calls[session_id] = 0
+                    conn.execute("ROLLBACK")
+                    return {"result": "ok", "calls_left": CALL_LIMIT,
+                            "message": "收到人类的话,本轮计数清零。",
+                            **self._observation(srow, seats, seat_id)}
+                calls = self._calls.get(session_id, 0)
+                if calls >= CALL_LIMIT:
+                    return rejected(CALL_LIMIT_TEXT)
+                self._calls[session_id] = calls + 1
 
             # 3. revision 对比
             if expected_revision != srow["revision"]:
