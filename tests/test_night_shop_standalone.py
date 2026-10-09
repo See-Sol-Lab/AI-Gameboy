@@ -71,7 +71,9 @@ class TestNightStandalone(unittest.TestCase):
         view = self.call("observe")
         self.assertEqual(view["result"], "ok")
         self.assertEqual(view["public_state"]["collection"]["total"], 72)
-        self.assertEqual(view["public_state"]["customer_collection"]["total"], 86)
+        self.assertNotIn("customer_book", view["public_state"])        # 盲玩版没有客人图鉴
+        self.assertNotIn("customer_collection", view["public_state"])
+        self.assertEqual(self.call("customers")["result"], "rejected")
         blob = json.dumps(view, ensure_ascii=False)
         for name in ("_secret", "_budget", "_wants", "_item_code", "末站遗下的站名牌"):
             self.assertNotIn(name, blob)
@@ -79,16 +81,17 @@ class TestNightStandalone(unittest.TestCase):
 
     def test_same_rules_and_seed_give_identical_gameplay(self):
         canonical = load(ROOT / "cartridges/pocket-night-shop/rules.py", "standalone_canonical")
+        blind = lambda p: {k: v for k, v in p.items() if k not in self.shop.BLIND_HIDDEN}
         state = canonical.new_game(["seat_a"], 17)
-        self.assertEqual(self.call('new_game {"seed":17}')["public_state"], canonical.observe(state, "seat_a")["public_state"])
+        self.assertEqual(self.call('new_game {"seed":17}')["public_state"], blind(canonical.observe(state, "seat_a")["public_state"]))
         state = canonical.apply(state, "seat_a", "roll_start_funds", {"human_words": "掷"})
         self.assertEqual(self.call('roll_start_funds {"human_words":"掷"}')["public_state"],
-                         canonical.observe(state, "seat_a")["public_state"])
+                         blind(canonical.observe(state, "seat_a")["public_state"]))
         params = {"focus": "scavenge", "count": 6, "stop_on": "new"}
         state = canonical.apply(state, "seat_a", "run_shifts", params)
         result = self.call("run_shifts " + json.dumps(params))
         self.assertEqual(result["result"], "ok")
-        self.assertEqual(result["public_state"], canonical.observe(state, "seat_a")["public_state"])
+        self.assertEqual(result["public_state"], blind(canonical.observe(state, "seat_a")["public_state"]))
 
     def test_close_reopen_and_fresh_module_resume_disk_state(self):
         self.call('new_game {"seed":17}')
@@ -100,7 +103,7 @@ class TestNightStandalone(unittest.TestCase):
         self.shop = fresh
         opened = self.call("reopen_shop")
         self.assertFalse(opened["public_state"]["resting"])
-        for key in ("inventory", "day", "coins", "collection", "customer_book", "pending_event"):
+        for key in ("inventory", "day", "coins", "collection", "pending_event"):
             self.assertEqual(opened["public_state"][key], closed["public_state"][key])
 
     def test_invalid_actions_and_new_game_do_not_overwrite_save(self):
@@ -128,7 +131,7 @@ class TestNightStandalone(unittest.TestCase):
         self.assertEqual(len(first["entries"]), 100)
         self.assertEqual(len(first["entries"]) + len(second["entries"]), first["total"])
         self.assertEqual(second["entries"][0]["seq"], 101)
-        for command in ("collection", "encounters", "customers"):
+        for command in ("collection", "encounters"):
             self.assertEqual(self.call(command)["result"], "ok")
 
     def test_incompatible_or_corrupt_save_fails_without_reset(self):

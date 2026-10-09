@@ -445,7 +445,8 @@ observe / status：看店况、库存、当前客人和 legal_actions（可做�
   witch_sell {"item_ids":["库存id","库存id"]}（2折收货，每次最多2件）或 witch_buy {"item_id":"摊上id"}。
 遇到 pending_event，先 choose_event，event_id 和 choice 从观察中选。
 close_for_now：歇业；reopen_shop：接着开店。随时退出，动作已经自动保存。
-collection / encounters / customers：只查已经发现的图鉴、见闻、顾客簿。
+collection / encounters：只查已经发现的物品图鉴、街巷见闻。
+盲玩版没有客人图鉴：见过的客人要什么、线索怎么对上，全凭你自己记。
 history 0：从头查公开经营记录，每次最多100条；history 100 继续往后查。
 new_game {"seed":17}：仅在没有存档时创建指定种子的新局；绝不覆盖旧档。
 未开局时 observe 会自动创建一局。没有必须完成的回合数，店主自己决定目标。
@@ -456,6 +457,7 @@ stop_on 接受 new/rare/event 字符串或数组；省略默认三项全选，[]
 请通过指令探索，不要解码引擎或查看存档里的隐藏资料。"""
 
 
+BLIND_HIDDEN = ("customer_book", "customer_collection")
 CALL_LIMIT = 80
 _LIMIT_TEXT = ("这一轮已经连续调用{n}次了，先停一停。上限是为了你的人类：一是替人类省 token 余额"
                "（脚本连刷很快就会把额度烧光），二是游戏是陪人类玩的——请回去跟人类说说夜铺的近况，"
@@ -513,7 +515,7 @@ def _cmd(line="help"):
             params = _json.loads(raw) if raw.strip() else {}
             if not isinstance(params, dict):
                 raise ValueError("动作参数须为JSON对象")
-        allowed = {"observe", "status", "collection", "encounters", "customers", "history", "new_game",
+        allowed = {"observe", "status", "collection", "encounters", "history", "new_game",
                    "roll_start_funds", "work_shift", "run_shifts", "choose_event", "unlock_location", "witch_sell", "witch_buy", "close_for_now", "reopen_shop"}
         if action not in allowed:
             raise ValueError("未知指令，请先 cmd('help')")
@@ -536,13 +538,13 @@ def _cmd(line="help"):
                 state = _engine["apply"](state, "seat_a", action, params)
             view = _engine["observe"](state, "seat_a")
             public = view["public_state"]
+            for key in BLIND_HIDDEN:          # 盲玩:不给客人图鉴,熟客要靠自己记
+                public.pop(key, None)
             if action == "history":
                 result = {"result": "ok", "total": public["journal_total"],
                           "entries": _engine["history_since"](state, after)}
             elif action in ("collection", "encounters"):
                 result = {"result": "ok", action: public[action]}
-            elif action == "customers":
-                result = {"result": "ok", "summary": public["customer_collection"], "entries": public["customer_book"]}
             else:
                 result = {"result": "ok", "version": VERSION, **view}
             conn.execute("INSERT INTO shop VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state",
