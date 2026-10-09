@@ -35,6 +35,13 @@ class TestNightStandalone(unittest.TestCase):
         out.pop("calls_left", None)
         return out
 
+    def test_every_rules_action_is_a_known_command(self):
+        self.call("observe")
+        src = (ROOT / "cartridges/pocket-night-shop/rules.py").read_text("utf-8")
+        for action in set(re.findall(r'action_id (?:==|in) \(?"([a-z_]+)"', src)) | {"witch_buy"}:
+            with self.subTest(action=action):
+                self.assertNotIn("未知指令", self.call(action + " {}").get("message", ""))
+
     def test_calls_between_human_turns_are_capped(self):
         self.call("observe")
         for _ in range(self.shop.CALL_LIMIT - 1):

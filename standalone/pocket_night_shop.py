@@ -514,7 +514,7 @@ def _cmd(line="help"):
             if not isinstance(params, dict):
                 raise ValueError("动作参数须为JSON对象")
         allowed = {"observe", "status", "collection", "encounters", "customers", "history", "new_game",
-                   "roll_start_funds", "work_shift", "run_shifts", "choose_event", "unlock_location", "close_for_now", "reopen_shop"}
+                   "roll_start_funds", "work_shift", "run_shifts", "choose_event", "unlock_location", "witch_sell", "witch_buy", "close_for_now", "reopen_shop"}
         if action not in allowed:
             raise ValueError("未知指令，请先 cmd('help')")
         with _closing(_sqlite3.connect(str(SAVE_PATH))) as conn, conn:
@@ -532,7 +532,7 @@ def _cmd(line="help"):
                 if type(seed) is not int:
                     raise ValueError("seed须为整数")
                 state = _engine["new_game"](["seat_a"], seed)
-            if action in {"roll_start_funds", "work_shift", "run_shifts", "choose_event", "unlock_location", "close_for_now", "reopen_shop"}:
+            if action in {"roll_start_funds", "work_shift", "run_shifts", "choose_event", "unlock_location", "witch_sell", "witch_buy", "close_for_now", "reopen_shop"}:
                 state = _engine["apply"](state, "seat_a", action, params)
             view = _engine["observe"](state, "seat_a")
             public = view["public_state"]
