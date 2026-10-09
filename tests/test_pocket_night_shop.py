@@ -13,8 +13,10 @@ _raw_new_game = rules.new_game
 
 
 def _funded_new_game(seats, seed):
-    """旧测试按开局 12 枚古币写的:开局后替人类登记 12。"""
-    return rules.apply(_raw_new_game(seats, seed), seats[0], "set_start_funds", {"amount": 12})
+    """旧测试按开局 12 枚古币写的:人类发令掷完后把钱定成 12。"""
+    s = rules.apply(_raw_new_game(seats, seed), seats[0], "roll_start_funds", {"human_words": "掷"})
+    s["coins"] = 12
+    return s
 
 
 rules.new_game = _funded_new_game
@@ -267,19 +269,27 @@ class TestNightShop(unittest.TestCase):
             work(s, "scavenge")
         self.assertEqual(s, before)
 
-    def test_start_funds_must_be_registered_once_in_range(self):
+    def test_start_funds_rolled_once_on_human_command(self):
         s = _raw_new_game(SEATS, 5)
-        self.assertEqual([a["action_id"] for a in rules._legal_actions(s)], ["set_start_funds"])
+        self.assertEqual(s["coins"], 0)
+        self.assertEqual([a["action_id"] for a in rules._legal_actions(s)], ["roll_start_funds"])
         with self.assertRaisesRegex(rules.IllegalAction, "启动资金"):
             work(s)
-        for bad in (10, 67, "30", 30.0, None):
+        for bad in ("", "  ", None, 30):
             with self.assertRaises(rules.IllegalAction):
-                rules.apply(s, "seat_a", "set_start_funds", {"amount": bad})
-        s = rules.apply(s, "seat_a", "set_start_funds", {"amount": 66})
-        self.assertEqual(s["coins"], 66)
-        self.assertIn("66枚古币", s["history"][-1]["text"])
-        with self.assertRaisesRegex(rules.IllegalAction, "登记过"):
-            rules.apply(s, "seat_a", "set_start_funds", {"amount": 11})
+                rules.apply(s, "seat_a", "roll_start_funds", {"human_words": bad})
+        seen = set()
+        for seed in range(300):
+            t = rules.apply(_raw_new_game(SEATS, seed), "seat_a", "roll_start_funds", {"human_words": "掷!"})
+            tens, ones = divmod(t["coins"], 10)
+            self.assertTrue(1 <= tens <= 6 and 1 <= ones <= 6)
+            seen.add(t["coins"])
+        self.assertEqual(len(seen), 36)
+        s = rules.apply(s, "seat_a", "roll_start_funds", {"human_words": "宝宝掷吧"})
+        self.assertIn("「宝宝掷吧」", s["history"][-1]["text"])
+        self.assertIn(f"{s['coins']}枚古币", s["history"][-1]["text"])
+        with self.assertRaisesRegex(rules.IllegalAction, "掷过"):
+            rules.apply(s, "seat_a", "roll_start_funds", {"human_words": "再掷"})
 
     def test_customer_hint_and_coin_name(self):
         src = (ROOT / "cartridges/pocket-night-shop/rules.py").read_text("utf-8")

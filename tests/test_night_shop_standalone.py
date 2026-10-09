@@ -60,8 +60,9 @@ class TestNightStandalone(unittest.TestCase):
         canonical = load(ROOT / "cartridges/pocket-night-shop/rules.py", "standalone_canonical")
         state = canonical.new_game(["seat_a"], 17)
         self.assertEqual(self.call('new_game {"seed":17}')["public_state"], canonical.observe(state, "seat_a")["public_state"])
-        state = canonical.apply(state, "seat_a", "set_start_funds", {"amount": 23})
-        self.assertEqual(self.call('set_start_funds {"amount":23}')["public_state"]["coins"], 23)
+        state = canonical.apply(state, "seat_a", "roll_start_funds", {"human_words": "掷"})
+        self.assertEqual(self.call('roll_start_funds {"human_words":"掷"}')["public_state"],
+                         canonical.observe(state, "seat_a")["public_state"])
         params = {"focus": "scavenge", "count": 6, "stop_on": "new"}
         state = canonical.apply(state, "seat_a", "run_shifts", params)
         result = self.call("run_shifts " + json.dumps(params))
@@ -70,7 +71,7 @@ class TestNightStandalone(unittest.TestCase):
 
     def test_close_reopen_and_fresh_module_resume_disk_state(self):
         self.call('new_game {"seed":17}')
-        self.call('set_start_funds {"amount":12}')
+        self.call('roll_start_funds {"human_words":"掷"}')
         self.call('work_shift {"focus":"tidy"}')
         closed = self.call("close_for_now")
         fresh = load(self.path, "standalone_resumed")
@@ -92,7 +93,7 @@ class TestNightStandalone(unittest.TestCase):
 
     def test_all_history_pages_and_known_catalogues_are_available(self):
         self.call('new_game {"seed":17}')
-        self.call('set_start_funds {"amount":12}')
+        self.call('roll_start_funds {"human_words":"掷"}')
         for _ in range(110):
             view = self.call("observe")["public_state"]
             if view["pending_event"]:

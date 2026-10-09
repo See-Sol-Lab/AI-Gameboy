@@ -21,8 +21,10 @@ _raw_new_game = rules.new_game
 
 
 def _funded_new_game(seats, seed):
-    """旧测试按开局 12 枚古币写的:开局后替人类登记 12。"""
-    return rules.apply(_raw_new_game(seats, seed), seats[0], "set_start_funds", {"amount": 12})
+    """旧测试按开局 12 枚古币写的:人类发令掷完后把钱定成 12。"""
+    s = rules.apply(_raw_new_game(seats, seed), seats[0], "roll_start_funds", {"human_words": "掷"})
+    s["coins"] = 12
+    return s
 
 
 rules.new_game = _funded_new_game

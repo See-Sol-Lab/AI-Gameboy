@@ -68,7 +68,7 @@ class TestHumanSeat(unittest.TestCase):
                               {"display_name": "Test Keeper", "surface": "Test"})
         self.assertEqual(r["status"], "playing")
         self.assertEqual(r["waiting_for"], ["seat_a"])
-        r = self.host.act(sid, token, r["revision"], "set_start_funds", {"amount": 12})
+        r = self.host.act(sid, token, r["revision"], "roll_start_funds", {"human_words": "掷"})
         r = self.host.act(sid, token, r["revision"], "run_shifts",
                           {"focus": "tidy", "count": 6, "stop_on": []})
         self.assertEqual(r["result"], "ok")
@@ -93,7 +93,7 @@ class TestHumanSeat(unittest.TestCase):
         with patch("console.game_host.secrets.randbits", return_value=13):
             before = self.host.act(sid, token, 0, "introduce",
                                    {"display_name": "Test Keeper", "surface": "Test"})
-        before = self.host.act(sid, token, before["revision"], "set_start_funds", {"amount": 12})
+        before = self.host.act(sid, token, before["revision"], "roll_start_funds", {"human_words": "掷"})
         rejected = self.host.act(sid, token, before["revision"], "run_shifts",
                                  {"focus": "scavenge", "count": 6, "stop_on": "unknown"})
         self.assertEqual(rejected["result"], "rejected")

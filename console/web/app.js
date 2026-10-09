@@ -981,7 +981,7 @@ seat_id: ${t.seat_id}
 seat_token: ${t.seat_token}
 请先调用 game_observe(session_id, seat_token) 看店铺,再按 legal_actions 用 game_act 经营。
 你是唯一店主,可以连续执行许多个 work_shift,不必等待观看者;想停时直接停下,
-介绍后先请人类替你掷启动资金(11-66 的数，必须由人类掷)，用 set_start_funds 登记后开店。之后人类只观看，无需等待或按门铃。
+介绍后先告诉人类要掷启动资金(两颗六面骰，11-66)，等人类亲口说“掷”，再用 roll_start_funds 把人类原话填进 human_words，掷完开店。之后人类只观看，无需等待或按门铃。
 run_shifts 可连续淘货、修理或整理（count最多6，reserve现金保留线，stop_on=new/rare/event）。
 遇到 pending_event 用 choose_event 自行决定。图鉴保留已发现旧物和见闻，卖掉也不消失。
 想停时 close_for_now，下次 reopen_shop；mood/public_line 完全可选。`

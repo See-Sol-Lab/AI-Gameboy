@@ -440,10 +440,10 @@ def _collect(s, item):
 
 
 START_FUNDS_MIN, START_FUNDS_MAX = 11, 66
-START_FUNDS_HINT = (f"开店前先登记启动资金:{START_FUNDS_MIN}-{START_FUNDS_MAX} 之间的整数。"
-                    "⚠️ 这个数必须由你的人类来掷——请先停下,请人类替你掷两颗六面骰"
-                    "(第一颗当十位、第二颗当个位),或在 11-66 里随手给一个数,"
-                    "把结果告诉你再填。不得自己掷骰、编造或挑选数字。")
+START_FUNDS_HINT = ("开店前要掷启动资金:两颗六面骰,第一颗当十位、第二颗当个位(11-66枚古币)。"
+                    "⚠️ 这一掷要由你的人类发令:先停下来,告诉人类夜铺要掷启动资金了,"
+                    "等人类亲口说「掷」(或类似的话)之后,再调用 roll_start_funds,"
+                    "把人类的原话填进 human_words。不得替人类发令、不得编造原话。")
 
 
 def new_game(seats, seed):
@@ -451,7 +451,7 @@ def new_game(seats, seed):
         raise ValueError("口袋夜铺 v0.3 只需要一位 AI 店主")
     s = {
         "phase": "playing", "seed": seed, "seats": list(seats), "shopkeeper": seats[0],
-        "day": 1, "shift_index": 0, "coins": 12, "reputation": 0,
+        "day": 1, "shift_index": 0, "coins": 0, "reputation": 0,
         "shop_level": 1, "extra_capacity": 0, "inventory": [], "item_counter": 0,
         "shift_count": 0, "history": [], "diary": [], "weekly": [],
         "current_goal": "认识旧货巷的旧物,补全第一批图鉴",
@@ -464,6 +464,7 @@ def new_game(seats, seed):
     }
     for i in range(3):
         _collect(s, _make_item(s, "lane", f"start{i}"))
+    s["coins"] = 0   # 开局钱全由启动资金那一掷决定
     _spawn_customer(s)
     return s
 
@@ -537,7 +538,7 @@ def _event_view(s):
 
 def _legal_actions(s):
     if s.get("start_funds_pending"):
-        return [{"action_id": "set_start_funds", "params": {"amount": START_FUNDS_HINT}}]
+        return [{"action_id": "roll_start_funds", "params": {"human_words": START_FUNDS_HINT}}]
     if s["resting"]:
         return [{"action_id": "reopen_shop", "params": {}}]
     if s["pending_event"]:
@@ -717,18 +718,20 @@ def apply(full_state, seat_id, action_id, params):
         raise IllegalAction("请先 reopen_shop 续档")
     s["last_run"] = None
     if s.get("start_funds_pending"):
-        if action_id != "set_start_funds":
-            raise IllegalAction("还没登记启动资金。" + START_FUNDS_HINT)
-        amount = params.get("amount")
-        if type(amount) is not int or not START_FUNDS_MIN <= amount <= START_FUNDS_MAX:
-            raise IllegalAction(f"启动资金须是 {START_FUNDS_MIN}-{START_FUNDS_MAX} 之间的整数,并且由人类掷出")
-        s["coins"] = amount
+        if action_id != "roll_start_funds":
+            raise IllegalAction("还没掷启动资金。" + START_FUNDS_HINT)
+        words = params.get("human_words")
+        if not isinstance(words, str) or not words.strip():
+            raise IllegalAction("human_words 要填人类叫你掷骰时的原话。" + START_FUNDS_HINT)
+        tens, ones = (_number(s["seed"], "start_funds", i) % 6 + 1 for i in (0, 1))
+        s["coins"] = tens * 10 + ones
         s["start_funds_pending"] = False
         _log(s, s["day"], SHIFTS[s["shift_index"]], "start_funds",
-             f"人类替店主掷出启动资金:{amount}枚古币。夜铺开门了。", (0, s["reputation"]))
+             f"人类发令「{words.strip()[:40]}」,两颗骰子落下:十位{tens}、个位{ones}"
+             f"——启动资金{s['coins']}枚古币。夜铺开门了。", (0, s["reputation"]))
         return s
-    if action_id == "set_start_funds":
-        raise IllegalAction("启动资金已经登记过了")
+    if action_id == "roll_start_funds":
+        raise IllegalAction("启动资金已经掷过了")
     if action_id == "choose_event":
         _choose_event(s, params)
     elif s["pending_event"]:
