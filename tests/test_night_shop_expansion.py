@@ -150,22 +150,27 @@ class TestNightExpansion(unittest.TestCase):
         self.assertEqual(s["last_run"]["completed"], 1)
         self.assertEqual(s["diary"][-1]["upkeep"], 5)
 
-    def test_far_customers_arrive_with_their_place_and_hide_request_until_regular(self):
-        homes = rules.CUSTOMER_HOME
-        self.assertTrue(any(h in ("dock", "arcade", "observatory", "archive") for h in homes.values()))
+    def test_neighbors_are_whoever_came_before_third_place(self):
         s = rules.new_game(["seat_a"], 7)
-        for _ in range(200):
+        for _ in range(30):
             rules._spawn_customer(s)
-            self.assertIn(homes[s["customer"]["id"]], (None, "lane"))
             self.assertIsNotNone(s["customer"]["request"])
-        s["unlocked_locations"] = list(rules.LOCATIONS)
-        far = next(c[0] for c in rules.CUSTOMERS if homes[c[0]] == "dock")
-        seen = []
-        while s["customer_book"].get(far, {}).get("visits", 0) < 6:
+        met = set(s["customer_book"])
+        self.assertTrue(all(row["neighbor"] for row in s["customer_book"].values()))
+        s["unlocked_locations"].append("dock")
+        seen = {}
+        while not any(len(v) >= 6 for v in seen.values()):
             rules._spawn_customer(s)
-            if s["customer"]["id"] == far:
-                seen.append(s["customer"]["request"])
-        self.assertTrue(all(r is None for r in seen[:4]) and all(seen[4:]))
+            c = s["customer"]
+            if c["id"] in met:
+                self.assertIsNotNone(c["request"])          # 老街坊到哪都直说
+            elif c["id"] not in rules.SPECIAL_CUSTOMERS:
+                seen.setdefault(c["id"], []).append(c["request"])
+        stranger = next(v for v in seen.values() if len(v) >= 6)
+        self.assertTrue(all(r is None for r in stranger[:4]) and all(stranger[4:]))
+        self.assertFalse(s["customer_book"][next(k for k, v in seen.items() if len(v) >= 6)]["neighbor"])
+        fresh = rules.new_game(["seat_a"], 7)                # 下一局清零重来
+        self.assertEqual(len(fresh["customer_book"]), 1)
         self.assertIn("clue", rules.observe(s, "seat_a")["public_state"]["customer"]["hint"])
 
     def test_all_event_choices_have_a_free_exit_and_public_outcome(self):
