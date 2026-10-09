@@ -2,6 +2,7 @@
 import importlib.util
 from contextlib import closing
 import json
+import re
 from pathlib import Path
 import shutil
 import sqlite3
@@ -34,7 +35,9 @@ class TestNightStandalone(unittest.TestCase):
 
     def test_generated_file_matches_rules_template_and_license(self):
         builder = load(ROOT / "tools/build_night_shop.py", "standalone_builder")
-        self.assertEqual(SOURCE.read_text("utf-8"), builder.render())
+        # 压缩块按字节因 zlib 版本而异(CI 与本机不同),内容由下一条断言解压后逐字比对
+        strip = lambda text: re.sub(r'(?ms)^_RULES_B64 = \(.*?^\)$', "_RULES_B64 = ...", text)
+        self.assertEqual(strip(SOURCE.read_text("utf-8")), strip(builder.render()))
         rules = (ROOT / "cartridges/pocket-night-shop/rules.py").read_text("utf-8")
         self.assertEqual(self.shop._zlib.decompress(self.shop._base64.b64decode(self.shop._RULES_B64)).decode(), rules)
         self.assertIn((ROOT / "LICENSE").read_text("utf-8").strip(), SOURCE.read_text("utf-8"))
