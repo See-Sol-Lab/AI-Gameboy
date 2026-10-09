@@ -84,6 +84,7 @@ class TestNightExpansion(unittest.TestCase):
     def test_every_customer_has_eight_lifetime_visits_and_pool_can_exhaust(self):
         s = rules.new_game(["seat_a"], 88)
         s["shop_level"] = 5
+        s["unlocked_locations"] = list(rules.LOCATIONS)
         while s["customer"] is not None:
             self.assertLessEqual(s["customer"]["visits"], 8)
             rules._spawn_customer(s)
@@ -102,6 +103,7 @@ class TestNightExpansion(unittest.TestCase):
 
     def test_special_customers_unlock_without_resetting_normal_visits(self):
         s = rules.new_game(["seat_a"], 15)
+        s["unlocked_locations"] = list(rules.LOCATIONS)
         while s["customer"] is not None:
             self.assertNotIn(s["customer"]["id"], rules.SPECIAL_CUSTOMERS)
             rules._spawn_customer(s)
@@ -146,7 +148,25 @@ class TestNightExpansion(unittest.TestCase):
         s["coins"], s["shift_index"] = 0, 1
         s = rules.apply(s, "seat_a", "run_shifts", {"focus": "tidy", "count": 1, "reserve": 0})
         self.assertEqual(s["last_run"]["completed"], 1)
-        self.assertEqual(s["diary"][-1]["upkeep"], 7)
+        self.assertEqual(s["diary"][-1]["upkeep"], 5)
+
+    def test_far_customers_arrive_with_their_place_and_hide_request_until_regular(self):
+        homes = rules.CUSTOMER_HOME
+        self.assertTrue(any(h in ("dock", "arcade", "observatory", "archive") for h in homes.values()))
+        s = rules.new_game(["seat_a"], 7)
+        for _ in range(200):
+            rules._spawn_customer(s)
+            self.assertIn(homes[s["customer"]["id"]], (None, "lane"))
+            self.assertIsNotNone(s["customer"]["request"])
+        s["unlocked_locations"] = list(rules.LOCATIONS)
+        far = next(c[0] for c in rules.CUSTOMERS if homes[c[0]] == "dock")
+        seen = []
+        while s["customer_book"].get(far, {}).get("visits", 0) < 6:
+            rules._spawn_customer(s)
+            if s["customer"]["id"] == far:
+                seen.append(s["customer"]["request"])
+        self.assertTrue(all(r is None for r in seen[:4]) and all(seen[4:]))
+        self.assertIn("clue", rules.observe(s, "seat_a")["public_state"]["customer"]["hint"])
 
     def test_all_event_choices_have_a_free_exit_and_public_outcome(self):
         for kind, event in rules.EVENTS.items():

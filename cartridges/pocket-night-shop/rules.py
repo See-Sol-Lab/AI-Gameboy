@@ -402,7 +402,7 @@ def _number(seed, *parts):
 
 
 def _capacity(s):
-    return 4 + s["shop_level"] * 2 + s["extra_capacity"]
+    return 6 + s["shop_level"] * 2 + s["extra_capacity"]
 
 
 def _make_item(s, location, salt):
@@ -469,20 +469,36 @@ def new_game(seats, seed):
     return s
 
 
+def _home(wants):
+    """客人的老家 = 货品类别最对得上他需求的地点(同分取先开的)。"""
+    score = {loc: sum(ITEM_KINDS[code] in wants for code in row["pool"]) for loc, row in LOCATIONS.items()}
+    return max(LOCATIONS, key=lambda loc: score[loc])
+
+
+# 旧货巷、废弃车站招来的老街坊说出需求;更远地点招来的新客人只留线索,来过四次后成了熟客才肯直说。
+CUSTOMER_HOME = {c[0]: None if c[0] in SPECIAL_CUSTOMERS else _home(c[4]) for c in CUSTOMERS}
+OPEN_HOMES = (None, "lane", "station")
+REGULAR_VISITS = 5
+
+
 def _spawn_customer(s):
     pool = [c for c in CUSTOMERS
             if s["customer_book"].get(c[0], {}).get("visits", 0) < MAX_CUSTOMER_VISITS
-            and (c[0] not in SPECIAL_CUSTOMERS or s["shop_level"] >= 3)]
+            and (c[0] not in SPECIAL_CUSTOMERS or s["shop_level"] >= 3)
+            and CUSTOMER_HOME[c[0]] in (None, *s["unlocked_locations"])]
     if not pool:
         s["customer"] = None
         return
     n = _number(s["seed"], "customer", s["customer_count"], s["day"])
     cid, name, request, clue, wants, base = pool[n % len(pool)]
     row = s["customer_book"].setdefault(
-        cid, {"id": cid, "name": name, "request": request, "clue": clue,
+        cid, {"id": cid, "name": name, "request": None, "clue": clue,
               "special": cid in SPECIAL_CUSTOMERS, "first_day": s["day"],
               "visits": 0, "deals": 0, "trust": 0})
     row["visits"] += 1
+    if CUSTOMER_HOME[cid] in OPEN_HOMES or row["visits"] >= REGULAR_VISITS:
+        row["request"] = request
+    request = row["request"]
     s["customer_count"] += 1
     s["customer"] = {"id": cid, "name": name, "request": request, "clue": clue,
                      "visits": row["visits"], "max_visits": MAX_CUSTOMER_VISITS, "patience": 2,
@@ -497,7 +513,8 @@ def _public_item(item):
 
 
 CUSTOMER_HINT = ("新手提示:客人只认旧物的「类别」——就是库存里每件旧物的 kind 字段,"
-                 "不看名字和故事像不像。从他的需求描述里猜他要哪一两类,类别对上才会买;"
+                 "不看名字和故事像不像。从需求描述 request 猜他要哪一两类;远方来的生客 request 为空,"
+                 "只能从线索 clue 猜(来过四次成了熟客才会直说)。类别对上才会买;"
                  "手上没有对的类别,就用 work_shift 的 dismiss 送客(不另收费),等下一位客人。")
 
 
@@ -770,7 +787,7 @@ def _run_shifts(s, params):
     done, reason, start = 0, "count", len(s["history"])
     for _ in range(count):
         block = _work_block(s, params)
-        upkeep = 2 + s["shop_level"] if s["shift_index"] == 1 else 0
+        upkeep = s["shop_level"] if s["shift_index"] == 1 else 0
         known_income = 2 + s["shop_level"] if params["focus"] == "tidy" else 0
         # 不把未知奖励当作已到手的钱;边界在真正花钱前生效。
         if block or s["coins"] + known_income - _work_cost(s, params) - upkeep < reserve:
@@ -815,7 +832,7 @@ def _work_shift(s, params):
         report += " " + event_text
         flags["event"] = True
     if s["shift_index"] == 1:
-        upkeep = 2 + s["shop_level"]
+        upkeep = s["shop_level"]   # 每天维护费 = 店铺等级
         paid = min(upkeep, s["coins"])
         s["coins"] -= paid
         if paid < upkeep:

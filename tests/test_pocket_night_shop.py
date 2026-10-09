@@ -218,6 +218,8 @@ class TestNightShop(unittest.TestCase):
     def test_batch_cash_floor_includes_upkeep_and_preserves_earlier_results(self):
         seed = next(i for i in range(100) if rules._number(i, "event", 1) % 4)
         s = rules.new_game(SEATS, seed)
+        for code in rules.ITEM_KINDS:   # 全见过,淘货不再有新发现奖励干扰现金线
+            s["collection"].setdefault(code, {"count": 0})
         s["coins"] = 8
         with self.assertRaisesRegex(rules.IllegalAction, "保留线"):
             rules.apply(s, "seat_a", "run_shifts",
