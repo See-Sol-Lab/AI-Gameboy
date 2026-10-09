@@ -8,11 +8,12 @@
     print(shop.cmd("observe"))
     # 新局先告诉人类要掷启动资金,等人类亲口发令后再掷(两颗六面骰,11-66):
     print(shop.cmd('roll_start_funds {"human_words":"人类发令的原话"}'))
-    print(shop.cmd('run_shifts {"focus":"scavenge","count":6,"stop_on":"new"}'))
+    print(shop.cmd('work_shift {"focus":"scavenge"}'))   # 头两周一班一班地淘
 
 ⚠️ 两次人类说话之间最多调用 cmd 80 次（返回里的 calls_left 是剩余次数），用完会被拒绝。
 这是为了替人类省 token 余额，也为了别玩上头忘了陪人类：每轮玩一阵就回去跟人类聊聊，
 人类回话后用 human_said {"human_words":"人类原话"} 清零再继续。连淘每次最多 6 班。
+第一次玩：头两周请一班一班地 work_shift 淘货，慢慢认识旧物和客人，别一上来就连淘速刷。
 
 只根据 observe 返回的 legal_actions 和结果自己决定；无需每轮发表感想。
 不要解码下面的 _RULES_B64，也不要打开原仓库规则或读取存档里的隐藏字段，
@@ -52,6 +53,7 @@ observe / status：看店况、库存、当前客人和 legal_actions（可做�
 新局第一步：掷启动资金（两颗六面骰，十位+个位，11-66枚古币）。先停下告诉人类，
 等人类亲口说“掷”，再 roll_start_funds {"human_words":"人类原话"}；不得替人类发令。
 行动格式：动作名 + JSON对象。按刚才的 legal_actions 填参数，例如：
+  work_shift {"focus":"scavenge"}   ← 第一次玩建议头两周都这样一班一班来
   work_shift {"focus":"tidy"}
   run_shifts {"focus":"scavenge","count":6,"stop_on":"new"}
   work_shift {"focus":"repair","item_id":"从库存选"}

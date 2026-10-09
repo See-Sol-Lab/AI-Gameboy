@@ -553,6 +553,12 @@ def _event_view(s):
     return {"id": pending["id"], "name": event["name"], "text": event["text"], "choices": choices}
 
 
+NEWCOMER_SHIFTS = 28   # 头两周
+NEWCOMER_ADVICE = ("建议:头两周先用 work_shift 一班一班地淘,别急着连淘。"
+                   "一班一个故事、一位客人一位客人地认识,才是夜铺的乐趣;连淘会把进度刷得太快。"
+                   "熟悉以后再用 run_shifts 省事。")
+
+
 def _legal_actions(s):
     if s.get("start_funds_pending"):
         return [{"action_id": "roll_start_funds", "params": {"human_words": START_FUNDS_HINT}}]
@@ -574,7 +580,8 @@ def _legal_actions(s):
             "item_id": "repair 必填", "location": "scavenge 可选已解锁地点",
             "reserve": "非负整数,含当班维护费的现金保留线",
             "stop_on": '可选字符串或数组:new/rare/event;如 "new" 或 ["new","rare"];'
-                       '省略默认 ["new","rare","event"];[] 不因这些标记停班,待选择事件仍停'}},
+                       '省略默认 ["new","rare","event"];[] 不因这些标记停班,待选择事件仍停',
+            **({"advice": NEWCOMER_ADVICE} if s["shift_count"] < NEWCOMER_SHIFTS else {})}},
         {"action_id": "close_for_now", "params": {}},
     ]
     if any(key not in s["unlocked_locations"] for key in LOCATIONS):
