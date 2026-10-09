@@ -32,7 +32,7 @@ from .game_host import GameHost
 from .cartridges import locate
 
 HOST = "127.0.0.1"  # 只绑回环地址;公网只能经开桥模式的隧道进来,且只到 /mcp
-PORT = 7777
+PORT = 7777  # 固定接入约定：本地/开桥共用；占用时退出，不自动改端口
 BASE = Path(__file__).resolve().parent.parent
 WEB = Path(__file__).parent / "web"
 
