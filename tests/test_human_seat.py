@@ -68,7 +68,12 @@ class TestHumanSeat(unittest.TestCase):
                               {"display_name": "Test Keeper", "surface": "Test"})
         self.assertEqual(r["status"], "playing")
         self.assertEqual(r["waiting_for"], ["seat_a"])
-        r = self.host.act(sid, token, r["revision"], "roll_start_funds", {"human_words": "掷"})
+        self.assertEqual(self.host.act(sid, token, r["revision"], "roll_start_funds",
+                                       {"human_words": "掷"})["result"], "rejected")
+        self.assertTrue(r["public_state"]["start_funds_pending"])
+        self.assertEqual(self.host.roll_start_funds(sid)["result"], "ok")
+        self.assertEqual(self.host.roll_start_funds(sid)["result"], "rejected")
+        r = self.host.observe(sid, token)
         r = self.host.act(sid, token, r["revision"], "run_shifts",
                           {"focus": "tidy", "count": 6, "stop_on": []})
         self.assertEqual(r["result"], "ok")
@@ -92,7 +97,12 @@ class TestHumanSeat(unittest.TestCase):
         c = self.host.create_session("pocket-night-shop", "solo_ai")
         sid, token = c["session_id"], c["seats"][0]["seat_token"]
         r = self.host.act(sid, token, 0, "introduce", {"display_name": "K", "surface": "T"})
-        r = self.host.act(sid, token, r["revision"], "roll_start_funds", {"human_words": "掷"})
+        self.assertEqual(self.host.act(sid, token, r["revision"], "roll_start_funds",
+                                       {"human_words": "掷"})["result"], "rejected")
+        self.assertTrue(r["public_state"]["start_funds_pending"])
+        self.assertEqual(self.host.roll_start_funds(sid)["result"], "ok")
+        self.assertEqual(self.host.roll_start_funds(sid)["result"], "rejected")
+        r = self.host.observe(sid, token)
         self.host._calls[sid] = game_host.CALL_LIMIT
         blocked = self.host.act(sid, token, r["revision"], "work_shift", {"focus": "tidy"})
         self.assertEqual(blocked["result"], "rejected")
@@ -111,7 +121,8 @@ class TestHumanSeat(unittest.TestCase):
         with patch("console.game_host.secrets.randbits", return_value=13):
             before = self.host.act(sid, token, 0, "introduce",
                                    {"display_name": "Test Keeper", "surface": "Test"})
-        before = self.host.act(sid, token, before["revision"], "roll_start_funds", {"human_words": "掷"})
+        self.host.roll_start_funds(sid)
+        before = self.host.observe(sid, token)
         rejected = self.host.act(sid, token, before["revision"], "run_shifts",
                                  {"focus": "scavenge", "count": 6, "stop_on": "unknown"})
         self.assertEqual(rejected["result"], "rejected")

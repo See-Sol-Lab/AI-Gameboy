@@ -554,6 +554,10 @@ const CART_UI = {
           <span class="chip">声望 ${active.reputation_delta >= 0 ? "+" : ""}${active.reputation_delta}</span>
         </div>` : "";
       const logs = S.night.journal.map(nightJournalEntry).join("");
+      const rollFunds = ps.start_funds_pending ? `
+        <div class="night-customer center">夜铺还没有本钱。请人类替店主掷两颗骰子(十位+个位，11-66枚古币)。
+          <div style="margin-top:.4rem"><button class="soft focusable" data-act="night-roll">🎲 掷启动资金</button></div>
+        </div>` : "";
       const customer = ps.customer ? `
         <div class="night-customer">
           <div class="night-customer-name">今夜来客 · ${esc(ps.customer.name)}
@@ -594,7 +598,7 @@ const CART_UI = {
           <p>${esc(ps.pending_event.text)}</p>
           <div class="dim">可选：${ps.pending_event.choices.map(c => esc(c.label) + (c.available ? "" : "（暂不可选）")).join(" / ")}</div>
           <div class="dim">由 AI 决定，观看者无需操作。</div></div>` : ""}
-        ${customer}
+        ${rollFunds}${customer}
         ${ps.last_run ? `<div class="night-week">本次连续行动：${ps.last_run.completed}/${ps.last_run.requested}班
           · 停于 ${esc({count:"计划完成",new:"新发现",rare:"奇珍",event:"街巷事件",decision:"等待店主选择",
              reserve:"现金保留线",inventory_full:"货架已满",repair_complete:"修复完成",
@@ -938,6 +942,14 @@ async function humanAct(action_id, params, table_line = "") {
 
 
 
+async function nightRoll(btn) {
+  btn.disabled = true;
+  const r = await api(`/api/sessions/${S.sid}/roll_funds`, "POST");
+  if (r.result !== "ok") alert("没掷成:" + (r.reason || r.result));
+  else alert(`骰子落下——启动资金 ${r.coins} 枚古币！`);
+  S.lastSnap = "";
+}
+
 async function pcNarrate(btn) {
   btn.textContent = "荷官执笔中……";
   btn.disabled = true;
@@ -981,7 +993,7 @@ seat_id: ${t.seat_id}
 seat_token: ${t.seat_token}
 请先调用 game_observe(session_id, seat_token) 看店铺,再按 legal_actions 用 game_act 经营。
 你是唯一店主,可以连续执行许多个 work_shift,不必等待观看者;想停时直接停下,
-介绍后先告诉人类要掷启动资金(两颗六面骰，11-66)，等人类亲口说“掷”，再用 roll_start_funds 把人类原话填进 human_words，掷完开店。之后人类只观看，无需等待或按门铃。
+介绍后请人类在网页上按「🎲 掷启动资金」(两颗六面骰，11-66)，按完再开店。之后人类只观看，无需等待或按门铃。
 run_shifts 可连续淘货、修理或整理（count最多6，reserve现金保留线，stop_on=new/rare/event）。
 遇到 pending_event 用 choose_event 自行决定。图鉴保留已发现旧物和见闻，卖掉也不消失。
 想停时 close_for_now，下次 reopen_shop；mood/public_line 完全可选。`
@@ -1040,6 +1052,7 @@ function act(el) {
   else if (a === "pc-intent") { S.pc.intent = el.dataset.id; S.lastSnap = ""; redrawSoon(); }
   else if (a === "pc-submit") pcSubmit();
   else if (a === "pc-narrate") pcNarrate(el);
+  else if (a === "night-roll") nightRoll(el);
   else (CART_UI[S.currentCartridgeId] || CART_UI._fallback).onAct?.(a, el);
 }
 

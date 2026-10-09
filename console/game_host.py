@@ -143,6 +143,37 @@ class GameHost:
             "note": "席位令牌只显示这一次,服务器只保存哈希。",
         }
 
+    def roll_start_funds(self, session_id: str) -> dict:
+        """夜铺开局:人类在网页按「掷骰」,替店主掷启动资金(两颗六面骰,11-66)。"""
+        conn = store.connect(self.db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            srow = store.get_session(conn, session_id)
+            if srow is None or srow["cartridge_id"] != "pocket-night-shop":
+                conn.execute("ROLLBACK")
+                return {"result": "rejected", "reason": "这一局没有启动资金可掷"}
+            engine = json.loads(srow["engine_state_json"])
+            state = engine.get("cartridge_state")
+            if not (state or {}).get("start_funds_pending"):
+                conn.execute("ROLLBACK")
+                return {"result": "rejected", "reason": "启动资金已经掷过了"}
+            _, rules = self._load_cartridge(srow["cartridge_id"], srow["cartridge_version"])
+            engine["cartridge_state"] = rules.apply(state, state["seats"][0], "roll_start_funds",
+                                                    {"human_words": "人类按下了掷骰按钮"})
+            self._push_event(engine, {"kind": "start_funds", "coins": engine["cartridge_state"]["coins"]})
+            store.update_session(conn, session_id, srow["status"], srow["revision"] + 1,
+                                 json.dumps(engine, ensure_ascii=False), _now())
+            conn.execute("COMMIT")
+            return {"result": "ok", "coins": engine["cartridge_state"]["coins"]}
+        except BaseException:
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
+        finally:
+            conn.close()
+
     def narrate(self, session_id: str) -> dict:
         """召荷官:处理状态里挂起的 narration_request(蓝图 §14.3)。
 
@@ -400,6 +431,9 @@ class GameHost:
 
             # 夜铺:两次人类说话之间最多 CALL_LIMIT 次动作,为人类省 token、也为了别玩上头忘了陪人类
             if srow["cartridge_id"] == "pocket-night-shop":
+                if action_id == "roll_start_funds":
+                    return rejected("游戏机版的启动资金由人类在网页上按「🎲 掷启动资金」按钮来掷。"
+                                    "请告诉人类去按一下,等按完再 observe 开店。")
                 if action_id == "human_said":
                     words = params.get("human_words")
                     if not isinstance(words, str) or not words.strip():

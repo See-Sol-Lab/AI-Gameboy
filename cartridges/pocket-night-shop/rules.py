@@ -598,6 +598,7 @@ def observe(full_state, seat_id):
         "coins": s["coins"], "reputation": s["reputation"], "shop_level": s["shop_level"],
         "capacity": _capacity(s), "inventory": [_public_item(item) for item in s["inventory"]],
         "current_goal": s["current_goal"], "resting": s["resting"],
+        "start_funds_pending": bool(s.get("start_funds_pending")),
         "last_checkpoint": deepcopy(s["last_checkpoint"]),
         "customer": _public_customer(s), "customer_book": deepcopy(list(s["customer_book"].values())),
         "customer_collection": {"found": len(s["customer_book"]), "total": len(CUSTOMERS),
