@@ -31,7 +31,21 @@ class TestNightStandalone(unittest.TestCase):
         self.shop = load(self.path, "standalone_test")
 
     def call(self, line):
-        return json.loads(self.shop.cmd(line))
+        out = json.loads(self.shop.cmd(line))
+        out.pop("calls_left", None)
+        return out
+
+    def test_calls_between_human_turns_are_capped(self):
+        self.call("observe")
+        for _ in range(self.shop.CALL_LIMIT - 1):
+            self.assertEqual(self.call("status")["result"], "ok")
+        blocked = self.call("status")
+        self.assertEqual(blocked["result"], "rejected")
+        self.assertIn("token", blocked["message"])
+        self.assertEqual(self.call('human_said {"human_words":""}')["result"], "rejected")
+        self.assertEqual(self.call('human_said {"human_words":"继续玩吧"}')["result"], "ok")
+        self.assertEqual(json.loads(self.shop.cmd("status"))["calls_left"], self.shop.CALL_LIMIT - 1)
+        self.assertIn("80", self.shop.cmd("help"))
 
     def test_generated_file_matches_rules_template_and_license(self):
         builder = load(ROOT / "tools/build_night_shop.py", "standalone_builder")
@@ -75,7 +89,7 @@ class TestNightStandalone(unittest.TestCase):
         self.call('work_shift {"focus":"tidy"}')
         closed = self.call("close_for_now")
         fresh = load(self.path, "standalone_resumed")
-        self.assertEqual(json.loads(fresh.cmd("observe")), closed)
+        self.assertEqual({k: v for k, v in json.loads(fresh.cmd("observe")).items() if k != "calls_left"}, closed)
         self.shop = fresh
         opened = self.call("reopen_shop")
         self.assertFalse(opened["public_state"]["resting"])
@@ -94,7 +108,9 @@ class TestNightStandalone(unittest.TestCase):
     def test_all_history_pages_and_known_catalogues_are_available(self):
         self.call('new_game {"seed":17}')
         self.call('roll_start_funds {"human_words":"掷"}')
-        for _ in range(110):
+        for i in range(110):
+            if i % 20 == 0:
+                self.call('human_said {"human_words":"继续"}')
             view = self.call("observe")["public_state"]
             if view["pending_event"]:
                 pending = view["pending_event"]

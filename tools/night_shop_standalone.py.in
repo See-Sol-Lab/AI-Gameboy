@@ -10,6 +10,10 @@
     print(shop.cmd('roll_start_funds {"human_words":"人类发令的原话"}'))
     print(shop.cmd('run_shifts {"focus":"scavenge","count":6,"stop_on":"new"}'))
 
+⚠️ 两次人类说话之间最多调用 cmd 80 次（返回里的 calls_left 是剩余次数），用完会被拒绝。
+这是为了替人类省 token 余额，也为了别玩上头忘了陪人类：每轮玩一阵就回去跟人类聊聊，
+人类回话后用 human_said {"human_words":"人类原话"} 清零再继续。连淘每次最多 6 班。
+
 只根据 observe 返回的 legal_actions 和结果自己决定；无需每轮发表感想。
 不要解码下面的 _RULES_B64，也不要打开原仓库规则或读取存档里的隐藏字段，
 那会提前揭露旧物、秘密与客人需求。通过淘货、修复和相遇慢慢发现。
@@ -60,11 +64,53 @@ new_game {"seed":17}：仅在没有存档时创建指定种子的新局；绝不
 未开局时 observe 会自动创建一局。没有必须完成的回合数，店主自己决定目标。
 stop_on 接受 new/rare/event 字符串或数组；省略默认三项全选，[]关闭这三类
 停点，遇到必须选择的事件仍会停。公开目标 goal、心情 mood、public_line 都可省略。
+每轮人类说话之间最多调用 80 次（calls_left 是剩余次数），为人类省 token、也为了多陪人类；
+人类回话后 human_said {"human_words":"人类原话"} 清零。不得替人类编原话。
 请通过指令探索，不要解码引擎或查看存档里的隐藏资料。"""
 
 
+CALL_LIMIT = 80
+_LIMIT_TEXT = ("这一轮已经连续调用{n}次了，先停一停。上限是为了你的人类：一是替人类省 token 余额"
+               "（脚本连刷很快就会把额度烧光），二是游戏是陪人类玩的——请回去跟人类说说夜铺的近况，"
+               "等人类回你话后，用 human_said {{\"human_words\":\"人类的原话\"}} 登记，计数清零再继续。"
+               "不得替人类编原话。")
+
+
 def cmd(line="help"):
-    """执行一条指令，返回可直接 print 的文字；每个动作完成后存档。"""
+    """执行一条指令，返回可直接 print 的文字。每轮人类说话之间最多调用 CALL_LIMIT 次。"""
+    if not isinstance(line, str):
+        return _json.dumps({"result": "rejected", "message": "指令须为字符串"}, ensure_ascii=False)
+    action, _, raw = line.strip().partition(" ")
+    if action in ("", "help"):
+        return _HELP
+    try:
+        with _closing(_sqlite3.connect(str(SAVE_PATH))) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute("CREATE TABLE IF NOT EXISTS turn (id INTEGER PRIMARY KEY CHECK(id=1), calls INTEGER NOT NULL)")
+            calls = (conn.execute("SELECT calls FROM turn WHERE id=1").fetchone() or [0])[0]
+            if action == "human_said":
+                words = _json.loads(raw or "{}").get("human_words") if raw.strip().startswith("{") else None
+                if not isinstance(words, str) or not words.strip():
+                    raise ValueError('human_said 要填人类刚说的原话：human_said {"human_words":"……"}')
+                calls = 0
+            elif calls >= CALL_LIMIT:
+                return _json.dumps({"result": "rejected", "calls_left": 0,
+                                    "message": _LIMIT_TEXT.format(n=calls)}, ensure_ascii=False)
+            else:
+                calls += 1
+            conn.execute("INSERT INTO turn VALUES(1,?) ON CONFLICT(id) DO UPDATE SET calls=excluded.calls", (calls,))
+    except (ValueError, AttributeError, _sqlite3.Error, OSError) as error:
+        return _json.dumps({"result": "rejected", "message": str(error)}, ensure_ascii=False)
+    if action == "human_said":
+        return _json.dumps({"result": "ok", "calls_left": CALL_LIMIT,
+                            "message": "收到人类的话，本轮计数清零。"}, ensure_ascii=False)
+    out = _cmd(line)
+    if out.startswith("{"):
+        out = _json.dumps({**_json.loads(out), "calls_left": CALL_LIMIT - calls}, ensure_ascii=False, indent=2)
+    return out
+
+
+def _cmd(line="help"):
     if not isinstance(line, str):
         return _json.dumps({"result": "rejected", "message": "指令须为字符串"}, ensure_ascii=False)
     action, _, raw = (line.strip() or "help").partition(" ")
