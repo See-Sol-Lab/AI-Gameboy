@@ -485,12 +485,12 @@ function nightJournalEntry(entry) {
     ${entry.goal ? `<p>当时公开目标：${esc(entry.goal)}</p>` : ""}
     ${customer(entry.customer, "当时在店的客人")}
     ${!entry.customer && !entry.goal ? '<p class="dim">此条早期记录未保存当班顾客与目标。</p>' : ""}
-    ${entry.offer ? `<p>店主拿出「${esc(entry.offer.item_name)}」，报价${esc(entry.offer.asking_price)}枚。</p>` : ""}
+    ${entry.offer ? `<p>店主拿出「${esc(entry.offer.item_name)}」，报价${esc(entry.offer.asking_price)}枚古币。</p>` : ""}
     ${entry.event_name ? `<p>遇见「${esc(entry.event_name)}」 · 店主选择：${esc(entry.choice)}</p>` : ""}
     <p class="night-action">经过与结果：${esc(entry.text)}</p>
     ${customer(entry.customer_arrived, "随后进门的客人")}
     ${entry.ambient ? `<p class="night-ambient">${esc(entry.ambient)}</p>` : ""}
-    <div class="night-deltas"><span class="chip">硬币 ${entry.coins_delta >= 0 ? "+" : ""}${esc(entry.coins_delta)}</span>
+    <div class="night-deltas"><span class="chip">古币 ${entry.coins_delta >= 0 ? "+" : ""}${esc(entry.coins_delta)}</span>
       <span class="chip">声望 ${entry.reputation_delta >= 0 ? "+" : ""}${esc(entry.reputation_delta)}</span></div>
     ${entry.reaction ? `<p class="night-reaction">店主留下的话：${esc(entry.reaction.mood)} ${esc(entry.reaction.text)}</p>` : ""}
   </details>`;
@@ -521,7 +521,7 @@ function nightCollection(ps) {
       <div class="night-dex-grid">${encounters || '<p class="dim">还没有遇见街巷事件。</p>'}</div></details>
     <details class="night-history" data-panel="locations"><summary>淘货地图 · 寻找下一页</summary>
       ${ps.locations.map(loc => `<div class="night-log"><strong>${esc(loc.name)}</strong>
-        <span>${esc(loc.description)} 待发现 ${loc.undiscovered} 种 · 每次 ${loc.cost} 枚
+        <span>${esc(loc.description)} 待发现 ${loc.undiscovered} 种 · 每次 ${loc.cost} 枚古币
         ${loc.available_undiscovered !== undefined ? `（当前等级可寻 ${loc.available_undiscovered} 种）` : ""}
         · ${loc.unlocked ? "已解锁" : "需发现" + loc.required_discoveries + "种、店铺" + (loc.required_level || 1) + "级及" + loc.unlock_cost + "枚"}</span></div>`).join("")}
     </details>`;
@@ -550,7 +550,7 @@ const CART_UI = {
       const replaying = active && newest && nightEntryKey(active) !== nightEntryKey(newest);
       const delta = active ? `
         <div class="night-deltas">
-          <span class="chip">硬币 ${active.coins_delta >= 0 ? "+" : ""}${active.coins_delta}</span>
+          <span class="chip">古币 ${active.coins_delta >= 0 ? "+" : ""}${active.coins_delta}</span>
           <span class="chip">声望 ${active.reputation_delta >= 0 ? "+" : ""}${active.reputation_delta}</span>
         </div>` : "";
       const logs = S.night.journal.map(nightJournalEntry).join("");
@@ -575,13 +575,13 @@ const CART_UI = {
         <div class="night-owner">${esc(keeper.display_name || "AI 店主")} 的夜铺</div>
         <div class="night-dashboard">
           <div class="night-day">实时店况 · 第 ${ps.day} 日 · ${esc(ps.shift)}</div>
-          <div>硬币 <strong>${ps.coins}</strong> · 声望 <strong>${ps.reputation}</strong> ·
+          <div>古币 <strong>${ps.coins}</strong> · 声望 <strong>${ps.reputation}</strong> ·
             店铺 ${ps.shop_level}级 · 库存 ${(ps.inventory || []).length}/${ps.capacity}</div>
         </div>
         ${ps.resting ? `<div class="night-resting">暂时歇业 · 存档安全<br>
           <span>店主下次回来会从第 ${ps.day} 日 ${esc(ps.shift)}重新开门。</span></div>` : ""}
         ${week ? `<div class="night-week">第 ${week.week} 周账 · 经过第${week.through_day}日 ·
-          成交${week.deals}次 · 硬币${week.coins} · 声望${week.reputation}</div>` : ""}
+          成交${week.deals}次 · 古币${week.coins} · 声望${week.reputation}</div>` : ""}
         <div class="night-goal">店主眼下想做:${esc(ps.current_goal)}</div>
         <details class="night-history night-journal" data-panel="history">
           <summary>逐轮经营记录 · ${S.night.journal.length}/${ps.journal_total || 0} 条 · 从开店看起</summary>
@@ -629,7 +629,7 @@ const CART_UI = {
           <span>${esc(entry.text)}</span></div>`).join("");
       return {
         rounds: diary,
-        champ: `夜铺停在第 ${ps.day} 日 · 硬币 ${ps.coins} · 声望 ${ps.reputation}`,
+        champ: `夜铺停在第 ${ps.day} 日 · 古币 ${ps.coins} · 声望 ${ps.reputation}`,
         scoreLine: `店铺 ${ps.shop_level}级 · 库存 ${(ps.inventory || []).length}/${ps.capacity}`,
       };
     },
@@ -981,7 +981,7 @@ seat_id: ${t.seat_id}
 seat_token: ${t.seat_token}
 请先调用 game_observe(session_id, seat_token) 看店铺,再按 legal_actions 用 game_act 经营。
 你是唯一店主,可以连续执行许多个 work_shift,不必等待观看者;想停时直接停下,
-介绍后自动开店。人类只观看，无需等待或按门铃。
+介绍后先请人类替你掷启动资金(11-66 的数，必须由人类掷)，用 set_start_funds 登记后开店。之后人类只观看，无需等待或按门铃。
 run_shifts 可连续淘货、修理或整理（count最多6，reserve现金保留线，stop_on=new/rare/event）。
 遇到 pending_event 用 choose_event 自行决定。图鉴保留已发现旧物和见闻，卖掉也不消失。
 想停时 close_for_now，下次 reopen_shop；mood/public_line 完全可选。`

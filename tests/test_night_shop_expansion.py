@@ -17,6 +17,15 @@ def load_rules(path, name):
 
 
 rules = load_rules(ROOT / "cartridges/pocket-night-shop/rules.py", "night_expansion")
+_raw_new_game = rules.new_game
+
+
+def _funded_new_game(seats, seed):
+    """旧测试按开局 12 枚古币写的:开局后替人类登记 12。"""
+    return rules.apply(_raw_new_game(seats, seed), seats[0], "set_start_funds", {"amount": 12})
+
+
+rules.new_game = _funded_new_game
 
 
 def free_event(state):

@@ -9,6 +9,15 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("night_v2", ROOT / "cartridges/pocket-night-shop/rules.py")
 rules = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(rules)
+_raw_new_game = rules.new_game
+
+
+def _funded_new_game(seats, seed):
+    """旧测试按开局 12 枚古币写的:开局后替人类登记 12。"""
+    return rules.apply(_raw_new_game(seats, seed), seats[0], "set_start_funds", {"amount": 12})
+
+
+rules.new_game = _funded_new_game
 SEATS = ["seat_a"]
 
 
@@ -182,7 +191,8 @@ class TestNightShop(unittest.TestCase):
                             {"focus": "tidy", "count": 6, "stop_on": []})
             if s["pending_event"]:
                 self.assertEqual(s["last_run"]["stop_reason"], "decision")
-                self.assertEqual(len(s["history"]), s["last_run"]["completed"])
+                # 第一条是开局登记启动资金
+                self.assertEqual(len(s["history"]) - 1, s["last_run"]["completed"])
                 break
         else:
             self.fail("没有找到固定的事件种子")
@@ -207,9 +217,9 @@ class TestNightShop(unittest.TestCase):
         seed = next(i for i in range(100) if rules._number(i, "event", 1) % 4)
         s = rules.new_game(SEATS, seed)
         s["coins"] = 8
-        result = rules.apply(s, "seat_a", "run_shifts",
-                             {"focus": "scavenge", "count": 6, "reserve": 9, "stop_on": []})
-        self.assertEqual(result["last_run"]["completed"], 0)
+        with self.assertRaisesRegex(rules.IllegalAction, "保留线"):
+            rules.apply(s, "seat_a", "run_shifts",
+                        {"focus": "scavenge", "count": 6, "reserve": 9, "stop_on": []})
         s["coins"] = 10
         result = rules.apply(s, "seat_a", "run_shifts",
                              {"focus": "scavenge", "count": 6, "reserve": 9, "stop_on": []})
@@ -250,9 +260,37 @@ class TestNightShop(unittest.TestCase):
         s = rules.new_game(SEATS, 2)
         while len(s["inventory"]) < rules._capacity(s):
             s["inventory"].append(deepcopy(s["inventory"][0]))
-        result = rules.apply(s, "seat_a", "run_shifts", {"focus": "scavenge", "count": 2})
-        self.assertEqual(result["last_run"]["completed"], 0)
-        self.assertEqual(result["last_run"]["stop_reason"], "inventory_full")
+        before = deepcopy(s)
+        with self.assertRaisesRegex(rules.IllegalAction, "货架满了"):
+            rules.apply(s, "seat_a", "run_shifts", {"focus": "scavenge", "count": 2})
+        with self.assertRaisesRegex(rules.IllegalAction, "货架满了"):
+            work(s, "scavenge")
+        self.assertEqual(s, before)
+
+    def test_start_funds_must_be_registered_once_in_range(self):
+        s = _raw_new_game(SEATS, 5)
+        self.assertEqual([a["action_id"] for a in rules._legal_actions(s)], ["set_start_funds"])
+        with self.assertRaisesRegex(rules.IllegalAction, "启动资金"):
+            work(s)
+        for bad in (10, 67, "30", 30.0, None):
+            with self.assertRaises(rules.IllegalAction):
+                rules.apply(s, "seat_a", "set_start_funds", {"amount": bad})
+        s = rules.apply(s, "seat_a", "set_start_funds", {"amount": 66})
+        self.assertEqual(s["coins"], 66)
+        self.assertIn("66枚古币", s["history"][-1]["text"])
+        with self.assertRaisesRegex(rules.IllegalAction, "登记过"):
+            rules.apply(s, "seat_a", "set_start_funds", {"amount": 11})
+
+    def test_customer_hint_and_coin_name(self):
+        src = (ROOT / "cartridges/pocket-night-shop/rules.py").read_text("utf-8")
+        self.assertNotIn("硬币", src)
+        s = rules.new_game(SEATS, 5)
+        s = work(s)
+        for _ in range(30):
+            if s["customer"]:
+                break
+            s = work(resolve(s))
+        self.assertIn("kind", rules.observe(s, "seat_a")["public_state"]["customer"]["hint"])
 
     def test_zero_cash_can_use_known_tidy_income_for_upkeep(self):
         s = rules.new_game(SEATS, 3)

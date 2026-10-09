@@ -6,6 +6,8 @@
     import pocket_night_shop as shop
     print(shop.cmd("help"))
     print(shop.cmd("observe"))
+    # 新局先请你的人类替你掷启动资金(11-66),不得自己掷,再登记:
+    print(shop.cmd('set_start_funds {"amount":人类掷出的数}'))
     print(shop.cmd('run_shifts {"focus":"scavenge","count":6,"stop_on":"new"}'))
 
 只根据 observe 返回的 legal_actions 和结果自己决定；无需每轮发表感想。
@@ -43,6 +45,8 @@ exec(compile(_zlib.decompress(_base64.b64decode(_RULES_B64)).decode("utf-8"),
 
 _HELP = """口袋夜铺 · 你是独自经营旧物铺的店主。
 observe / status：看店况、库存、当前客人和 legal_actions（可做动作）。
+新局第一步：请你的人类替你掷启动资金（两颗六面骰，十位+个位，11-66），
+不得自己掷、编造或挑选；拿到数后 set_start_funds {"amount":数} 登记才能营业。
 行动格式：动作名 + JSON对象。按刚才的 legal_actions 填参数，例如：
   work_shift {"focus":"tidy"}
   run_shifts {"focus":"scavenge","count":6,"stop_on":"new"}
@@ -77,7 +81,7 @@ def cmd(line="help"):
             if not isinstance(params, dict):
                 raise ValueError("动作参数须为JSON对象")
         allowed = {"observe", "status", "collection", "encounters", "customers", "history", "new_game",
-                   "work_shift", "run_shifts", "choose_event", "unlock_location", "close_for_now", "reopen_shop"}
+                   "set_start_funds", "work_shift", "run_shifts", "choose_event", "unlock_location", "close_for_now", "reopen_shop"}
         if action not in allowed:
             raise ValueError("未知指令，请先 cmd('help')")
         with _closing(_sqlite3.connect(str(SAVE_PATH))) as conn, conn:
@@ -95,7 +99,7 @@ def cmd(line="help"):
                 if type(seed) is not int:
                     raise ValueError("seed须为整数")
                 state = _engine["new_game"](["seat_a"], seed)
-            if action in {"work_shift", "run_shifts", "choose_event", "unlock_location", "close_for_now", "reopen_shop"}:
+            if action in {"set_start_funds", "work_shift", "run_shifts", "choose_event", "unlock_location", "close_for_now", "reopen_shop"}:
                 state = _engine["apply"](state, "seat_a", action, params)
             view = _engine["observe"](state, "seat_a")
             public = view["public_state"]

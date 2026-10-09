@@ -70,7 +70,7 @@ CUSTOMERS = [
     ("tailor", "戴圆眼镜的裁缝", "专门寻找与旧衣和手工有关的小东西。",
      "他摸过布料边缘后,往往愿意为真正的旧工艺多付一点。", ["旧衣", "陪伴"], 11),
     ("sailor", "很久没见海的水手", "想买一件能证明远方仍然存在的旧物。",
-     "他身上的硬币不多,却带着一枚可以抵价的银扣。", ["远行", "机械", "星图"], 9),
+     "他身上的古币不多,却带着一枚可以抵价的银扣。", ["远行", "机械", "星图"], 9),
     ("clerk", "从档案馆晚归的职员", "想找与时间、记录或失物有关的东西。",
      "她知道旧物行情,但会为准确回答问题的店主放宽预算。", ["时间", "账目", "寻物"], 12),
 ]
@@ -108,14 +108,14 @@ LOCATIONS = {
 }
 EVENTS = {
     "leaf": {"name": "雨中的红叶", "text": "风从门缝送来一片仍带雨水的红叶。"},
-    "refund": {"name": "迟来的零钱", "text": "旧客人托人送回少付的两枚硬币。", "coins": 2},
+    "refund": {"name": "迟来的零钱", "text": "旧客人托人送回少付的两枚古币。", "coins": 2},
     "lamp_post": {"name": "街灯重亮", "text": "修路人重新点亮巷口的灯,橱窗又被路人看见。", "reputation": 1},
     "parcel": {"name": "无名包裹", "text": "送货人抱来一件看不出形状的旧物,要两枚搬运费。",
-               "choices": {"accept": {"label": "付2枚收下,打开检查", "cost": 2},
+               "choices": {"accept": {"label": "付2枚古币收下,打开检查", "cost": 2},
                            "decline": {"label": "婉拒包裹", "cost": 0}}},
     "locked_box": {"name": "锁住的小匣", "text": "清理柜台时发现一只封死的小匣,里面有轻响。",
-                   "choices": {"open": {"label": "花2枚买工具拆开", "cost": 2},
-                               "trade": {"label": "整匣交给收货人,得1枚", "cost": 0},
+                   "choices": {"open": {"label": "花2枚古币买工具拆开", "cost": 2},
+                               "trade": {"label": "整匣交给收货人,得1枚古币", "cost": 0},
                                "leave": {"label": "合上抽屉,让它留在原处", "cost": 0}}},
 }
 
@@ -253,7 +253,7 @@ for row in MORE_ITEMS:
 # 普通来客有各自的需求、可观察线索和预算；不从职业名推测成交结果。
 CUSTOMERS += [
     ("baker", "凌晨揉面的面包师", "想买适合厨房的日常旧物。", "袖口沾着面粉，先检查物件是否站得稳。", ["日常"], 12),
-    ("nurse", "刚下夜班的护士", "想带一件能陪人或照亮床边的旧物。", "她把硬币一枚枚放轻，怕惊醒谁。", ["陪伴", "照明"], 14),
+    ("nurse", "刚下夜班的护士", "想带一件能陪人或照亮床边的旧物。", "她把古币一枚枚放轻，怕惊醒谁。", ["陪伴", "照明"], 14),
     ("projectionist", "修复老胶片的放映员", "寻找能留下记忆或旋律的旧物。", "他说起片尾曲时会停下来听雨。", ["记忆", "音乐"], 17),
     ("gardener", "鞋上带泥的园丁", "只想找与生长有关的东西。", "他随身的小纸包里还留着空地。", ["生长"], 13),
     ("watchmaker", "戴单片镜的钟表匠", "寻找时间或机械类旧物。", "他不用手表，而是数窗外灯闪的间隔。", ["时间", "机械"], 20),
@@ -292,7 +292,7 @@ CUSTOMERS += [
     ("mapbinder", "专修地图折口的装订师", "需要远行或记忆类旧物。", "她带的每张纸都有修补过的边。", ["远行", "记忆"], 19),
     ("glassblower", "手掌有小泡的玻璃匠", "寻找照明或星图类东西。", "他只碰物件最不容易留下指印的地方。", ["照明", "星图"], 20),
     ("clockcollector", "收集停表的旧货商", "只收时间类旧物。", "她问的是停了多久，而不是还能不能走。", ["时间"], 24),
-    ("storyteller", "在桥洞讲故事的老人", "寻找记忆或音乐类旧物。", "他的袋子里只有茶叶和小面额硬币。", ["记忆", "音乐"], 10),
+    ("storyteller", "在桥洞讲故事的老人", "寻找记忆或音乐类旧物。", "他的袋子里只有茶叶和小面额古币。", ["记忆", "音乐"], 10),
     ("railworker", "制服扣子不齐的养路工", "需要机械或远行类东西。", "她看齿轮时会把呼吸放慢。", ["机械", "远行"], 18),
     ("laundry", "把衣服熨得很平的洗衣工", "想买旧衣或日常类旧物。", "他把价签上卷起的角也压平了。", ["旧衣", "日常"], 12),
     ("toyrepairer", "替布偶配眼睛的修补师", "寻找陪伴或寻物类东西。", "她给带伤的物件都让出一块软布。", ["陪伴", "寻物"], 17),
@@ -301,7 +301,7 @@ CUSTOMERS += [
     ("bookchild", "替祖父买书签的孩子", "想买记忆或陪伴类东西。", "他把预算写在手心里，怕自己忘记。", ["记忆", "陪伴"], 7),
     ("stonecutter", "修碑文的石匠", "寻找记忆或寻物类旧物。", "她念出磨损的字时从不补猜缺的那一笔。", ["记忆", "寻物"], 22),
     ("meteorwatcher", "带空相册的流星观察员", "只收星图类旧物。", "他说今年还没有见过最想拍的那颗星。", ["星图"], 25),
-    ("stationcook", "末班后才收摊的面摊主", "需要日常或时间类东西。", "她递来的硬币带着汤碗的温度。", ["日常", "时间"], 15),
+    ("stationcook", "末班后才收摊的面摊主", "需要日常或时间类东西。", "她递来的古币带着汤碗的温度。", ["日常", "时间"], 15),
     ("signpainter", "给新店写招牌的漆匠", "寻找归处或照明类旧物。", "他问灯亮起来能不能从巷口看见。", ["归处", "照明"], 18),
     ("umbrellaweaver", "修伞不换伞面的匠人", "需要旧衣或机械类东西。", "她摸过每道补缝，都会很轻地点头。", ["旧衣", "机械"], 17),
     ("collectorchild", "攒玻璃珠的少年", "寻找寻物或星图类旧物。", "他的零钱袋比手掌还小。", ["寻物", "星图"], 8),
@@ -352,42 +352,42 @@ AMBIENT += [
 ]
 
 EVENTS.update({
-    "lost_change": {"name": "门槛下的零钱", "text": "扫地时，一枚旧硬币从门槛下滚了出来。", "coins": 1},
+    "lost_change": {"name": "门槛下的零钱", "text": "扫地时，一枚古币从门槛下滚了出来。", "coins": 1},
     "rain_shelter": {"name": "雨棚下的点头", "text": "躲雨的街坊记住了这盏愿意晚关的灯。", "reputation": 1},
-    "shelf_letter": {"name": "夹层里的谢礼", "text": "旧抽屉的夹层中有两枚硬币和一句谢谢。", "coins": 2},
+    "shelf_letter": {"name": "夹层里的谢礼", "text": "旧抽屉的夹层中有两枚古币和一句谢谢。", "coins": 2},
     "mended_awning": {"name": "雨棚补好了", "text": "修篷人顺手补好门前的漏口，街坊多停留了一会儿。", "reputation": 1},
     "sleeping_star": {"name": "窗台睡着一颗星", "text": "一粒星光在窗台停了一晚，天亮时替招牌添了亮色。", "reputation": 2, "level": 3},
     "old_receipt": {"name": "补付的修理费", "text": "街坊翻出旧收据，送来了当初少算的三枚修理费。", "coins": 3, "level": 2},
     "travelling_case": {"name": "旅人的寄存箱", "text": "旅人请店主决定是否付搬运费接下无人认领的箱中旧物。", "level": 2,
-        "choices": {"accept": {"label": "付3枚接下旧物并检查", "cost": 3, "find_item": True},
+        "choices": {"accept": {"label": "付3枚古币接下旧物并检查", "cost": 3, "find_item": True},
                     "leave": {"label": "留下寄存条，暂不接货", "cost": 0,
                               "outcome": "店主把寄存条夹进账本，没有动用店里的现金。"}}},
     "roof_garden": {"name": "楼顶缺一盆绿", "text": "邻居想在楼顶添一盆植物，问店主愿不愿意分担花土钱。",
-        "choices": {"help": {"label": "付2枚帮忙添土", "cost": 2, "reputation": 2,
+        "choices": {"help": {"label": "付2枚古币帮忙添土", "cost": 2, "reputation": 2,
                              "outcome": "楼顶种下第一盆绿，邻居把夜铺的名字写在花盆背面。"},
                     "leave": {"label": "暂时留着现金", "cost": 0,
                               "outcome": "店主祝花园早日长成，暂时把现金留给铺子。"}}},
     "borrowed_light": {"name": "借一晚的灯", "text": "隔壁停电，修灯人来问能否垫一枚零件钱。",
-        "choices": {"help": {"label": "付1枚帮忙修灯", "cost": 1, "reputation": 1,
+        "choices": {"help": {"label": "付1枚古币帮忙修灯", "cost": 1, "reputation": 1,
                              "outcome": "隔壁的灯重新亮起，有人隔着墙轻轻说了谢谢。"},
                     "leave": {"label": "让修灯人另想办法", "cost": 0,
                               "outcome": "店主说明眼下要保留现金，修灯人记下了另一家店的地址。"}}},
-    "river_invoice": {"name": "河边来的旧账单", "text": "收纸人愿用三枚硬币换走柜台下那叠废纸。",
-        "choices": {"trade": {"label": "交出废纸，得3枚", "cost": 0, "coins": 3,
-                              "outcome": "废纸换回三枚硬币，柜台下也腾出了一块干净地方。"},
+    "river_invoice": {"name": "河边来的旧账单", "text": "收纸人愿用三枚古币换走柜台下那叠废纸。",
+        "choices": {"trade": {"label": "交出废纸，得3枚古币", "cost": 0, "coins": 3,
+                              "outcome": "废纸换回三枚古币，柜台下也腾出了一块干净地方。"},
                     "leave": {"label": "留下废纸以后整理", "cost": 0,
                               "outcome": "店主把废纸按日期绑好，决定另找时间读一遍。"}}},
     "paper_moth": {"name": "纸蛾引路", "text": "一只纸蛾停在门框上，翅尖指着有搬运费的旧货包。", "level": 2,
-        "choices": {"accept": {"label": "付2枚取来货包检查", "cost": 2, "find_item": True},
+        "choices": {"accept": {"label": "付2枚古币取来货包检查", "cost": 2, "find_item": True},
                     "leave": {"label": "目送纸蛾离开", "cost": 0,
                               "outcome": "纸蛾绕招牌飞了一圈，把这间亮着灯的店记在翅上。"}}},
     "old_exhibit": {"name": "街坊的小展览", "text": "街坊想把修补手艺办成小展，请夜铺出一份灯油。", "level": 2,
-        "choices": {"help": {"label": "付3枚灯油钱", "cost": 3, "reputation": 3,
+        "choices": {"help": {"label": "付3枚古币灯油钱", "cost": 3, "reputation": 3,
                              "outcome": "展览亮到散场，来访的人记住了夜铺也是一处修补旧物的地方。"},
                     "leave": {"label": "这次先不参加", "cost": 0,
                               "outcome": "店主收下邀请，把这次夜晚留给货架上的旧物。"}}},
     "star_courier": {"name": "晚到的星邮包", "text": "从高处来的邮包裹着旧布，送货人请店主决定是否接下。", "level": 3,
-        "choices": {"accept": {"label": "付5枚签收并检查", "cost": 5, "find_item": True},
+        "choices": {"accept": {"label": "付5枚古币签收并检查", "cost": 5, "find_item": True},
                     "leave": {"label": "退回邮包，保留现金", "cost": 0,
                               "outcome": "店主重新扎紧邮包，星邮人带着它去寻找下一盏灯。"}}},
 })
@@ -439,6 +439,13 @@ def _collect(s, item):
     return first
 
 
+START_FUNDS_MIN, START_FUNDS_MAX = 11, 66
+START_FUNDS_HINT = (f"开店前先登记启动资金:{START_FUNDS_MIN}-{START_FUNDS_MAX} 之间的整数。"
+                    "⚠️ 这个数必须由你的人类来掷——请先停下,请人类替你掷两颗六面骰"
+                    "(第一颗当十位、第二颗当个位),或在 11-66 里随手给一个数,"
+                    "把结果告诉你再填。不得自己掷骰、编造或挑选数字。")
+
+
 def new_game(seats, seed):
     if len(seats) != 1:
         raise ValueError("口袋夜铺 v0.3 只需要一位 AI 店主")
@@ -453,6 +460,7 @@ def new_game(seats, seed):
         "location": "lane", "pending_event": None, "event_count": 0,
         "customer": None, "customer_count": 0, "customer_book": {},
         "last_run": None,
+        "start_funds_pending": True,   # 新局:等人类掷启动资金,登记前不能营业
     }
     for i in range(3):
         _collect(s, _make_item(s, "lane", f"start{i}"))
@@ -487,10 +495,17 @@ def _public_item(item):
     return {key: deepcopy(value) for key, value in item.items() if not key.startswith("_")}
 
 
+CUSTOMER_HINT = ("新手提示:客人只认旧物的「类别」——就是库存里每件旧物的 kind 字段,"
+                 "不看名字和故事像不像。从他的需求描述里猜他要哪一两类,类别对上才会买;"
+                 "手上没有对的类别,就用 work_shift 的 dismiss 送客(不另收费),等下一位客人。")
+
+
 def _public_customer(s):
     if s["customer"] is None:
         return None
-    return {key: value for key, value in s["customer"].items() if not key.startswith("_")}
+    view = {key: value for key, value in s["customer"].items() if not key.startswith("_")}
+    view["hint"] = CUSTOMER_HINT
+    return view
 
 
 def _locations(s):
@@ -521,6 +536,8 @@ def _event_view(s):
 
 
 def _legal_actions(s):
+    if s.get("start_funds_pending"):
+        return [{"action_id": "set_start_funds", "params": {"amount": START_FUNDS_HINT}}]
     if s["resting"]:
         return [{"action_id": "reopen_shop", "params": {}}]
     if s["pending_event"]:
@@ -642,6 +659,21 @@ def _work_cost(s, params):
     return 0
 
 
+BLOCK_TEXT = {
+    "inventory_full": "货架满了({n}/{cap}件),淘不回新东西。先卖出、回收(recycle)或扩建(upgrade)腾出位置再淘货。",
+    "repair_complete": "这件已经修到最好(完好度3/3),不用再修了。",
+    "display_full": "陈列位满了或这件已在陈列,先撤下别的再陈列。",
+    "shop_maximum": "店铺已经扩建到最高级。",
+    "insufficient_coins": "古币不够这一班的花销(需要{cost}枚古币,手上{coins}枚古币)。",
+    "reserve": "再做下去手上的古币会低于你设的保留线 reserve,所以没有开工。",
+}
+
+
+def _block_text(s, params, block):
+    return BLOCK_TEXT[block].format(n=len(s["inventory"]), cap=_capacity(s),
+                                    cost=_work_cost(s, params), coins=s["coins"])
+
+
 def _work_block(s, params):
     focus = params["focus"]
     if focus == "scavenge" and len(s["inventory"]) >= _capacity(s):
@@ -684,6 +716,19 @@ def apply(full_state, seat_id, action_id, params):
     if s["resting"]:
         raise IllegalAction("请先 reopen_shop 续档")
     s["last_run"] = None
+    if s.get("start_funds_pending"):
+        if action_id != "set_start_funds":
+            raise IllegalAction("还没登记启动资金。" + START_FUNDS_HINT)
+        amount = params.get("amount")
+        if type(amount) is not int or not START_FUNDS_MIN <= amount <= START_FUNDS_MAX:
+            raise IllegalAction(f"启动资金须是 {START_FUNDS_MIN}-{START_FUNDS_MAX} 之间的整数,并且由人类掷出")
+        s["coins"] = amount
+        s["start_funds_pending"] = False
+        _log(s, s["day"], SHIFTS[s["shift_index"]], "start_funds",
+             f"人类替店主掷出启动资金:{amount}枚古币。夜铺开门了。", (0, s["reputation"]))
+        return s
+    if action_id == "set_start_funds":
+        raise IllegalAction("启动资金已经登记过了")
     if action_id == "choose_event":
         _choose_event(s, params)
     elif s["pending_event"]:
@@ -695,7 +740,7 @@ def apply(full_state, seat_id, action_id, params):
         if action_id == "work_shift":
             block = _work_block(s, params)
             if block:
-                raise IllegalAction(block)
+                raise IllegalAction(_block_text(s, params, block))
             _work_shift(s, params)
         else:
             _run_shifts(s, params)
@@ -737,7 +782,11 @@ def _run_shifts(s, params):
         if hit:
             reason = hit
             break
+    if done == 0 and reason in BLOCK_TEXT:
+        # 一班都没做成:当面拒绝并说明原因,不再静默返回"成功"
+        raise IllegalAction(_block_text(s, params, reason))
     s["last_run"] = {"requested": count, "completed": done, "stop_reason": reason,
+                     "stop_text": (_block_text(s, params, reason) if reason in BLOCK_TEXT else None),
                      "from_seq": start + 1 if done else None, "to_seq": len(s["history"]),
                      "highlights": [row["text"] for row in s["history"][start:]
                                     if row.get("new") or row.get("rare") or row.get("event")]}
@@ -768,8 +817,8 @@ def _work_shift(s, params):
         s["coins"] -= paid
         if paid < upkeep:
             s["reputation"] = max(0, s["reputation"] - 1)
-        report += f" 打烊维护应付{upkeep}枚,实际付{paid}枚。"
-        s["diary"].append({"day": day, "text": f"打烊时硬币{s['coins']}枚,声望{s['reputation']}。",
+        report += f" 打烊维护应付{upkeep}枚古币,实际付{paid}枚古币。"
+        s["diary"].append({"day": day, "text": f"打烊时手上{s['coins']}枚古币,声望{s['reputation']}。",
                            "upkeep": paid})
         if day % 7 == 0:
             s["weekly"].append({"week": day // 7, "through_day": day, "coins": s["coins"],
@@ -800,7 +849,7 @@ def _do_focus(s, params, flags):
         found = _make_item(s, location, f"find{s['shift_count']}")
         flags["new"] = _collect(s, found)
         flags["rare"] = found["rarity"] in ("rare", "ancient", "heirloom")
-        prefix = "新发现,图鉴收录+2枚。" if flags["new"] else "这件见过,图鉴数量+1。"
+        prefix = "新发现,图鉴收录+2枚古币。" if flags["new"] else "这件见过,图鉴数量+1。"
         if flags["new"] and len(s["collection"]) == len(ITEMS):
             prefix += " 异物志全部物种已发现！还可继续补完修复秘密。"
         return f"从{LOCATIONS[location]['name']}带回「{found['name']}」。{prefix} {found['story']}"
@@ -817,7 +866,7 @@ def _do_focus(s, params, flags):
                 row["revealed_day"] = s["day"]
                 s["coins"] += 2
                 flags["new"] = True
-                report += " 图鉴首次揭秘,获得2枚。"
+                report += " 图鉴首次揭秘,获得2枚古币。"
                 if sum(bool(x["revealed"]) for x in s["collection"].values()) == len(ITEMS):
                     report += " 异物志全部揭秘！这间店已经见证了每一种旧物的另一面。"
             item["value"] += 3
@@ -836,7 +885,7 @@ def _do_focus(s, params, flags):
             row["deals"] += 1
             row["trust"] = min(5, row["trust"] + 1)
             s["inventory"].remove(item)
-            report = f"{c['name']}付了{price}枚,带走「{item['name']}」。图鉴记录保留。"
+            report = f"{c['name']}付了{price}枚古币,带走「{item['name']}」。图鉴记录保留。"
             _spawn_customer(s)
             return report
         c["patience"] -= 1
@@ -850,7 +899,7 @@ def _do_focus(s, params, flags):
         price = max(1, item["value"] // 3)
         s["coins"] += price
         s["inventory"].remove(item)
-        return f"把「{item['name']}」作为零件回收,得{price}枚。图鉴记录保留。"
+        return f"把「{item['name']}」作为零件回收,得{price}枚古币。图鉴记录保留。"
     if focus == "dismiss":
         name = s["customer"]["name"]
         _spawn_customer(s)
@@ -865,10 +914,10 @@ def _do_focus(s, params, flags):
         s["shop_level"] += 1
         if s["customer"] is None:
             _spawn_customer(s)
-        return f"花{cost}枚扩建到{s['shop_level']}级。"
+        return f"花{cost}枚古币扩建到{s['shop_level']}级。"
     income = 2 + s["shop_level"]
     s["coins"] += income
-    return f"整理货架并承接街坊的小修补,挣得{income}枚硬币。"
+    return f"整理货架并承接街坊的小修补,挣得{income}枚古币。"
 
 
 def _record_event(s, key, outcome=None, text=None):
@@ -926,14 +975,14 @@ def _choose_event(s, params):
         item = _make_item(s, pending["_location"], pending["id"])
         first = _collect(s, item)
         rare = item["rarity"] in ("rare", "ancient", "heirloom")
-        report = f"打开后发现「{item['name']}」。" + ("首次收录,获得2枚。" if first else "补记到图鉴。")
+        report = f"打开后发现「{item['name']}」。" + ("首次收录,获得2枚古币。" if first else "补记到图鉴。")
         if first and len(s["collection"]) == len(ITEMS):
             report += " 异物志全部物种已发现！"
     elif "outcome" in option:
         report = option["outcome"]
     elif choice == "trade":
         s["coins"] += 1
-        report = "收货人带走小匣,留下一枚硬币。"
+        report = "收货人带走小匣,留下一枚古币。"
     else:
         report = "店主选择暂不接下这件事,店铺继续营业。"
     _record_event(s, key, choice, report)
