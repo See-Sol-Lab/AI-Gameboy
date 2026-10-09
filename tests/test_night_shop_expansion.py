@@ -17,7 +17,6 @@ def load_rules(path, name):
 
 
 rules = load_rules(ROOT / "cartridges/pocket-night-shop/rules.py", "night_expansion")
-old_rules = load_rules(ROOT / "cartridges/pocket-night-shop/versions/0.2.0/rules.py", "night_archived")
 
 
 def free_event(state):
@@ -152,18 +151,6 @@ class TestNightExpansion(unittest.TestCase):
                 self.assertIn(choice, s["encounters"][kind]["outcomes"])
                 self.assertTrue(s["history"][-1]["text"])
 
-    def test_v2_archive_and_migration_preserve_existing_state(self):
-        old = old_rules.new_game(["seat_a"], 9)
-        old = old_rules.apply(old, "seat_a", "work_shift", {"focus": "tidy"})
-        old = old_rules.apply(old, "seat_a", "close_for_now", {})
-        before = deepcopy(old)
-        new = rules.migrate(json.loads(json.dumps(old)))
-        self.assertEqual(new, before)
-        self.assertEqual(old_rules.observe(old, "seat_a")["public_state"]["collection"]["total"], 16)
-        self.assertEqual(rules.observe(new, "seat_a")["public_state"]["collection"]["total"], 72)
-        self.assertEqual(new["customer_book"], old["customer_book"])
-        self.assertEqual(new["pending_event"], old["pending_event"])
-        self.assertTrue(new["resting"])
 
     def test_spending_days_does_not_count_as_customer_arrivals(self):
         s = rules.new_game(["seat_a"], 6)
@@ -175,14 +162,6 @@ class TestNightExpansion(unittest.TestCase):
         self.assertEqual(s["customer"], customer)
         self.assertEqual(s["customer_count"], visits)
 
-    def test_migration_does_not_reset_over_limit_old_visits(self):
-        old = old_rules.new_game(["seat_a"], 9)
-        cid = old["customer"]["id"]
-        old["customer"]["visits"] = old["customer_book"][cid]["visits"] = 12
-        new = rules.migrate(old)
-        self.assertEqual(new["customer_book"][cid]["visits"], 12)
-        self.assertNotEqual(new["customer"]["id"], cid)
-        self.assertEqual(old["customer"]["id"], cid)
 
 
 if __name__ == "__main__":

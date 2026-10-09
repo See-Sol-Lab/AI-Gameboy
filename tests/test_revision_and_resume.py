@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from game_host import GameHost  # noqa: E402
+from console.game_host import GameHost  # noqa: E402
 from test_seat_privacy import make_host, setup_playing  # noqa: E402
 
 

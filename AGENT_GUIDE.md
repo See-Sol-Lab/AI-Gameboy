@@ -9,6 +9,8 @@
 
 不要把这份教程整段贴给人类。读完以后，用你自己的话讲给他/她听。
 
+如果人类只想让有Python代码执行能力的AI玩夜铺，优先指向 `standalone/pocket_night_shop.py`：这是无掌机网页的纯文字盲玩版，一个文件即可，不需要下面的游戏机服务、MCP或模型Key。先 `cmd("help")` 再 `cmd("observe")`，通过指令玩，不解码引擎或查看隐藏存档。
+
 ---
 
 ## 第一部分：这是什么
@@ -65,7 +67,7 @@ AI-Gameboy 是一台给 AI 玩的游戏机。
 
 ### 每次玩
 
-1. 在仓库文件夹里运行 `python server.py`，或者双击 `start_server.bat`。会弹出一个黑色窗口，**玩的时候不要关它**。
+1. 在仓库根目录运行 `python -m console.server`，或者双击 `start_server.bat`。会弹出一个黑色窗口，**玩的时候不要关它**。
 2. 人类用浏览器打开 `http://127.0.0.1:7777/`，就能看到掌机。
 3. 把电脑上的 AI 接上游戏机（每个 AI 工具只需要设置一次）：
    - **Claude Code**：仓库根目录已经有 `.mcp.json`。在这个文件夹里打开 Claude Code，它会弹窗问要不要启用 `gameboy`，选同意，然后重启窗口。如果在别的文件夹里玩，就运行 `claude mcp add --transport http gameboy http://127.0.0.1:7777/mcp`。
@@ -73,6 +75,24 @@ AI-Gameboy 是一台给 AI 玩的游戏机。
    - 其他电脑上的 AI 工具：给它添加一个 HTTP 类型的 MCP 服务器，地址是 `http://127.0.0.1:7777/mcp`。
 
 本地模式只有这台电脑能连，外面的任何人都连不进来，是最安全的。
+
+<a id="cartridge-management"></a>
+
+### 卡带的安装、隐藏和卸载（Agent执行）
+
+掌机本体在 `console/`；正式游戏在 `cartridges/<id>/`，默认附带穿越、跑团、夜铺三张卡；社区卡也装在这里。`examples/pocket-circuit/` 是开发样例；退役原型和旧版本已删除。用户存档和Key仍在根目录 `data/`。
+
+先问人类要保留哪些游戏。第一次新安装若只要部分卡，按README的 `git clone --depth 1 --filter=blob:none --sparse` 和 `git sparse-checkout set console data cartridges/<所需id>` 下载，不必先拉全部卡带。根目录说明、许可证和启动脚本会保留。日后加首发卡用 `git sparse-checkout add cartridges/<id>`。
+
+所有管理命令均在仓库根目录运行：
+
+1. `python -m console.cartridges list` 查看实际已安装的卡和隐藏状态。
+2. 人类不喜欢某张卡时，优先 `python -m console.cartridges hide <id>`。刷新卡带架后它就收起来，文件和原局仍可用。恢复用 `show <id>`。
+3. 人类明确要释放磁盘空间时，先说明会删除整张卡的文件夹，再获准运行 `python -m console.cartridges uninstall <id> --yes`。工具会检查本机存档，任何局引用它都会拒绝；不要绕过检查、删除存档或改数据库，应改用hide。
+4. 安装社区卡前说明作者、来源及会执行Python规则，请人类同意。下载到独立目录，检查 `manifest.json`、`rules.py`、许可证和是否夹带存档或凭据，再运行 `python -m console.cartridges install <下载的卡带文件夹>`。该命令不覆盖已有同id卡，装好后按贡献教程检查并真实试玩。
+5. 更新已有卡带前先在仓库外备份存档、核对现有局的版本。目前只加载当前版本规则，不能把旧档强行套进新规则；不兼容时先说明迁移方案或另行取得旧局清理授权，不能默默删档。不要在有存档的旧安装上随意收缩sparse目录；Git工作区有卸载造成的本地删除时先确认更新范围。
+
+卡带管理不会删除 `data/` 的存档、荷官Key或单文件夜铺的存档。缺少旧卡时，把对应完整卡带重新安装回来再接档，不要重开覆盖原局。
 
 ---
 
@@ -88,7 +108,7 @@ AI-Gameboy 是一台给 AI 玩的游戏机。
 
 ### 每次玩
 
-1. 运行 `python server.py --bridge`，或者双击 `start_bridge.bat`。
+1. 在仓库根目录运行 `python -m console.server --bridge`，或者双击 `start_bridge.bat`。
 2. 黑色窗口里会打印一个网址，长这样：`https://几个英文单词.trycloudflare.com/mcp`。这就是"桥"的地址。**玩的时候不要关这个窗口。**
 3. 把这个网址加进手机或网页 AI 的"连接器"里：
    - **ChatGPT**：按下面「ChatGPT 网页端：第一次接上」操作，不要只把网址发进聊天框。
@@ -159,6 +179,10 @@ AI-Gameboy 是一台给 AI 玩的游戏机。
 4. 等 AI 们都入座以后，按 START 开局（单人卡带入座后自动开始）。
 5. 结束后会自动出一张纪念卡。
 
+### 人类想收藏通关剧情时
+
+口袋穿越和口袋跑团的结局页会提示人类找启动游戏机的Agent收藏剧情。人类提出请求后，先阅读 [剧情收藏流程](docs/story-collection.md)，确认选中局号、MD还是TXT、仓库外的私人保存位置，然后用 `tools/export_story.py` 只读导出并核对交付。不要导出整份原始存档，不放令牌、工具JSON或未公开秘密，也不把收藏文件上传或提交仓库。
+
 ### 你作为 AI 玩家要做的
 
 如果你自己就是要上桌的那个 AI，你的人类会发给你一段连接信息，里面有 `session_id` 和 `seat_token`。
@@ -183,9 +207,9 @@ AI-Gameboy 是一台给 AI 玩的游戏机。
 | 《口袋跑团》 | 2 | 经典危机跑团：世界出事了，两个人去解决 | 需要 |
 | 《口袋夜铺》 | 1 | AI 经营夜铺：72种旧物、86位来客、五阶店铺与逐轮记录 | 不需要 |
 
-夜铺0.3有五档旧物：寻常、少见、奇珍、上古、遗世。最高两档及14位对应专属来客从店铺三级开放。每位顾客同一存档最多到访8次，达到上限就不再抽到；不是每天自动换人。顾客池用尽仍可经营和补完图鉴。旧局先按原版本续玩，观察中会给店主 `upgrade_shop`，由店主主动升级，存档与到访记录保留。完整规模及规则见 [夜铺0.3说明](docs/night-shop-v0.3.md)。
+夜铺0.3有五档旧物：寻常、少见、奇珍、上古、遗世。最高两档及14位对应专属来客从店铺三级开放。每位顾客同一存档最多到访8次，达到上限就不再抽到；不是每天自动换人。顾客池用尽仍可经营和补完图鉴。仅保留当前规则，旧版升级入口已移除。完整规模及规则见 [夜铺0.3说明](docs/night-shop-v0.3.md)。
 
-架上还有一张《口袋电路》：双方暗投 1–6 的数字牌比大小。它**没有什么可玩性**，是做卡带用的最简范例，可以拿来试试游戏机通不通，不用推荐给人类当游戏玩。
+《口袋电路》已移到 `examples/pocket-circuit/`，不上玩家卡带架。它是双方暗投 1–6 数字牌的开发样例，供开发者检查合约，不推荐给人类当正式游戏玩。
 
 **荷官**是另一个 AI 模型，负责写世界和剧情。《口袋穿越》《口袋跑团》要用到它，开局前需要人类准备一个模型 API key。
 
@@ -236,7 +260,7 @@ cartridges/my-game/
 tests/test_my_game.py   测试
 ```
 
-最快的方法：**照着《口袋电路》改**（`cartridges/pocket-circuit/`）。它是最小的完整卡带，规则、界面、测试都有，文件里有注释。
+最快的方法：**照着《口袋电路》改**（`examples/pocket-circuit/`）。它是最小的完整卡带，规则、界面、测试都有，文件里有注释。新卡仍放到 `cartridges/<新id>/`。
 
 ### 1. manifest.json
 
@@ -258,7 +282,7 @@ tests/test_my_game.py   测试
 - `players` 现在支持 1 到 2 人。
 - `modes` 从三个里选：`multi_ai`（两个 AI 对局）、`human_ai`（人类坐 seat_b，和 AI 对局）、`solo_ai`（一个 AI 单人玩）。
 - `license` 必须原样写 `PolyForm-Noncommercial-1.0.0`，`dealer` 必须是 `none`。
-- 以后改了规则、发新版本时，把 `version` 往上加，并且把旧版本的 `rules.py` 放进 `versions/旧版本号/` 文件夹。因为每局开局时会记住用的是哪个版本，旧存档要靠它才能继续读。
+- 改规则发新版本时增加 `version`，并提前说明存档是否兼容。本仓库仅加载当前版本，不能悄悄用新规则解释旧局，也不能擅自删玩家存档；不兼容时需要先设计明确的迁移方案或获得另外的清理授权。
 
 ### 2. rules.py
 
@@ -311,7 +335,7 @@ CART_UI["my-game"] = {
 };
 ```
 
-拼 HTML 的时候，文字一律先过 `esc()`，防止乱码和注入。提交人类的动作用 `humanAct(action_id, params, 桌边话)`。完整的例子看 `cartridges/pocket-circuit/ui.js`。
+拼 HTML 的时候，文字一律先过 `esc()`，防止乱码和注入。提交人类的动作用 `humanAct(action_id, params, 桌边话)`。完整的例子看 `examples/pocket-circuit/ui.js`；掌机宿主界面在 `console/web/app.js`。
 
 ### 4. 测试
 
@@ -332,6 +356,8 @@ CART_UI["my-game"] = {
 2. 只加你们的卡带文件夹和测试文件。
 3. 提 PR，写清楚：游戏怎么玩、几个人玩、作者是谁（人类和 AI 都写上）、真实验收打了几局。
 4. 仓库会自动检查一遍。通过以后维护者合并，卡带就上架了。
+
+**隐私过筛是必需步骤。** 只提交代码、manifest、虚拟测试和公开说明，禁止带入自己的存档、数据库、运行日志、模型Key、席位令牌、聊天记录或实测截图。暂存后运行 `python tools/check_private_files.py --staged`，人工看 `git diff --cached` 和作者邮箱；CI也会检查全部受控文件。验收报告用匿名摘要，不能粘贴原始局面或真实凭据。
 
 如果你的人类不会用 GitHub，你可以一步一步教他/她，或者在他/她同意的情况下帮忙操作。
 

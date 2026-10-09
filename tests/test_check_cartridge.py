@@ -15,7 +15,7 @@ import check_cartridge  # noqa: E402
 class CheckCartridgeTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
-        shutil.copytree(ROOT / "cartridges" / "pocket-circuit", self.tmp / "cartridges" / "demo",
+        shutil.copytree(ROOT / "examples" / "pocket-circuit", self.tmp / "cartridges" / "demo",
                         ignore=shutil.ignore_patterns("__pycache__", "versions"))
         manifest = self.tmp / "cartridges" / "demo" / "manifest.json"
         data = json.loads(manifest.read_text("utf-8"))

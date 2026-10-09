@@ -11,7 +11,7 @@ import re
 import urllib.request
 from pathlib import Path
 
-BASE = Path(__file__).parent
+BASE = Path(__file__).resolve().parent.parent
 CONFIG_PATH = BASE / "data" / "narrator.json"
 
 INTENTS = ["advance", "explore", "support", "confront", "recover"]

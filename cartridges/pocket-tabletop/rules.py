@@ -918,6 +918,8 @@ def _apply_law_cost(s, slip, law, report):
 def _log(s, scene, commits, slip, report):
     s["history"].append({
         "scene_index": s["scene_index"], "title": scene["title"],
+        "story_text": scene["text"],
+        "story_responses": [r["detail"] for r in (scene.get("npc_responses") or []) if r.get("detail")],
         "commits": deepcopy(commits), "slip": deepcopy(slip),
         "report": report,
     })

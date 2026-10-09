@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import narrator  # noqa: E402
+from console import narrator  # noqa: E402
 from test_pocket_crossing import (FIX_WORLD, FIX_IDENTITIES,
                                   FIX_MILESTONES, fix_scene)  # noqa: E402
 

@@ -6,7 +6,7 @@ from pathlib import Path
 
 _spec = importlib.util.spec_from_file_location(
     "pocket_circuit_rules",
-    Path(__file__).resolve().parents[1] / "cartridges" / "pocket-circuit" / "rules.py")
+    Path(__file__).resolve().parents[1] / "examples" / "pocket-circuit" / "rules.py")
 rules = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(rules)
 

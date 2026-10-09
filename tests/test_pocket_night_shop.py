@@ -1,4 +1,4 @@
-"""夜铺 v0.2：收集、自动事件、单人批量行动和存档边界。"""
+"""当前夜铺：收集、自动事件、单人批量行动和存档边界。"""
 import importlib.util
 import json
 import unittest

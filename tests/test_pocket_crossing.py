@@ -489,7 +489,7 @@ class TestHiddenAndEndings(unittest.TestCase):
         self.assertEqual(s["ending"]["reason"], "mutual_end")
 
     def test_ending_context_has_goal_world_matrix_fields(self):
-        import narrator
+        from console import narrator
         s = setup_playing(75)
         s = rules.apply(s, "seat_a", "switch_goal",
                         {"custom_text": "替巡检补好旧制服"})
@@ -969,7 +969,7 @@ class TestScopeAndAntiEpic(unittest.TestCase):
                          rules.SCOPE_INTENSITY[s["axes"]["scope"]])
 
     def test_world_prompt_scale_rules_by_scope(self):
-        import narrator
+        from console import narrator
         axes = {k: rules.POOLS[k][0][0] for k in rules.POOLS}
         axes["scope"] = "鸡毛蒜皮"
         p = narrator._p_world({"axes": axes, "scope_intensity": "烈度1-2"})
@@ -988,7 +988,7 @@ class TestScopeAndAntiEpic(unittest.TestCase):
         self.assertNotIn("规模纪律", p)
 
     def test_scene_prompt_forbids_escalation(self):
-        import narrator
+        from console import narrator
         ctx = {"world": {"world_name": "测", "public_goal": "goal",
                          "laws": [], "clock_text": ""},
                "scene_index": 1, "tracks": {}, "identities": {},
@@ -1010,7 +1010,7 @@ class TestScopeAndAntiEpic(unittest.TestCase):
         self.assertEqual(ctx["npc_onstage"]["persona"], q["npc"]["persona"])
 
     def test_ending_prompt_forbids_invention_and_moralizing(self):
-        import narrator
+        from console import narrator
         ctx = {"world": {"world_name": "测", "clock_text": ""},
                "kind": "HE", "reason_name": "目标达成", "tracks": {},
                "identities": {}, "scene_titles": [], "facts": [],
@@ -1080,14 +1080,14 @@ class TestThreeLayerWorld(unittest.TestCase):
         self.assertNotEqual(a, b)
 
     def test_world_layer_validator_rejects_canon_tick_touching_players(self):
-        import narrator
+        from console import narrator
         bad = deepcopy(FIX_WORLD3)
         bad["global_canon"]["ticks"][0] = "复核队找上你们,要求同行。"
         with self.assertRaises(narrator.NarratorError):
             narrator._v_world(bad)
 
     def test_world_layer_validator_requires_three_landings(self):
-        import narrator
+        from console import narrator
         bad = deepcopy(FIX_WORLD3)
         bad["landings"] = bad["landings"][:2]
         with self.assertRaises(narrator.NarratorError):
@@ -1095,7 +1095,7 @@ class TestThreeLayerWorld(unittest.TestCase):
         narrator._v_world(deepcopy(FIX_WORLD3))   # 完整样本应当通过
 
     def test_episode_validator(self):
-        import narrator
+        from console import narrator
         narrator._v_episode(deepcopy(FIX_EPISODE))
         bad = deepcopy(FIX_EPISODE)
         bad["local_episode"]["events"] = ["只有一件"]
@@ -1120,7 +1120,7 @@ class TestThreeLayerWorld(unittest.TestCase):
         self.assertTrue(rules._canon_now(s)["may_converge"])
 
     def test_scene_prompt_forbids_canon_dragging_players(self):
-        import narrator
+        from console import narrator
         ctx = rules._scene_context(setup_playing3(), [])
         p = narrator._p_scene(ctx)
         self.assertIn("远方大事", p)

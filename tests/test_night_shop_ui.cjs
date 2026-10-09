@@ -11,7 +11,7 @@ function page() {
     document: {getElementById: () => element, querySelectorAll: () => []},
     window: {addEventListener() {}}, Date: {now: () => now},
   });
-  const source = fs.readFileSync(path.join(__dirname, "../web/app.js"), "utf8")
+  const source = fs.readFileSync(path.join(__dirname, "../console/web/app.js"), "utf8")
     .replace(/\nroute\(\);\s*$/, "\n");
   vm.runInContext(source, context);
   return {
@@ -61,10 +61,10 @@ test("catalogue escapes supplied text and never invents undiscovered entries", (
   assert.ok(html.includes("1/16"));
 });
 
-test("v0.2 observer panel exposes no gameplay controls", () => {
+test("current observer panel exposes no gameplay controls", () => {
   const p = page();
   const html = p.run(`CART_UI["pocket-night-shop"].myPanel(
-    {status:"playing",cartridge:{version:"0.2.0"},public_state:{}},
+    {status:"playing",cartridge:{version:"0.3.0"},public_state:{}},
     {legal_actions:[{action_id:"knock"}]})`);
   assert.equal(html, "");
 });
@@ -122,4 +122,17 @@ test("five rarity titles and tier gate are visible without revealing unknown ite
   assert.ok(html.includes("遗世 0/5"));
   assert.ok(html.includes("3级开放"));
   assert.ok(!html.includes("undefined"));
+});
+
+test("story collection hint is limited to completed adventures with a written ending", () => {
+  const p = page();
+  for (const id of ["pocket-crossing", "pocket-tabletop"]) {
+    const html = p.run(`storyCollectionHint({cartridge:{id:${JSON.stringify(id)}},status:"finished",public_state:{ending:{text:"故事落幕"}}})`);
+    assert.ok(html.includes("帮我收藏这一局的剧情"));
+    assert.ok(html.includes(".md"));
+    assert.ok(html.includes(".txt"));
+  }
+  assert.equal(p.run(`storyCollectionHint({cartridge:{id:"pocket-night-shop"},status:"finished",public_state:{ending:{text:"结束"}}})`), "");
+  assert.equal(p.run(`storyCollectionHint({cartridge:{id:"pocket-crossing"},status:"finished",public_state:{ending:null}})`), "");
+  assert.equal(p.run(`storyCollectionHint({cartridge:{id:"pocket-crossing"},status:"playing",public_state:{ending:{text:"结束"}}})`), "");
 });

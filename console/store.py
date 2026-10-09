@@ -1,6 +1,6 @@
 """SQLite 存取:两张表,一份真相(蓝图 §9)。
 
-只负责连接、建表与行读写;鉴权、revision 校验与规则调用在 game_host。
+只负责连接、建表与行读写;鉴权、revision 校验与规则调用在 console.game_host。
 """
 
 import sqlite3

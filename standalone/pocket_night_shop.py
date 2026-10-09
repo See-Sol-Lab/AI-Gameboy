@@ -365,15 +365,8 @@ _RULES_B64 = (
     "GNW8nkjvrVC7n/ecDC2n9BYevaDKUTUTdCfbkCv97H1uvIFJEHxwspRaNwYyR5Lzfog6JsuygKNqJ/agFGoL1lsYeN/eH+GS"
     "KiicFnPKhXsrD1ylNZViGOJVIZGUEPtV/stx16meHbjzSkvjrUigydWYcqzTvFqMiVeYiiVhHndBNPYVV7FLclUVC+SUZQ4E"
     "llO2yXopPiyzM0idM52cX9fyffks0lgA9jI/zzTMQo6us8wVxWWJh/XrhNKdsfDCrxMqgUZOdUJJ5q+TSnyWvzdNhyefcPXk"
-    "FvN69Sy87odByRBWR6z+WuFTZEJFdiMIl7Da+kcdoYJKXOHaCQfnxeEA0E867nBUAesm5CFB4rgyy17LHPeFl5bGzlVA/g11"
-    "Nwh+lOGaJ7PopaWlKLTg4ebT4V6uJ+7k2e5gUvXpAm+CnF5i1vUI7nl7Q7C8bwtXIFFcTG7JPbbDEAn5jqehPCgtDc2WkJ6E"
-    "O9fXOrzVjYvjYIqDEgVp426BpKT6SB8LX7TaBDR7M0EFhhQrXJEq0e/ESi13S4yqjNZ0MFO1IVb530bKREuGRYNfEkJPYkX/"
-    "4wX+U9Gq/qlYpa/EUBzN50mot29rEYXV/5OqpYQVz+PRDgWFvKIXuJiFilCBHi3yohg5aJBtQQWN+FNJQeOIYE0FkadpoAtp"
-    "oXe3lVQkE1MADIa9ij8x/R8Jt1qkCsr4XpVbEu6EhfpbUWtJ9XAZl/NygRIZViCRd5xCsO5dJ9QeP2kBIlnXxoLQHDNqddhn"
-    "g3vv/54ra4KxBNda85eretGJqp1XCy96KdHbRa7yAmeyBWR2JcMGtAmvFl4iYzzMV4NxV3xeGRuMg5AFXuB4kHVx3dm6vwP/"
-    "cYKbqvAyk/f5nx3RcFX3NfiTbsTNI697Vfkj1dXxTladwRXRPcO4VhhlalSv1vj+wEMYKeqDFlUQ1jYhJTMgTyTYVLrpXkai"
-    "mOJAAbgnXps+RSCkbqnwdWUqkTpCsV0qi9SAkScdk8pUfaGVFN/dwghK5+WCujFsId7EObIpmu3o8H6jb/wdrP991138X3+X"
-    "h2Y="
+    "FvN69Sy87odByRBWR6z+WuFTZEJFdiMIl7Da+kcdoYJKXOHaCQfnxeEA0E867nBUAesm5CFB4rgyy17LHPeFl5bGzlX5hf8L"
+    "8BI0uw=="
 )
 _engine = {"__name__": "_night_shop_rules"}
 exec(compile(_zlib.decompress(_base64.b64decode(_RULES_B64)).decode("utf-8"),

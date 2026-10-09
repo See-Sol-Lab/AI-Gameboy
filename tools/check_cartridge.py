@@ -32,6 +32,8 @@ def load_rules(folder: Path):
 
 def check(cid: str) -> list[str]:
     folder = ROOT / "cartridges" / cid
+    if cid == "pocket-circuit":
+        folder = ROOT / "examples" / cid
     problems: list[str] = []
     bad = problems.append
     if not (folder / "manifest.json").is_file() or not (folder / "rules.py").is_file():

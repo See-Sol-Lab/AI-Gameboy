@@ -18,7 +18,8 @@ import secrets
 from datetime import datetime
 from pathlib import Path
 
-import store
+from . import store
+from .cartridges import locate, read_hidden
 
 TABLE_LINE_MAX = 120
 NAME_MAX = 40
@@ -60,24 +61,20 @@ class GameHost:
     # ---------------- 卡带装载(版本钉死,§9) ----------------
 
     def _load_manifest(self, cartridge_id: str) -> dict:
-        p = self.cartridges_dir / cartridge_id / "manifest.json"
-        if not p.exists():
-            raise CartridgeVersionMissing(cartridge_id)
+        try:
+            p = locate(self.cartridges_dir, cartridge_id) / "manifest.json"
+        except (FileNotFoundError, ValueError):
+            raise CartridgeVersionMissing(cartridge_id) from None
         return json.loads(p.read_text("utf-8"))
 
     def _load_cartridge(self, cartridge_id: str, version: str):
         key = (cartridge_id, version)
         if key not in self._rules_cache:
             manifest = self._load_manifest(cartridge_id)
-            if manifest.get("version") == version:
-                path = self.cartridges_dir / cartridge_id / "rules.py"
-            else:
-                # 旧局钉死的版本:去 versions/ 归档找;找不到才是"缺少本局卡带版本"
-                path = (self.cartridges_dir / cartridge_id / "versions"
-                        / version / "rules.py")
-                if not path.is_file():
-                    raise CartridgeVersionMissing(f"{cartridge_id}@{version}")
-                manifest = dict(manifest, version=version)
+            folder = locate(self.cartridges_dir, cartridge_id)
+            if manifest.get("version") != version:
+                raise CartridgeVersionMissing(f"{cartridge_id}@{version}:该旧版已退役")
+            path = folder / "rules.py"
             spec = importlib.util.spec_from_file_location(
                 "cartridge_" + cartridge_id.replace("-", "_")
                 + "_" + version.replace(".", "_"), path)
@@ -155,7 +152,7 @@ class GameHost:
         req = (state or {}).get("narration_request")
         if not req:
             return {"result": "rejected", "reason": "没有待办的荷官请求"}
-        import narrator
+        from . import narrator
         try:
             data = narrator.call(req["kind"], req["context"])
         except narrator.NarratorError as e:
@@ -199,11 +196,12 @@ class GameHost:
         凭 cartridge_id 仍可开局/回放——只是不再出现在架子上扰乱视线)。
         """
         out = []
-        for p in sorted(self.cartridges_dir.iterdir()):
+        hidden = read_hidden(Path(self.db_path).parent)
+        for p in sorted(self.cartridges_dir.glob("*")):
             m = p / "manifest.json"
             if m.is_file():
                 d = json.loads(m.read_text("utf-8"))
-                if d.get("retired"):
+                if d.get("retired") or d["id"] in hidden:
                     continue
                 out.append({k: d.get(k) for k in
                             ("id", "name", "version", "author", "license",
@@ -434,27 +432,6 @@ class GameHost:
                     engine["cartridge_state"] = rules.new_game([seat_id], secrets.randbits(32))
                     new_status = "playing"
                     self._push_event(engine, {"kind": "start"})
-            elif (action_id == "upgrade_shop" and srow["cartridge_id"] == "pocket-night-shop"
-                  and srow["cartridge_version"] in ("0.1.0", "0.2.0") and srow["status"] == "playing"):
-                if seat_id != seats[0]["seat_id"]:
-                    return rejected("只有店主可以升级存档")
-                target_version = self._load_manifest("pocket-night-shop")["version"]
-                _, current_rules = self._load_cartridge("pocket-night-shop", target_version)
-                old = engine["cartridge_state"]
-                # 升级把待开的旧门铃自动结算一次，结果保留在经营记录中。
-                if old.get("door_signal"):
-                    before_coins, before_rep = old["coins"], old["reputation"]
-                    rules._knock(old)
-                    old["door_history"][-1].update(
-                        coins_delta=old["coins"] - before_coins,
-                        reputation_delta=old["reputation"] - before_rep)
-                engine["cartridge_state"] = current_rules.migrate(old)
-                conn.execute("UPDATE session SET cartridge_version=? WHERE id=?",
-                             (target_version, session_id))
-                conn.execute("DELETE FROM seat WHERE session_id=? AND seat_id<>?",
-                             (session_id, seat_id))
-                display_name = seat["display_name"]
-                self._push_event(engine, {"kind": "upgrade", "version": target_version})
             elif srow["status"] == "lobby":
                 return rejected("牌局尚未开始:大厅里唯一的动作是 introduce")
             else:
@@ -513,11 +490,6 @@ class GameHost:
             private_state = ob["private_state"]
             legal = ob["legal_actions"]
             waiting = ob["waiting_for"]
-            if (srow["cartridge_id"] == "pocket-night-shop"
-                    and srow["cartridge_version"] in ("0.1.0", "0.2.0")
-                    and my_seat_id == state["shopkeeper"] and srow["status"] == "playing"):
-                legal.append({"action_id": "upgrade_shop", "params": {},
-                              "description": "升级到0.3：保留存档和到访次数；72种旧物、86位来客、五阶店铺；旧门铃自动结算"})
             if srow["status"] == "finished":
                 legal, waiting = [], []
         else:

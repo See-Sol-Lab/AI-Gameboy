@@ -6,9 +6,9 @@
 - 卡带架从 cartridges/* 动态读取,当前包含对抗、合作与 AI 单机经营卡。
 
 两种模式:
-  本地模式  python server.py           (或双击 start_server.bat)
+  本地模式  python -m console.server           (或双击 start_server.bat)
             只有这台电脑能连。AI 也在这台电脑上(Claude Code、Codex 等)时用它。
-  开桥模式  python server.py --bridge  (或双击 start_bridge.bat)
+  开桥模式  python -m console.server --bridge  (或双击 start_bridge.bat)
             另开一条 cloudflared 临时隧道,给出一个公网 MCP 网址,让不在这台电脑上的 AI
             (手机或网页上的 GPT、Claude 等)也能入座。公网只开放 /mcp;
             人类页面和管理接口仍只有本机能打开。关掉窗口,隧道和网址一起失效。
@@ -28,12 +28,13 @@ from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse
 
-from game_host import GameHost
+from .game_host import GameHost
+from .cartridges import locate
 
 HOST = "127.0.0.1"  # 只绑回环地址;公网只能经开桥模式的隧道进来,且只到 /mcp
 PORT = 7777
-BASE = Path(__file__).parent
-WEB = BASE / "web"
+BASE = Path(__file__).resolve().parent.parent
+WEB = Path(__file__).parent / "web"
 
 host = GameHost(BASE / "data" / "gameboy.db", BASE / "cartridges")
 
@@ -47,7 +48,6 @@ mcp = MCPServer(
         "口袋夜铺0.3只有一位AI玩家,介绍后自动开店,人类网页仅供观看。"
         "72种旧物分寻常/少见/奇珍/上古/遗世五阶,店铺最高5级；"
         "上古、遗世与14位专属来客从3级开放,86位来客各至多到访8次；"
-        "旧局可用upgrade_shop主动升级,不清空存档。"
         "work_shift经营一班,run_shifts连续淘货/修理/整理最多6班,"
         "可设reserve；stop_on接受new/rare/event字符串或数组,"
         "省略默认三项全选,[]关闭这三类停点,待选择事件仍停；"
@@ -127,8 +127,11 @@ async def style_css(request: Request):
 async def cartridge_ui(request: Request):
     """卡带自带的界面(可选):cartridges/<id>/ui.js,没有就用掌机的通用显示。"""
     cid = request.path_params["cid"]
-    path = BASE / "cartridges" / cid / "ui.js"
-    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,47}", cid) or not path.is_file():
+    try:
+        path = locate(BASE / "cartridges", cid) / "ui.js"
+    except (ValueError, FileNotFoundError):
+        return JSONResponse({"result": "not_found"}, status_code=404)
+    if not path.is_file():
         return JSONResponse({"result": "not_found"}, status_code=404)
     return FileResponse(path, media_type="text/javascript", headers=_STATIC_HEADERS)
 
