@@ -424,6 +424,144 @@ def _make_item(s, location, salt):
             "origin": location, "secret": None, "_secret": secret}
 
 
+# ---------------- 魔女莉莉丝:开了第四个地点后出没的流动商人 ----------------
+# 每天随机待在一个已开的地点;那天去那里淘货就会碰见她。碰见后到下一班开始前都可以和她交易。
+WITCH_MIN_LOCATIONS = 4
+WITCH_SELL_RATE, WITCH_DISCOUNT_RATE = 0.2, 0.8    # 平时2折收货;她心情好时买卖都按8折
+WITCH_SELL_LIMIT = 2                                # 每次碰面最多卖给她2件
+WITCH_TREASURE_EVERY, WITCH_APPLE_EVERY, WITCH_APPLE_HOLD = 10, 20, 2
+GOLDEN_APPLE = {"code": "golden_apple", "name": "魔女的金苹果", "kind": "珍宝", "rarity": "heirloom",
+                "value": 77, "condition": 3,
+                "story": "魔女莉莉丝的金苹果,咬一口会听见很远的地方有人在笑。"}
+
+
+def _witch_on(s):
+    return len(s["unlocked_locations"]) >= WITCH_MIN_LOCATIONS
+
+
+def _witch_spot(s):
+    return s["unlocked_locations"][_number(s["seed"], "witch", s["day"]) % len(s["unlocked_locations"])]
+
+
+def _witch_book(s):
+    return s.setdefault("witch", {"stock": [], "apple_until": 0, "visit": None, "met": 0})
+
+
+def _apple_held(s):
+    return s["shift_count"] < _witch_book(s)["apple_until"]
+
+
+def _witch_tick(s):
+    """每过一班:每10班进一件3级以上的宝物;每20班有一半机会拿出金苹果,只拿2班。"""
+    if not _witch_on(s):
+        return
+    w, n = _witch_book(s), s["shift_count"]
+    if n % WITCH_TREASURE_EVERY == 0:
+        pool = [row for row in ITEMS if ITEM_RARITY.get(row[0]) in ("ancient", "heirloom")]
+        code, name, story, condition, value, secret = pool[_number(s["seed"], "witch_stock", n) % len(pool)]
+        s["item_counter"] += 1
+        w["stock"] = (w["stock"] + [{
+            "id": f"{code}_{s['item_counter']}", "code": code, "name": name, "story": story,
+            "condition": condition, "value": value, "displayed": False, "kind": ITEM_KINDS[code],
+            "rarity": ITEM_RARITY[code], "origin": "witch", "secret": None, "_secret": secret}])[-3:]
+    if n % WITCH_APPLE_EVERY == 0 and _number(s["seed"], "witch_apple", n) % 2 == 0:
+        w["apple_until"] = n + WITCH_APPLE_HOLD
+
+
+def _witch_meet(s, location):
+    if not _witch_on(s) or location != _witch_spot(s):
+        return ""
+    w = _witch_book(s)
+    w["met"] += 1
+    apple = _apple_held(s)
+    roll = _number(s["seed"], "witch_mood", s["shift_count"]) % 100
+    gift = ""
+    if apple and roll < 2:
+        s["item_counter"] += 1
+        s["inventory"].append({**GOLDEN_APPLE, "id": f"golden_apple_{s['item_counter']}",
+                               "displayed": False, "origin": "witch", "secret": None})
+        w["apple_until"] = 0
+        apple = False
+        gift = " 她今天心情好得出奇,把金苹果直接塞进了店主手里!"
+    w["visit"] = {"sold": 0, "discount": apple and 2 <= roll < 25}
+    return (" 🧙 在" + LOCATIONS[location]["name"] + "撞见了魔女莉莉丝的小摊。" + gift
+            + (" 她抱着金苹果哼歌,今天买卖都打8折!" if w["visit"]["discount"] else "")
+            + " 下一班开始前可以和她做买卖(witch_sell / witch_buy)。")
+
+
+def _witch_price(s, item, selling):
+    if s["witch"]["visit"]["discount"]:
+        rate = WITCH_DISCOUNT_RATE
+    else:
+        rate = WITCH_SELL_RATE if selling else 1
+    return max(1, int(item["value"] * rate))
+
+
+def _witch_view(s):
+    w = s.get("witch")
+    if not w or not w.get("visit"):
+        return None
+    v = w["visit"]
+    stock = [{**_public_item(x), "price": _witch_price(s, x, False)} for x in w["stock"]]
+    if _apple_held(s):
+        stock.append({**GOLDEN_APPLE, "id": "golden_apple", "price": _witch_price(s, GOLDEN_APPLE, False)})
+    return {"discount": v["discount"], "can_sell": WITCH_SELL_LIMIT - v["sold"], "stock": stock,
+            "sell_prices": {x["id"]: _witch_price(s, x, True) for x in s["inventory"]},
+            "hint": "魔女收你不想要的货(平时按价值2折,心情好时8折),每次碰面最多卖2件;"
+                    "也可以从她那里买宝物。下一班开始她就走了。"}
+
+
+def _witch_trade(s, action_id, params):
+    w = s.get("witch") or {}
+    v = w.get("visit")
+    if not v:
+        raise IllegalAction("魔女莉莉丝不在这里。开了第四个地点后,她每天待在某个已开地点,去那里淘货才碰得到。")
+    if action_id == "witch_sell":
+        ids = params.get("item_ids")
+        left = WITCH_SELL_LIMIT - v["sold"]
+        if not isinstance(ids, list) or not ids or len(set(ids)) != len(ids) or len(ids) > left:
+            raise IllegalAction(f"item_ids 填要卖给魔女的货(数组),这次碰面还能卖 {left} 件")
+        items = [next((x for x in s["inventory"] if x["id"] == i), None) for i in ids]
+        if None in items:
+            raise IllegalAction("库存里没有这件")
+        before = (s["coins"], s["reputation"])
+        got = sum(_witch_price(s, x, True) for x in items)
+        for x in items:
+            s["inventory"].remove(x)
+        v["sold"] += len(items)
+        s["coins"] += got
+        text = "把" + "、".join("「" + x["name"] + "」" for x in items) + f"卖给魔女莉莉丝,得{got}枚古币。"
+    else:
+        iid = params.get("item_id")
+        if iid == "golden_apple" and _apple_held(s):
+            item = {**GOLDEN_APPLE, "displayed": False, "origin": "witch", "secret": None}
+        else:
+            item = next((x for x in w["stock"] if x["id"] == iid), None)
+        if item is None:
+            raise IllegalAction("魔女的摊上没有这件")
+        price = _witch_price(s, item, False)
+        if s["coins"] < price:
+            raise IllegalAction(f"古币不够(要{price}枚古币,手上{s['coins']}枚古币)")
+        if len(s["inventory"]) >= _capacity(s):
+            raise IllegalAction(BLOCK_TEXT["inventory_full"].format(n=len(s["inventory"]), cap=_capacity(s)))
+        before = (s["coins"], s["reputation"])
+        s["coins"] -= price
+        if iid == "golden_apple":
+            s["item_counter"] += 1
+            item["id"] = f"golden_apple_{s['item_counter']}"
+            w["apple_until"] = 0
+            s["inventory"].append(item)
+        else:
+            w["stock"].remove(item)
+            if item["code"] in s["collection"]:
+                s["collection"][item["code"]]["count"] += 1
+                s["inventory"].append(item)
+            else:
+                _collect(s, item)          # 首次收录照常 +2
+        text = f"花{price}枚古币从魔女莉莉丝那里买下「{item['name']}」。"
+    _log(s, s["day"], SHIFTS[s["shift_index"]], action_id, text, before)
+
+
 def _collect(s, item):
     code = item["code"]
     first = code not in s["collection"]
@@ -579,6 +717,9 @@ def _legal_actions(s):
             **({"advice": NEWCOMER_ADVICE} if s["shift_count"] < NEWCOMER_SHIFTS else {})}},
         {"action_id": "close_for_now", "params": {}},
     ]
+    if _witch_view(s):
+        actions.append({"action_id": "witch_sell", "params": {"item_ids": "要卖给魔女的库存 id 数组,本次最多2件"}})
+        actions.append({"action_id": "witch_buy", "params": {"item_id": "魔女摊上 stock 里的 id"}})
     if any(key not in s["unlocked_locations"] for key in LOCATIONS):
         actions.append({"action_id": "unlock_location", "params": {"location": _locations(s)}})
     return actions
@@ -612,6 +753,7 @@ def observe(full_state, seat_id):
         "encounters": {"found": len(s["encounters"]), "total": len(EVENTS),
                        "entries": deepcopy(list(s["encounters"].values()))},
         "locations": _locations(s), "location": s["location"],
+        "witch": _witch_view(s),
         "pending_event": _event_view(s), "last_run": deepcopy(s["last_run"]),
     }
     return {"public_state": public,
@@ -758,6 +900,8 @@ def apply(full_state, seat_id, action_id, params):
         raise IllegalAction("请先处理眼前事件,也可歇业后下次继续")
     elif action_id == "unlock_location":
         _unlock(s, params)
+    elif action_id in ("witch_sell", "witch_buy"):
+        _witch_trade(s, action_id, params)
     elif action_id in ("work_shift", "run_shifts"):
         _validate_work(s, params)
         if action_id == "work_shift":
@@ -801,6 +945,9 @@ def _run_shifts(s, params):
         if s["pending_event"]:
             reason = "decision"
             break
+        if flags.get("witch"):
+            reason = "witch"
+            break
         hit = next((key for key in ("event", "new", "rare") if key in stops and flags[key]), None)
         if hit:
             reason = hit
@@ -825,11 +972,19 @@ def _work_shift(s, params):
         item = next(x for x in s["inventory"] if x["id"] == params["item_id"])
         offer = {"item_name": item["name"], "asking_price": params["asking_price"]}
     flags = {"new": False, "rare": False, "event": False}
+    if s.get("witch"):
+        s["witch"]["visit"] = None       # 魔女只等到下一班开始
     report = _do_focus(s, params, flags)
+    if params["focus"] == "scavenge":
+        meet = _witch_meet(s, params.get("location", s["location"]))
+        if meet:
+            report += meet
+            flags["witch"] = True
     if params.get("goal") is not None:
         s["current_goal"] = params["goal"].strip()
     ambient = AMBIENT[_number(s["seed"], "ambient", s["shift_count"]) % len(AMBIENT)]
     s["shift_count"] += 1
+    _witch_tick(s)
     event_text = _maybe_event(s)
     if event_text:
         report += " " + event_text

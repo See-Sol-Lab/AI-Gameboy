@@ -150,6 +150,55 @@ class TestNightExpansion(unittest.TestCase):
         self.assertEqual(s["last_run"]["completed"], 1)
         self.assertEqual(s["diary"][-1]["upkeep"], 5)
 
+    def test_witch_lilith_trades_after_fourth_place(self):
+        self.assertTrue(any(rules.ITEM_RARITY.get(r[0]) in ("ancient", "heirloom") for r in rules.ITEMS))
+        s = rules.new_game(["seat_a"], 3)
+        s["coins"], s["shop_level"] = 500, 5
+        s["unlocked_locations"] = ["lane", "station", "dock"]
+        spot = rules._witch_spot(s)
+        s = rules.apply(s, "seat_a", "work_shift", {"focus": "scavenge", "location": spot})
+        self.assertIsNone(rules.observe(s, "seat_a")["public_state"]["witch"])    # 三张图时没有魔女
+        with self.assertRaises(rules.IllegalAction):
+            rules.apply(s, "seat_a", "witch_sell", {"item_ids": [s["inventory"][0]["id"]]})
+        s["unlocked_locations"] = ["lane", "station", "dock", "arcade"]
+        while s["pending_event"]:
+            s = rules.apply(s, "seat_a", "choose_event", {"event_id": s["pending_event"]["id"], "choice": next(
+                k for k, o in rules.EVENTS[s["pending_event"]["kind"]]["choices"].items() if o["cost"] == 0)})
+        spot = rules._witch_spot(s)
+        s = rules.apply(s, "seat_a", "work_shift", {"focus": "scavenge", "location": spot})
+        view = rules.observe(s, "seat_a")["public_state"]["witch"]
+        self.assertIsNotNone(view)
+        self.assertIn("魔女莉莉丝", s["history"][-1]["text"])
+        a, b, c = (x["id"] for x in s["inventory"][:3])
+        with self.assertRaises(rules.IllegalAction):
+            rules.apply(s, "seat_a", "witch_sell", {"item_ids": [a, b, c]})       # 一次最多2件
+        item = s["inventory"][0]
+        before = s["coins"]
+        s = rules.apply(s, "seat_a", "witch_sell", {"item_ids": [a]})
+        expect = max(1, int(item["value"] * (0.8 if view["discount"] else 0.2)))
+        self.assertEqual(s["coins"] - before, expect)
+        s = rules.apply(s, "seat_a", "witch_sell", {"item_ids": [b]})
+        with self.assertRaises(rules.IllegalAction):
+            rules.apply(s, "seat_a", "witch_sell", {"item_ids": [c]})
+        # 每10班进一件3级以上宝物,买下后进库存
+        while not s["witch"]["stock"]:
+            s = rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"})
+            while s["pending_event"]:
+                s = rules.apply(s, "seat_a", "choose_event", {"event_id": s["pending_event"]["id"], "choice": next(
+                    k for k, o in rules.EVENTS[s["pending_event"]["kind"]]["choices"].items() if o["cost"] == 0)})
+        treasure = s["witch"]["stock"][0]
+        self.assertIn(treasure["rarity"], ("ancient", "heirloom"))
+        self.assertIsNone(rules.observe(s, "seat_a")["public_state"]["witch"])    # 下一班她就走了
+        s["day"] += 0
+        spot = rules._witch_spot(s)
+        s = rules.apply(s, "seat_a", "work_shift", {"focus": "scavenge", "location": spot})
+        if s["witch"]["visit"]:
+            s = rules.apply(s, "seat_a", "witch_buy", {"item_id": treasure["id"]})
+            self.assertIn(treasure["id"], [x["id"] for x in s["inventory"]])
+        # 金苹果:每20班一半机会出现,持有2班
+        apples = sum(rules._number(seed, "witch_apple", 20) % 2 == 0 for seed in range(200))
+        self.assertTrue(60 < apples < 140)
+
     def test_neighbors_are_whoever_came_before_third_place(self):
         s = rules.new_game(["seat_a"], 7)
         for _ in range(30):

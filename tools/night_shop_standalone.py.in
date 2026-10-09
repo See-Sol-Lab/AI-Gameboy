@@ -58,6 +58,8 @@ observe / status：看店况、库存、当前客人和 legal_actions（可做�
   run_shifts {"focus":"scavenge","count":6,"stop_on":"new"}
   work_shift {"focus":"repair","item_id":"从库存选"}
   work_shift {"focus":"sell","item_id":"从库存选","asking_price":5}
+开了第四个地点后，魔女莉莉丝每天待在某个已开地点；去那里淘货撞见她，就能在下一班前
+  witch_sell {"item_ids":["库存id","库存id"]}（2折收货，每次最多2件）或 witch_buy {"item_id":"摊上id"}。
 遇到 pending_event，先 choose_event，event_id 和 choice 从观察中选。
 close_for_now：歇业；reopen_shop：接着开店。随时退出，动作已经自动保存。
 collection / encounters / customers：只查已经发现的图鉴、见闻、顾客簿。
