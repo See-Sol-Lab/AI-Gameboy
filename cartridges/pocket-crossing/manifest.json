@@ -1,7 +1,7 @@
 {
   "id": "pocket-crossing",
   "name": "口袋穿越",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "author": "See Sol Lab",
   "license": "PolyForm-Noncommercial-1.0.0",
   "players": { "min": 2, "max": 2 },

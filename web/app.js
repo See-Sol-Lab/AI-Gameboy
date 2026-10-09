@@ -414,9 +414,9 @@ function renderGame(v, mine, tokenLost) {
     ${tokenLost ? '<p class="center warn-note">人类席令牌无效或已丢失,本局只能旁观。</p>' : ""}
     ${infoPanel()}
     <div class="table-top ${solo ? "solo-table" : ""}">
-      ${solo ? "" : sideSeat(v, v.seats[0])}
+      ${solo ? "" : sideSeat(v, v.seats[0], ui)}
       <div class="felt">${ui.felt(v, mine)}</div>
-      ${solo ? "" : sideSeat(v, v.seats[1])}
+      ${solo ? "" : sideSeat(v, v.seats[1], ui)}
     </div>
     ${mine ? ui.myPanel(v, mine) : ""}
     ${solo ? "" : `<div class="table-talk">${talk}</div>`}
@@ -426,7 +426,7 @@ function renderGame(v, mine, tokenLost) {
   afterRender();
 }
 
-function sideSeat(v, s) {
+function sideSeat(v, s, ui) {
   const turn = (v.waiting_for || []).includes(s.seat_id);
   const sub = v.public_state.submitted && v.public_state.submitted[s.seat_id];
   const isMe = S.human && S.human.seatId === s.seat_id;
@@ -435,6 +435,7 @@ function sideSeat(v, s) {
     <div class="who">${esc(s.display_name)}${isMe ? " (你)" : ""}</div>
     <div class="surf">${esc(s.surface)}</div>
     <div class="stat">${sub ? "已暗投 ▮" : turn ? "考虑中…" : ""}</div>
+    ${ui && ui.seatExtra ? ui.seatExtra(v, s.seat_id) : ""}
   </div>`;
 }
 
@@ -454,6 +455,26 @@ function eventLine(e) {
   if (e.kind === "finish") return `<div class="sys-line">· 结算 ·</div>`;
   if (e.kind === "human_end") return `<div class="sys-line">· 人类收起了这局 ·</div>`;
   return "";
+}
+
+/* 穿越/跑团:随机事件的难度与目标值(与卡带规则 EVENT_TARGETS 一致) */
+const PC_EVENT_NAMES = { easy: "容易", normal: "普通", hard: "困难" };
+const PC_EVENT_TARGETS = { easy: 24, normal: 28, hard: 31 };
+
+/* 穿越/跑团:每一步告诉旁边的人类现在在等什么、要不要按按钮 */
+function pcGuide(v) {
+  const ps = v.public_state;
+  const names = (v.waiting_for || []).filter((x) => x !== "narrator").map((x) => nameOf(v, x));
+  const NARR = { gen_world: "写世界", gen_episode: "写这一段故事", gen_identities: "写身份卡",
+                 gen_milestones: "拆里程碑", gen_scene: "写下一幕", render_ending: "写结局" };
+  let tip;
+  if (ps.narration_pending) tip = `请按「召荷官」——荷官要${NARR[ps.narration_pending] || "动笔"}了`;
+  else if (ps.stage === "landing") tip = `等两位玩家商量选降落点${names.length ? "(还在等 " + names.join("、") + ")" : ""}`;
+  else if (ps.stage === "identity") tip = `等两位玩家暗选身份${names.length ? "(还在等 " + names.join("、") + ")" : ""}`;
+  else if (ps.stage === "goal") tip = `等两位玩家选各自的目标${names.length ? "(还在等 " + names.join("、") + ")" : ""}`;
+  else if (ps.stage === "scene") tip = names.length ? `等 ${names.join("、")} 暗投这一幕的行动` : "两人都已行动,马上结算";
+  else if (ps.stage === "finished") tip = "本局结束,按 B 回卡带架可再看纪念卡";
+  return tip ? `<div class="warn-note center">👉 现在:${esc(tip)}</div>` : "";
 }
 
 /* ---------------- CART_UI:卡带渲染映射 ----------------
@@ -867,6 +888,14 @@ const CART_UI = {
   },
 
   "pocket-crossing": {
+    seatExtra(v, sid) {
+      const it = (v.public_state.identities || {})[sid];
+      if (!it) return "";
+      const at = it.attrs;
+      return `<div class="surf">${esc(it.name)}</div>
+        <div class="surf">擅${esc(it.specialty)}</div>
+        ${at ? `<div class="surf">智${at.wisdom} 体${at.stamina} 运${at.luck}${at.luck >= 5 ? " 🍀" : ""}</div>` : ""}`;
+    },
     felt(v) {
       const ps = v.public_state;
       const t = ps.tracks || {};
@@ -883,7 +912,7 @@ const CART_UI = {
             <button class="soft focusable" data-act="pc-narrate">召荷官(可能要等半分钟)</button>
           </div></div>` : "";
       if (!ps.world) {
-        return `<div class="sit-name center">世界正在成形…</div>
+        return `${pcGuide(v)}<div class="sit-name center">世界正在成形…</div>
           <div class="dim center">种子:</div>
           <div class="center">${axesChips}</div>${narr}`;
       }
@@ -894,7 +923,8 @@ const CART_UI = {
       const idents = ps.identities || {};
       const identLine = (sid) => idents[sid]
         ? `${esc(nameOf(v, sid))}=${esc(idents[sid].name)}(擅${esc(idents[sid].specialty)})`
-        : `${esc(nameOf(v, sid))} 暗选身份中…`;
+        : ps.stage === "identity" ? `${esc(nameOf(v, sid))} 暗选身份中…`
+        : `${esc(nameOf(v, sid))} 等荷官写身份卡`;
       const sc = ps.scene;
       const sceneHtml = sc ? `
         <div class="situation">
@@ -903,6 +933,8 @@ const CART_UI = {
           <div class="sit-text">⚡ ${esc(sc.crisis)}</div>
           <div class="sit-tags">${(sc.objects || []).map((o) =>
             `<span class="chip" title="${esc(o.hint)}">${esc(o.name)}</span>`).join("")}</div>
+          ${sc.event ? `<div class="sit-text">🎲 随机事件【${esc(PC_EVENT_NAMES[sc.event.difficulty] || sc.event.difficulty)}·目标${PC_EVENT_TARGETS[sc.event.difficulty] || "?"}】${esc(sc.event.text)}
+            <span class="dim">—— 两人三维加骰子,本幕结算时自动判定:过了危险-2,没过危险+2</span></div>` : ""}
         </div>` : `<div class="sit-text center">${esc(ps.world.premise)}</div>`;
       const hooks = (ps.hooks || []).length
         ? `<div class="dim center">悬事:${ps.hooks.map(esc).join(" · ")}</div>` : "";
@@ -916,14 +948,16 @@ const CART_UI = {
           <div class="sit-text">${ps.ending.text ? esc(ps.ending.text) : "(结局成文中……)"}</div></div>` : "";
       return `
         ${narr}
+        ${pcGuide(v)}
         <div class="sit-name center">《${esc(ps.world.world_name)}》</div>
-        <div class="sit-text center">🎯 ${esc(ps.world.public_goal)}</div>
-        <div class="dim">进度 ${t.progress}/10</div>${bar(t.progress, 10, "ok")}
+        ${ps.world.public_goal ? `<div class="sit-text center">🎯 ${esc(ps.world.public_goal)}</div>` : ""}
+        <div class="dim">进度 ${t.progress}/10${ps.main_goal_locked ? " · 🔒 主线已锁定,进度不再回退" : ""}</div>${bar(t.progress, 10, "ok")}
         <div class="dim">危险 ${t.danger}/10</div>${bar(t.danger, 10, "bad")}
         <div class="dim">时钟 ${t.clock}/8 · 默契 ${"★".repeat(t.synergy || 0) || "—"} ·
           ${esc(nameOf(v, a.seat_id))} ${hearts(t.vitality?.[a.seat_id] ?? 3)} /
           ${esc(nameOf(v, b.seat_id))} ${hearts(t.vitality?.[b.seat_id] ?? 3)}</div>
         <div class="dim center">${identLine(a.seat_id)} · ${identLine(b.seat_id)}</div>
+        ${ps.events && ps.events.done ? `<div class="dim center">随机事件 ${ps.events.done} 次 · 化解 ${ps.events.won} 次</div>` : ""}
         ${sceneHtml}${hooks}${endProposed}${lastLog}${endingHtml}`;
     },
     myPanel(v, mine) {

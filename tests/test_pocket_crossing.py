@@ -67,7 +67,7 @@ FIX_IDENTITIES = [
      "specialty": "explore",
      "gift": {"kind": "explore_crit_item", "text": "探索8+多捡一件"},
      "flaw": {"kind": "confront_minus_danger5", "text": "危险5+对抗-1"},
-     "secret_drive": {"kind": "shared_items>=3", "text": "攒满共享行囊"},
+     "secret_drive": {"kind": "events_won>=2", "text": "赢下两次随机事件"},
      "starting_item": {"id": "lamp", "name": "检索灯", "use": ["explore"]}},
     {"id": "nightwatch", "name": "守夜人", "origin": "守着一条街。",
      "specialty": "support",
@@ -564,7 +564,8 @@ class TestHiddenAndEndings(unittest.TestCase):
         s = rules.apply(s, "seat_b", "commit",
                         {"intent": "support", "action": "替她照亮支路"})
         self.assertEqual(s["stage"], "endinggen")
-        self.assertEqual(s["ending"]["kind"], "HE")
+        # v0.6:危险满格不论主线锁没锁都是 BE
+        self.assertEqual(s["ending"]["kind"], "BE")
 
     def test_target_object_creates_response_debt_and_fact(self):
         """点名在场对象且没骰砸→挂回应债;荷官清偿→入既成事实(NPC响应协议)。"""
@@ -720,6 +721,8 @@ class TestHiddenAndEndings(unittest.TestCase):
         s["main_goal_locked"] = True
         s["goal_locked_at_scene"] = s["scene_index"]
         s["progress"] = 10
+        for seat in SEATS:
+            rules._active_goal(s, seat)["goal_locked"] = True
         s = rules.apply(s, "seat_a", "commit",
                         {"intent": "explore", "action": "再看一眼"})
         s = rules.apply(s, "seat_b", "commit",
@@ -752,10 +755,24 @@ class TestHiddenAndEndings(unittest.TestCase):
         s["main_goal_locked"] = True
         s["goal_locked_at_scene"] = s["scene_index"]
         s["progress"] = 10
+        for q in s["side_quests"]:
+            q["status"] = "resolved"
+        for seat in SEATS:
+            rules._active_goal(s, seat)["goal_locked"] = True
         s = rules.apply(s, "seat_a", "commit", {"intent": "end", "action": ""})
         s = rules.apply(s, "seat_b", "commit", {"intent": "end", "action": ""})
         self.assertEqual(s["ending"]["kind"], "HE")
         self.assertEqual(s["ending"]["reason"], "goal")
+
+    def test_mutual_end_locked_but_goals_unfinished_is_te(self):
+        """v0.6:进度锁定但有人目标没完成,停笔是 TE。"""
+        s = setup_playing(43)
+        s["main_goal_locked"] = True
+        s["goal_locked_at_scene"] = s["scene_index"]
+        s["progress"] = 10
+        s = rules.apply(s, "seat_a", "commit", {"intent": "end", "action": ""})
+        s = rules.apply(s, "seat_b", "commit", {"intent": "end", "action": ""})
+        self.assertEqual(s["ending"]["kind"], "TE")
 
     def test_one_end_proposal_not_final(self):
         s = setup_playing(5)
@@ -1129,3 +1146,89 @@ class TestThreeLayerWorld(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestV06AttrsEventsEndings(unittest.TestCase):
+    """v0.6:身份三维、随机事件、结局三档(进度满即锁、危险满即 BE)。"""
+
+    def _resolve_with(self, s, die, event=None):
+        if event:
+            s["current_scene"]["event"] = event
+        orig = rules._die
+        rules._die = lambda st: die
+        try:
+            s = rules.apply(s, "seat_a", "commit", {"intent": "explore", "action": "看"})
+            s = rules.apply(s, "seat_b", "commit", {"intent": "explore", "action": "看"})
+        finally:
+            rules._die = orig
+        return s
+
+    def test_attrs_rolled_on_identity_and_public(self):
+        s = setup_playing(11)
+        for seat in SEATS:
+            attrs = s["attrs"][seat]
+            self.assertEqual(set(attrs), {"wisdom", "stamina", "luck"})
+            self.assertTrue(all(1 <= v <= 6 for v in attrs.values()))
+        pub = rules.observe(s, "seat_a")["public_state"]
+        self.assertEqual(pub["identities"]["seat_b"]["attrs"], s["attrs"]["seat_b"])
+        self.assertEqual(s["attrs"], setup_playing(11)["attrs"])   # 同种子同三维
+
+    def test_event_won_lowers_danger_and_lucky_seat_rolls_twice(self):
+        s = setup_playing(12)
+        s["attrs"] = {"seat_a": {"wisdom": 6, "stamina": 6, "luck": 6},
+                      "seat_b": {"wisdom": 6, "stamina": 6, "luck": 2}}
+        s["danger"] = 5
+        s = self._resolve_with(s, 1, {"text": "后厨起了火", "difficulty": "hard"})
+        log = s["events"]["log"][-1]
+        self.assertTrue(log["won"])                  # 32 + 1+1 + 1 = 35 ≥ 31
+        self.assertEqual(log["total"], 32 + 3)
+        report = "\n".join(s["history"][-1]["report"])
+        self.assertIn("化解了(危险-2)", report)
+        self.assertIn("幸运加掷", report)
+
+    def test_event_lost_raises_danger(self):
+        s = setup_playing(13)
+        s["attrs"] = {x: {"wisdom": 1, "stamina": 1, "luck": 1} for x in SEATS}
+        s = self._resolve_with(s, 6, {"text": "暴雨灌进巷子", "difficulty": "normal"})
+        self.assertFalse(s["events"]["log"][-1]["won"])   # 6 + 12 = 18 < 28
+        self.assertIn("没能挡住(危险+2)", "\n".join(s["history"][-1]["report"]))
+
+    def test_event_quota_required_and_forbidden(self):
+        s = setup_playing(14)
+        s["scene_index"] = 2                     # 下一幕是第3幕,还一件没发生
+        self.assertEqual(rules._event_quota(s), "required")
+        s["events"]["done"] = 1
+        self.assertEqual(rules._event_quota(s), "optional")
+        s["scene_index"] = rules.MAX_SCENES - 1  # 只剩最后一幕,还差一件
+        self.assertEqual(rules._event_quota(s), "required")
+        s["events"]["done"] = rules.EVENT_MAX
+        self.assertEqual(rules._event_quota(s), "forbidden")
+
+    def test_progress_full_locks_and_laws_cannot_pull_it_back(self):
+        s = setup_playing(15)
+        s["progress"] = 9
+        s = self._resolve_with(s, 6)             # 探索成功 +1 → 10
+        self.assertTrue(s["main_goal_locked"])
+        self.assertEqual(s["progress"], 10)
+        s = feed(s)
+        s = rules.apply(s, "seat_a", "commit", {"intent": "support", "action": "搭把手"})
+        s = rules.apply(s, "seat_b", "commit", {"intent": "support", "action": "搭把手"})
+        self.assertEqual(s["progress"], 10)      # 支援类法则扣不动锁定的进度
+
+    def test_danger_full_is_be_even_when_locked(self):
+        s = setup_playing(16)
+        s["main_goal_locked"] = True
+        s["progress"] = 10
+        s["danger"] = 10
+        s = self._resolve_with(s, 3)
+        self.assertEqual(s["ending"]["kind"], "BE")
+
+    def test_new_secret_drives_are_judged(self):
+        s = setup_playing(17)
+        s["events"]["won"] = 2
+        s["crits"]["seat_a"] = 1
+        s["danger_peak"] = 6
+        for seat, kind in zip(SEATS, ("events_won>=2", "danger_peak<=6")):
+            rules._identity(s, s["identities"][seat])["secret_drive"]["kind"] = kind
+        rules._finish(s, "TE", "out_of_time")
+        self.assertTrue(all(d["achieved"] for d in s["ending"]["secret_drives"].values()))

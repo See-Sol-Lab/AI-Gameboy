@@ -1,4 +1,14 @@
-"""《口袋穿越》规则 v0.5(三层世界版)。
+"""《口袋穿越》规则 v0.6(三维与随机事件版)。
+
+v0.6 新增(莉莉丝定案,源自 10-09 菲博×Sol 联机局):
+- 结局三档:危险满10当场 BE;进度满10当场锁定(不再回退,法则扣不动),之后可继续推各自目标,
+  其余收场都是 TE;只有进度锁定+危险未满+两人都活着+双方目标都达成+支线了结才是 HE。
+- 身份三维:选身份时引擎掷出 智慧/体力/幸运 各1-6,不影响行动骰。
+- 随机事件:荷官在某幕写一件 event(只选难度 easy/normal/hard),两人各掷1骰,
+  幸运≥5者多掷1骰;两人三维之和+所有骰 ≥ 目标值(24/28/31)则危险-2,否则危险+2。
+  每局 2-5 次,引擎按幕数要求或禁止荷官写事件——给危险一条回落的路。
+- 私密目标菜单只留引擎算得出的判定(删掉游戏里无从达成的"共享行囊≥3件")。
+
 
 v0.5 新增·C期窗口B:世界三层拆分(world_background/global_canon/local_episode)。
 worldgen 只写大世界与三个降落点,玩家选定落点后由 gen_episode 生成本局那一段
@@ -144,13 +154,90 @@ FLAW_KINDS = {
     "confront_minus_danger5": "危险≥5时对抗-1", "six_feeds_danger": "骰出6时危险+1",
 }
 DRIVE_KINDS = {
-    "shared_items>=3": "结局时共享行囊≥3件",
+    "events_won>=2": "随机事件至少赢下2次",
+    "crit>=1": "本人至少掷出1次卓越成功",
+    "danger_peak<=6": "整局危险从未超过6",
     "partner_full_vitality": "结局时同伴生命满格",
     "clock<=6": "结局时时钟≤6",
     "hooks_resolved>=2": "全局了结悬事≥2件",
     "both_alive": "结局时两人都活着",
     "hidden_triggered": "任一暗线被触发",
 }
+
+
+ATTRS = {"wisdom": "智慧", "stamina": "体力", "luck": "幸运"}
+LUCKY = 5                                           # 幸运≥5:随机事件多掷1骰
+EVENT_TARGETS = {"easy": 24, "normal": 28, "hard": 31}
+EVENT_NAMES = {"easy": "容易", "normal": "普通", "hard": "困难"}
+EVENT_MIN, EVENT_MAX = 2, 5
+
+
+def _roll_attrs(seed, seat):
+    """身份三维:按种子与席位定死,与行动骰流互不干扰。"""
+    return {k: int(hashlib.sha256(f"{seed}:attr:{seat}:{k}".encode()).hexdigest(), 16) % 6 + 1
+            for k in ATTRS}
+
+
+def _event_quota(s):
+    """下一幕荷官必须写 / 不许写 / 可写随机事件。保证每局 2-5 次。"""
+    ev = s.get("events") or {"done": 0}
+    done, nxt = ev["done"], s["scene_index"] + 1
+    left = MAX_SCENES - nxt + 1                      # 含下一幕在内还剩几幕
+    if done >= EVENT_MAX:
+        return "forbidden"
+    if done < min(EVENT_MIN, nxt // 3) or EVENT_MIN - done >= left:
+        return "required"
+    return "optional"
+
+
+def _resolve_event(s, scene, slip, report):
+    ev = scene.get("event")
+    if not ev or not s.get("attrs") or not all(s["attrs"].get(x) for x in s["seats"]):
+        return
+    target = EVENT_TARGETS[ev["difficulty"]]
+    base = sum(sum(s["attrs"][x].values()) for x in s["seats"])
+    dice, parts = [], []
+    for x in s["seats"]:
+        n = 2 if s["attrs"][x]["luck"] >= LUCKY else 1
+        rolled = [_die(s) for _ in range(n)]
+        dice += rolled
+        name = _identity(s, s["identities"][x])["name"]
+        parts.append(f"{name}掷{'+'.join(map(str, rolled))}{'(幸运加掷)' if n == 2 else ''}")
+    total = base + sum(dice)
+    won = total >= target
+    book = s.setdefault("events", {"done": 0, "won": 0, "log": []})
+    book["done"] += 1
+    book["won"] += int(won)
+    book["log"].append({"scene": s["scene_index"], "text": ev["text"],
+                        "difficulty": ev["difficulty"], "target": target,
+                        "total": total, "won": won})
+    slip["danger_delta"] += -2 if won else 2
+    report.append(f"◆ 随机事件【{EVENT_NAMES[ev['difficulty']]}·目标{target}】{ev['text']}")
+    report.append(f"  三维合计{base} + {'、'.join(parts)} = {total} → "
+                  + ("化解了(危险-2)" if won else "没能挡住(危险+2)"))
+
+
+def _ending_kind(s):
+    """结局三档:BE=危险满或无人生还;HE=锁定+两人都在+危险未满+双方目标达成+支线了结;其余 TE。"""
+    alive = [x for x in s["seats"] if s["vitality"][x] > 0]
+    if not alive or s["danger"] >= 10:
+        return "BE"
+    goals = [_active_goal(s, x) for x in s["seats"]]
+    if (s.get("main_goal_locked") and len(alive) == 2
+            and all(g and g.get("goal_locked") for g in goals)
+            and not any(q["status"] == "open" for q in s.get("side_quests") or [])):
+        return "HE"
+    return "TE"
+
+
+def _finish_auto(s, reason):
+    kind = _ending_kind(s)
+    alive = [x for x in s["seats"] if s["vitality"][x] > 0]
+    if kind == "HE":
+        reason = "goal"
+    elif kind == "TE" and len(alive) < 2:
+        reason = "sacrifice"
+    _finish(s, kind, reason)
 
 
 class IllegalAction(Exception):
@@ -206,6 +293,9 @@ def new_game(seats, seed):
         "prophecy_i": 0,
         "pending_interactions": None,   # NPC响应协议:上一幕欠下的回应债
         "npc_book": {},                 # NPC台帐:登场记录与状态变化(治刷脸伪人)
+        "attrs": {seats[0]: None, seats[1]: None},   # 身份三维,选身份时掷出
+        "events": {"done": 0, "won": 0, "log": []},   # 随机事件账
+        "danger_peak": 0, "crits": {seats[0]: 0, seats[1]: 0},
         "ending": None, "rolls_used": 0, "end_proposed_by": None,
         "end_streaks": {seats[0]: 0, seats[1]: 0},   # 连续三幕提停笔=强制结算
         "narration_request": {"kind": "gen_world", "context": {
@@ -528,6 +618,7 @@ def _scene_context(s, last_report):
                    "vitality": dict(s["vitality"])},
         "main_goal_locked": s.get("main_goal_locked", False),
         "turns_remaining": max(0, MAX_SCENES - s["scene_index"]),
+        "event_quota": _event_quota(s),
         "identities": [
             {"name": _identity(s, s["identities"][x])["name"],
              "specialty": _identity(s, s["identities"][x])["specialty"]}
@@ -558,7 +649,8 @@ def observe(full_state, seat_id):
             idents_public[x] = {"name": it["name"], "origin": it["origin"],
                                 "specialty": INTENT_NAMES[it["specialty"]],
                                 "gift": it["gift"]["text"],
-                                "flaw": it["flaw"]["text"]}
+                                "flaw": it["flaw"]["text"],
+                                "attrs": deepcopy((s.get("attrs") or {}).get(x))}
         else:
             idents_public[x] = None
     req = s.get("narration_request")
@@ -575,6 +667,7 @@ def observe(full_state, seat_id):
         "scene_index": s["scene_index"],
         "scene": deepcopy(s["current_scene"]) if s["stage"] == "scene" else None,
         "identities": idents_public,
+        "events": deepcopy(s.get("events")),
         "inventory": deepcopy(s["inventory"]),
         "facts": list(s["facts"]),
         "hooks": list(s["hooks"]),
@@ -769,6 +862,7 @@ def _apply_identity(s, seat_id, params):
     if iid not in s["identity_offers"][seat_id]:
         raise IllegalAction(f"只能从你抽到的两张里选:{s['identity_offers'][seat_id]}")
     s["identities"][seat_id] = iid
+    s.setdefault("attrs", {})[seat_id] = _roll_attrs(s["seed"], seat_id)
     s["inventory"][seat_id].append(deepcopy(_identity(s, iid)["starting_item"]))
     if all(s["identities"].values()):
         names = [_identity(s, s["identities"][x])["name"] for x in s["seats"]]
@@ -937,12 +1031,7 @@ def _resolve(s):
     if pa["intent"] == "end" and pb["intent"] == "end":
         report.append("两人对视一眼,把故事合上了。")
         _log(s, scene, {a: pa, b: pb}, {}, report)
-        alive = [x for x in s["seats"] if s["vitality"][x] > 0]
-        if s.get("main_goal_locked"):
-            _finish(s, "HE" if len(alive) == 2 else "TE",
-                    "goal" if len(alive) == 2 else "sacrifice")
-        else:
-            _finish(s, "TE", "mutual_end")
+        _finish_auto(s, "mutual_end")
         return
     streaks = s.setdefault("end_streaks", {a: 0, b: 0})
     for seat, p in ((a, pa), (b, pb)):
@@ -1034,6 +1123,8 @@ def _resolve(s):
                 for hseat in heal:
                     slip["vitality_delta"][hseat] += 1
             if tier == "critical_success":
+                crits = s.setdefault("crits", {})
+                crits[seat] = crits.get(seat, 0) + 1
                 if it == "advance" and ident["gift"]["kind"] == "advance_crit_clock":
                     slip["clock_delta"] = 0
                     report.append("  抄了近路:这一幕没有花掉时钟")
@@ -1134,6 +1225,8 @@ def _resolve(s):
                 and _identity(s, s["identities"][seat])["gift"]["kind"] == "support_synergy":
             slip["synergy_delta"] += 1
 
+    _resolve_event(s, scene, slip, report)
+
     for law in s["world"]["laws"]:
         tk = law["trigger_kind"]
         if tk.startswith("intent:"):
@@ -1159,6 +1252,12 @@ def _resolve(s):
     s["danger"] = max(0, min(10, s["danger"] + slip["danger_delta"]))
     s["synergy"] = max(0, min(5, s["synergy"] + slip["synergy_delta"]))
     s["clock"] = min(8, s["clock"] + slip["clock_delta"])
+    s["danger_peak"] = max(s.get("danger_peak", 0), s["danger"])
+    if s["progress"] >= 10 and not s.get("main_goal_locked"):
+        # 进度满即锁定:主线成了,进度此后不再回退(余下回合推各自目标与支线)
+        s["main_goal_locked"] = True
+        s["goal_locked_at_scene"] = s["scene_index"]
+        report.append("◆ 进度满格——主线已锁定,进度不再回退。余下回合可继续推各自目标与支线。")
     for seat in (a, b):
         s["vitality"][seat] = max(0, min(3, s["vitality"][seat]
                                           + slip["vitality_delta"][seat]))
@@ -1234,37 +1333,24 @@ def _resolve(s):
 
     alive = [x for x in s["seats"] if s["vitality"][x] > 0]
     locked = s.get("main_goal_locked")
+    goals_done = all((_active_goal(s, x) or {}).get("goal_locked") for x in s["seats"])
     if len(alive) == 0:
         _finish(s, "BE", "all_down")
-    elif locked and not any(q["status"] == "open"
-                            for q in s.get("side_quests") or []):
-        # 余账清空:主线已锁且支线尽数了结/埋没——当场收卷,不再发空转幕
-        # 锁定后无事可做的余波幕只产出危险与谜语人。
-        _finish(s, "HE" if len(alive) == 2 else "TE",
-                "goal" if len(alive) == 2 else "sacrifice")
+    elif s["danger"] >= 10:
+        # 危险满格:不论主线锁没锁,当场 BE
+        _finish(s, "BE", "world_lost")
+    elif locked and goals_done and not any(q["status"] == "open"
+                                           for q in s.get("side_quests") or []):
+        # 余账清空:主线已锁、双方目标都成、支线尽数了结——当场收卷
+        _finish_auto(s, "goal")
     elif max(s.get("end_streaks", {}).values() or [0]) >= 3:
         # 三辞而别:一人连提三幕停笔,引擎替这段散伙收卷
-        if locked:
-            _finish(s, "HE" if len(alive) == 2 else "TE",
-                    "goal" if len(alive) == 2 else "sacrifice")
-        else:
-            _finish(s, "TE", "insist_end")
+        _finish_auto(s, "insist_end")
     elif s["scene_index"] >= MAX_SCENES:
         # 幕数走满,引擎强制收卷——不看任何人脸色
-        if locked:
-            _finish(s, "HE" if len(alive) == 2 else "TE",
-                    "goal" if len(alive) == 2 else "sacrifice")
-        else:
-            _finish(s, "TE", "out_of_time")
-    elif s["danger"] >= 10:
-        # 危险溢出:主线未成是世界失守;主线已成则是余波中被迫收场
-        if locked:
-            _finish(s, "HE" if len(alive) == 2 else "TE",
-                    "goal" if len(alive) == 2 else "sacrifice")
-        else:
-            _finish(s, "BE", "world_lost")
+        _finish_auto(s, "out_of_time")
     elif s["clock"] >= 8 and not locked:
-        _finish(s, "TE", "out_of_time")
+        _finish_auto(s, "out_of_time")
     else:
         s["stage"] = "scenegen"
         s["narration_request"] = {"kind": "gen_scene",
@@ -1316,8 +1402,14 @@ def _finish(s, kind, reason):
         ident = _identity(s, s["identities"][seat])
         d = ident["secret_drive"]
         ok = False
-        if d["kind"] == "shared_items>=3":
+        if d["kind"] == "shared_items>=3":   # 旧菜单,只为旧存档保留
             ok = len(s["inventory"]["shared"]) >= 3
+        elif d["kind"] == "events_won>=2":
+            ok = (s.get("events") or {}).get("won", 0) >= 2
+        elif d["kind"] == "crit>=1":
+            ok = (s.get("crits") or {}).get(seat, 0) >= 1
+        elif d["kind"] == "danger_peak<=6":
+            ok = s.get("danger_peak", s["danger"]) <= 6
         elif d["kind"] == "partner_full_vitality":
             other = [x for x in s["seats"] if x != seat][0]
             ok = s["vitality"][other] >= 3
@@ -1370,6 +1462,8 @@ def _finish(s, kind, reason):
             "facts": s["facts"][-10:],
             "main_goal_locked": s.get("main_goal_locked", False),
             "goal_locked_at_scene": s.get("goal_locked_at_scene"),
+            "events": deepcopy((s.get("events") or {}).get("log", [])),
+            "secret_drives": deepcopy(drives),
             "unresolved_hooks": list(s["hooks"]),
             # 支线对账单:解开的谜底可入文;未解开的谜底禁止入文
             "side_quests": [

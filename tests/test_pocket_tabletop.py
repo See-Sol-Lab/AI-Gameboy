@@ -53,5 +53,48 @@ class TestPocketTabletop(unittest.TestCase):
         self.assertIn(s["ending"]["kind"], ("HE", "BE", "TE"))
 
 
+def setup_scene(seed):
+    s = feed(rules.new_game(SEATS, seed))
+    for seat in SEATS:
+        s = rules.apply(s, seat, "choose_identity",
+                        {"identity_id": s["identity_offers"][seat][0]})
+    return feed(s)
+
+
+def resolve_with(s, die, event=None):
+    if event:
+        s["current_scene"]["event"] = event
+    orig = rules._die
+    rules._die = lambda st: die
+    try:
+        s = rules.apply(s, "seat_a", "commit", {"intent": "explore", "action": "看"})
+        s = rules.apply(s, "seat_b", "commit", {"intent": "explore", "action": "看"})
+    finally:
+        rules._die = orig
+    return s
+
+
+class TestTabletopV11(unittest.TestCase):
+    """v1.1:与口袋穿越 v0.6 同步的三维、随机事件与结局三档。"""
+
+    def test_attrs_and_event(self):
+        s = setup_scene(21)
+        self.assertTrue(all(1 <= v <= 6 for x in SEATS for v in s["attrs"][x].values()))
+        s["attrs"] = {x: {"wisdom": 6, "stamina": 6, "luck": 1} for x in SEATS}
+        s["danger"] = 4
+        s = resolve_with(s, 6, {"text": "城门塌了半边", "difficulty": "hard"})
+        self.assertTrue(s["events"]["log"][-1]["won"])     # 26 + 6 + 6 = 38 ≥ 31
+
+    def test_progress_full_locks_and_danger_full_is_be(self):
+        s = setup_scene(22)
+        s["progress"] = 9
+        s = resolve_with(s, 6)
+        self.assertTrue(s["main_goal_locked"])
+        s = feed(s)
+        s["danger"] = 10
+        s = resolve_with(s, 3)
+        self.assertEqual(s["ending"]["kind"], "BE")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -22,8 +22,10 @@ GIFT_KINDS = ["explore_crit_item", "support_synergy", "advance_crit_clock",
               "confront_no_law", "recover_heals_both", "ones_are_fours"]
 FLAW_KINDS = ["advance_minus", "explore_minus", "support_minus",
               "confront_minus", "confront_minus_danger5", "six_feeds_danger"]
-DRIVE_KINDS = ["shared_items>=3", "partner_full_vitality", "clock<=6",
-               "hooks_resolved>=2", "both_alive", "hidden_triggered"]
+# 私密目标只能挑引擎在结局时算得出的判定(删掉游戏里无从达成的"共享行囊")
+DRIVE_KINDS = ["events_won>=2", "crit>=1", "danger_peak<=6", "partner_full_vitality",
+               "clock<=6", "hooks_resolved>=2", "both_alive", "hidden_triggered"]
+EVENT_DIFFICULTIES = ["easy", "normal", "hard"]
 POWERS = ["无超凡", "低武", "中武", "高武", "神话级"]
 COST_KINDS = ["danger", "vitality", "progress", "clock", "flag"]
 
@@ -333,11 +335,21 @@ kind 只能是:answered(如实作答)/lied(按此人立场撒谎)/refused(拒答
 本幕若再把其中任何一位写进 objects,该条必须附 "change" 字段:一句他相对上次的
 状态变化(说了新话/做了新事/处境变了)。没有新变化就别让他出场——
 反复渲染同一个神秘姿势("他似乎知道些什么")是禁手,人物每次露面都要往前走一步。"""
+    quota = ctx.get("event_quota", "optional")
+    event_rule = {
+        "required": ("【随机事件(本幕必须写)】在 JSON 里加 \"event\":{\"text\":\"突发的一件事,一句,"
+                     "贴合本幕现场\",\"difficulty\":\"easy|normal|hard 之一\"}。你只写事件和难度,"
+                     "成败由引擎按两人三维加骰子裁决,你不得写结果。"),
+        "optional": ("【随机事件(可选)】现场若自然发生了突发事件,可加 \"event\":{\"text\":\"一句\","
+                     "\"difficulty\":\"easy|normal|hard\"};没有就别加。只写事件,不写结果。"),
+        "forbidden": "【随机事件】本局随机事件已经够数,本幕禁止写 event 字段。",
+    }[quota]
     thread = w.get("world_thread", w.get("public_goal", ""))
     thread_name = "世界背景线" if "world_thread" in w else "世界目标"
     return f"""为《{w['world_name']}》生成第 {ctx['scene_index']} 幕场景。
 {thread_name}:{thread}
 {goal_contract}{chron}{canon}{npc}{inter}{recur}
+{event_rule}
 世界法则:{'; '.join(w['laws'])}
 时钟含义:{w.get('clock_text') or "时钟走满,这段故事就到站"}
 当前账本:{json.dumps(ctx['tracks'], ensure_ascii=False)}
@@ -754,6 +766,20 @@ def _v_scene(d, ctx=None):
         for p in pend:
             _req(p["object_id"] in by_id,
                  f"{p['object_name']}的回应没交账——被正面交涉的对象不许装聋")
+    # 随机事件:引擎按配额要求/禁止,荷官只给事件与难度,成败归引擎
+    quota = (ctx or {}).get("event_quota", "optional")
+    ev = d.get("event")
+    if quota == "required":
+        _req(isinstance(ev, dict), "本幕必须写随机事件 event")
+    if quota == "forbidden":
+        _req(not ev, "本局随机事件已够数,本幕不许写 event")
+    if ev:
+        _req(isinstance(ev, dict) and isinstance(ev.get("text"), str)
+             and 4 <= len(ev["text"].strip()) <= 80, "event.text 须是一句话(4-80字)")
+        _req(ev.get("difficulty") in EVENT_DIFFICULTIES,
+             f"event.difficulty 须是 {EVENT_DIFFICULTIES} 之一")
+    elif "event" in d:
+        d.pop("event")
     # 刷脸铁律:登场过的对象再进 objects,必须带一句相对上次的状态变化
     seen = {n["name"] for n in (ctx or {}).get("recurring_npcs") or []}
     if seen:
