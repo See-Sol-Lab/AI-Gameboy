@@ -866,7 +866,8 @@ def _work_cost(s, params):
 
 
 BLOCK_TEXT = {
-    "inventory_full": "货架满了({n}/{cap}件),淘不回新东西。先卖出、回收(recycle)或扩建(upgrade)腾出位置再淘货。",
+    "inventory_full": "货架满了({n}/{cap}件),连淘停下。先卖出、回收(recycle)或扩建(upgrade)腾出位置;"
+                      "也可以单班出门(work_shift)去找魔女,把不要的货卖给她。",
     "repair_complete": "这件已经修到最好(完好度3/3),不用再修了。",
     "display_full": "陈列位满了或这件已在陈列,先撤下别的再陈列。",
     "shop_maximum": "店铺已经扩建到最高级。",
@@ -880,9 +881,10 @@ def _block_text(s, params, block):
                                     cost=_work_cost(s, params), coins=s["coins"])
 
 
-def _work_block(s, params):
+def _work_block(s, params, batch=False):
     focus = params["focus"]
-    if focus == "scavenge" and len(s["inventory"]) >= _capacity(s):
+    # 货架满时单班仍可出门(碰得到魔女,能把货卖给她腾位置),只是带不回东西;连淘则直接停下
+    if focus == "scavenge" and batch and len(s["inventory"]) >= _capacity(s):
         return "inventory_full"
     if focus in ("repair", "curate"):
         item = next(item for item in s["inventory"] if item["id"] == params["item_id"])
@@ -976,7 +978,7 @@ def _run_shifts(s, params):
                             '如 "new"、["new","rare"] 或 []')
     done, reason, start = 0, "count", len(s["history"])
     for _ in range(count):
-        block = _work_block(s, params)
+        block = _work_block(s, params, batch=True)
         upkeep = s["shop_level"] if s["shift_index"] == 1 else 0
         known_income = 2 + s["shop_level"] if params["focus"] == "tidy" else 0
         # 不把未知奖励当作已到手的钱;边界在真正花钱前生效。
@@ -1067,6 +1069,9 @@ def _do_focus(s, params, flags):
         location = params.get("location", s["location"])
         s["location"] = location
         s["coins"] -= LOCATIONS[location]["cost"]
+        if len(s["inventory"]) >= _capacity(s):
+            return (f"去{LOCATIONS[location]['name']}转了一圈,货架已满({len(s['inventory'])}/{_capacity(s)}件),"
+                    "空手而归。碰见魔女的话可以把不要的货卖给她腾位置。")
         found = _make_item(s, location, f"find{s['shift_count']}")
         flags["new"] = _collect(s, found)
         flags["rare"] = found["rarity"] in ("rare", "ancient", "heirloom")

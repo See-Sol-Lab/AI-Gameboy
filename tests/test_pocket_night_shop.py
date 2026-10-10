@@ -270,9 +270,11 @@ class TestNightShop(unittest.TestCase):
         before = deepcopy(s)
         with self.assertRaisesRegex(rules.IllegalAction, "货架满了"):
             rules.apply(s, "seat_a", "run_shifts", {"focus": "scavenge", "count": 2})
-        with self.assertRaisesRegex(rules.IllegalAction, "货架满了"):
-            work(s, "scavenge")
         self.assertEqual(s, before)
+        # 单班仍可出门:扣淘货费、带不回东西,但能碰见魔女
+        after = work(deepcopy(s), "scavenge")
+        self.assertEqual(len(after["inventory"]), len(s["inventory"]))
+        self.assertIn("空手而归", after["history"][-1]["text"])
 
     def test_start_funds_rolled_once_on_human_command(self):
         s = _raw_new_game(SEATS, 5)

@@ -206,6 +206,16 @@ class TestNightExpansion(unittest.TestCase):
         self.assertLess(r4 * 1.5, r5)
         self.assertLess(r5 * 1.2, r6)
 
+    def test_full_shelf_can_still_meet_witch_and_sell(self):
+        s = rules.new_game(["seat_a"], 21)
+        s.update(coins=100, shop_level=5, unlocked_locations=["lane", "station", "dock", "arcade"])
+        while len(s["inventory"]) < rules._capacity(s):
+            s["inventory"].append(dict(s["inventory"][0], id=f"x{len(s['inventory'])}"))
+        s = rules.apply(s, "seat_a", "work_shift", {"focus": "scavenge", "location": rules._witch_spot(s)})
+        self.assertIsNotNone(s["witch"]["visit"])
+        s = rules.apply(s, "seat_a", "witch_sell", {"item_ids": [s["inventory"][-1]["id"], s["inventory"][-2]["id"]]})
+        self.assertEqual(len(s["inventory"]), rules._capacity(s) - 2)
+
     def test_ancient_and_heirloom_repairs_add_reputation(self):
         s = rules.new_game(["seat_a"], 4)
         s["coins"] = 50
