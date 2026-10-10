@@ -159,7 +159,7 @@ class TestNightExpansion(unittest.TestCase):
                 self.assertFalse(set(loc["pool"]) & set(rules.SECRET_ITEMS))
         s = rules.new_game(["seat_a"], 9)
         s.update(coins=500, shop_level=5, reputation=9)
-        for c, name, story, *_ in rules.ITEMS[:66]:
+        for c, name, story, *_ in rules.ITEMS[:60]:
             s["collection"].setdefault(c, {"code": c, "name": name, "story": story,
                                            "kind": rules.ITEM_KINDS[c], "rarity": rules.ITEM_RARITY[c],
                                            "first_day": 1, "first_location": "lane", "count": 1,
@@ -192,6 +192,19 @@ class TestNightExpansion(unittest.TestCase):
             if got:
                 self.assertFalse(rules._apple_window(t))
         self.assertTrue(60 < gifts < 140)
+
+    def test_unseen_items_weighted_up_after_fifth_and_sixth_place(self):
+        def fresh_rate(opened):
+            s = rules.new_game(["seat_a"], 11)
+            s["unlocked_locations"] = list(rules.LOCATIONS)[:opened]
+            pool = rules.LOCATIONS["lane"]["pool"]
+            seen = pool[:-2]                       # 只剩两件没见过
+            s["collection"] = {c: {"count": 1} for c in seen}
+            hits = sum(rules._make_item(s, "lane", i)["code"] not in seen for i in range(3000))
+            return hits / 3000
+        r4, r5, r6 = fresh_rate(4), fresh_rate(5), fresh_rate(6)
+        self.assertLess(r4 * 1.5, r5)
+        self.assertLess(r5 * 1.2, r6)
 
     def test_ancient_and_heirloom_repairs_add_reputation(self):
         s = rules.new_game(["seat_a"], 4)

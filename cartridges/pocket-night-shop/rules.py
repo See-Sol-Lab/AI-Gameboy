@@ -258,7 +258,7 @@ for _key, _rep in {"lane": 0, "station": 0, "dock": 10, "arcade": 25,
 # 第七张隐藏地图:条件不公开,满足后才出现在地图里。
 # 上古里最后 3 件、遗世里最后 2 件从原地点挪到这里,让后期有盼头。
 SECRET = "lighthouse"
-SECRET_DAY, SECRET_DISCOVERIES, SECRET_REPUTATION = 180, 66, 166
+SECRET_DAY, SECRET_DISCOVERIES, SECRET_REPUTATION = 180, 60, 166
 SECRET_APPLE_DAYS, SECRET_APPLE_GIFT = 7, 50   # 开图后7天魔女必持金苹果,碰面一半机会相赠
 SECRET_ITEMS = ([c for c, *_ in ITEMS if ITEM_RARITY.get(c) == "ancient"][-3:]
                 + [c for c, *_ in ITEMS if ITEM_RARITY.get(c) == "heirloom"][-2:])
@@ -438,8 +438,12 @@ def _capacity(s):
 def _make_item(s, location, salt):
     pool = [code for code in LOCATIONS[location]["pool"]
             if RARITIES[ITEM_RARITY[code]][2] <= s["shop_level"]]
+    # 后期别被重复货淹没:开了第五张图后没见过的货权重×2,第六张图后×3
+    opened = len(s["unlocked_locations"])
+    fresh = 3 if opened >= 6 else 2 if opened >= 5 else 1
     weights = [RARITIES[ITEM_RARITY[code]][1] *
-               (max(1, s["shop_level"] - 2) if ITEM_RARITY[code] in ("ancient", "heirloom") else 1)
+               (max(1, s["shop_level"] - 2) if ITEM_RARITY[code] in ("ancient", "heirloom") else 1) *
+               (fresh if code not in s["collection"] else 1)
                for code in pool]
     roll = _number(s["seed"], salt, s["item_counter"]) % sum(weights)
     for code, weight in zip(pool, weights):
