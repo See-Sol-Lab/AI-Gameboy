@@ -110,6 +110,9 @@ class TestNightShop(unittest.TestCase):
     def test_location_pools_and_undiscovered_counts(self):
         s = rules.new_game(SEATS, 4)
         for key, loc in rules.LOCATIONS.items():
+            if key == rules.SECRET:
+                self.assertNotIn(key, [r["id"] for r in rules.observe(s, "seat_a")["public_state"]["locations"]])
+                continue
             observed = next(row for row in rules.observe(s, "seat_a")["public_state"]["locations"]
                             if row["id"] == key)
             self.assertEqual(observed["undiscovered"],

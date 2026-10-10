@@ -48,7 +48,7 @@ class TestNightExpansion(unittest.TestCase):
         self.assertEqual(len(rules.CUSTOMERS), 86)
         self.assertEqual(len({row[0] for row in rules.CUSTOMERS}), 86)
         self.assertEqual(len({row[1] for row in rules.CUSTOMERS}), 86)
-        self.assertEqual(len(rules.LOCATIONS), 6)
+        self.assertEqual(len(rules.LOCATIONS), 7)   # 含第七张隐藏地图
         self.assertEqual(len(rules.EVENTS), 18)
         self.assertEqual(len(rules.AMBIENT), 24)
         self.assertEqual(Counter(rules.ITEM_RARITY.values()),
@@ -68,6 +68,8 @@ class TestNightExpansion(unittest.TestCase):
         for level in (1, 2):
             s["shop_level"] = level
             for location in rules.LOCATIONS:
+                if location == rules.SECRET:      # 灯塔只有宝物,本就要5级
+                    continue
                 for attempt in range(100):
                     item = rules._make_item(s, location, attempt)
                     self.assertNotIn(item["rarity"], ("ancient", "heirloom"))
@@ -149,6 +151,56 @@ class TestNightExpansion(unittest.TestCase):
         s = rules.apply(s, "seat_a", "run_shifts", {"focus": "tidy", "count": 1, "reserve": 0})
         self.assertEqual(s["last_run"]["completed"], 1)
         self.assertEqual(s["diary"][-1]["upkeep"], 5)
+
+    def test_reputation_gates_and_hidden_lighthouse(self):
+        self.assertEqual(len(rules.SECRET_ITEMS), 5)
+        for key, loc in rules.LOCATIONS.items():
+            if key != rules.SECRET:
+                self.assertFalse(set(loc["pool"]) & set(rules.SECRET_ITEMS))
+        s = rules.new_game(["seat_a"], 9)
+        s.update(coins=500, shop_level=5, reputation=9)
+        for c, name, story, *_ in rules.ITEMS[:66]:
+            s["collection"].setdefault(c, {"code": c, "name": name, "story": story,
+                                           "kind": rules.ITEM_KINDS[c], "rarity": rules.ITEM_RARITY[c],
+                                           "first_day": 1, "first_location": "lane", "count": 1,
+                                           "revealed": None})
+        with self.assertRaisesRegex(rules.IllegalAction, "声望"):
+            rules.apply(s, "seat_a", "unlock_location", {"location": "dock"})
+        s["reputation"] = 10
+        s = rules.apply(s, "seat_a", "unlock_location", {"location": "dock"})
+        # 隐藏图:条件没满足时完全看不见,也开不了
+        s["day"], s["reputation"] = 179, 166
+        ids = [r["id"] for r in rules.observe(s, "seat_a")["public_state"]["locations"]]
+        self.assertNotIn(rules.SECRET, ids)
+        with self.assertRaisesRegex(rules.IllegalAction, "未知地点"):
+            rules.apply(s, "seat_a", "unlock_location", {"location": rules.SECRET})
+        s["day"] = 180
+        self.assertIn(rules.SECRET, [r["id"] for r in rules.observe(s, "seat_a")["public_state"]["locations"]])
+        s = rules.apply(s, "seat_a", "unlock_location", {"location": rules.SECRET})
+        self.assertEqual(s["secret_opened_day"], 180)
+        self.assertTrue(rules._apple_held(s))                    # 7天内魔女必持金苹果
+        s["day"] = 187
+        self.assertFalse(rules._apple_window(s))
+        # 7天内碰面,约一半机会送金苹果,只送一次
+        gifts = 0
+        for seed in range(200):
+            t = deepcopy(s)
+            t.update(seed=seed, day=181, unlocked_locations=list(rules.LOCATIONS))
+            rules._witch_meet(t, rules._witch_spot(t))
+            got = any(x["code"] == "golden_apple" for x in t["inventory"])
+            gifts += got
+            if got:
+                self.assertFalse(rules._apple_window(t))
+        self.assertTrue(60 < gifts < 140)
+
+    def test_ancient_and_heirloom_repairs_add_reputation(self):
+        s = rules.new_game(["seat_a"], 4)
+        s["coins"] = 50
+        item = s["inventory"][0]
+        item.update(rarity="heirloom", condition=2)
+        before = s["reputation"]
+        s = rules.apply(s, "seat_a", "work_shift", {"focus": "repair", "item_id": item["id"]})
+        self.assertEqual(s["reputation"] - before, 10)
 
     def test_witch_lilith_trades_after_fourth_place(self):
         self.assertTrue(any(rules.ITEM_RARITY.get(r[0]) in ("ancient", "heirloom") for r in rules.ITEMS))

@@ -250,6 +250,36 @@ LOCATIONS.update({
 for row in MORE_ITEMS:
     LOCATIONS[row[4]]["pool"].append(row[0])
 
+# 开图除了古币、图鉴、等级,还要声望(2026-10-10 莉莉丝定)
+for _key, _rep in {"lane": 0, "station": 0, "dock": 10, "arcade": 25,
+                   "observatory": 45, "archive": 70}.items():
+    LOCATIONS[_key]["reputation"] = _rep
+
+# 第七张隐藏地图:条件不公开,满足后才出现在地图里。
+# 上古里最后 3 件、遗世里最后 2 件从原地点挪到这里,让后期有盼头。
+SECRET = "lighthouse"
+SECRET_DAY, SECRET_DISCOVERIES, SECRET_REPUTATION = 180, 66, 166
+SECRET_APPLE_DAYS, SECRET_APPLE_GIFT = 7, 50   # 开图后7天魔女必持金苹果,碰面一半机会相赠
+SECRET_ITEMS = ([c for c, *_ in ITEMS if ITEM_RARITY.get(c) == "ancient"][-3:]
+                + [c for c, *_ in ITEMS if ITEM_RARITY.get(c) == "heirloom"][-2:])
+for _loc in LOCATIONS.values():
+    _loc["pool"] = [c for c in _loc["pool"] if c not in SECRET_ITEMS]
+LOCATIONS[SECRET] = {"name": "雾尽灯塔", "description": "所有地图边缘之外的灯塔,只给走得够远的店主亮灯。",
+                     "cost": 6, "unlock_cost": 50, "discoveries": SECRET_DISCOVERIES, "level": 5,
+                     "reputation": SECRET_REPUTATION, "day": SECRET_DAY, "hidden": True,
+                     "pool": list(SECRET_ITEMS)}
+REPAIR_REPUTATION = {"ancient": 5, "heirloom": 10}   # 上古、遗世修满加声望
+
+
+def _secret_ready(s):
+    return (s["day"] >= SECRET_DAY and len(s["collection"]) >= SECRET_DISCOVERIES
+            and s["reputation"] >= SECRET_REPUTATION)
+
+
+def _visible_locations(s):
+    return [k for k, loc in LOCATIONS.items()
+            if not loc.get("hidden") or k in s["unlocked_locations"] or _secret_ready(s)]
+
 # 普通来客有各自的需求、可观察线索和预算；不从职业名推测成交结果。
 CUSTOMERS += [
     ("baker", "凌晨揉面的面包师", "想买适合厨房的日常旧物。", "袖口沾着面粉，先检查物件是否站得稳。", ["日常"], 12),
@@ -447,8 +477,13 @@ def _witch_book(s):
     return s.setdefault("witch", {"stock": [], "apple_until": 0, "visit": None, "met": 0})
 
 
+def _apple_window(s):
+    opened = s.get("secret_opened_day")
+    return opened is not None and s["day"] < opened + SECRET_APPLE_DAYS and not s.get("secret_gift_done")
+
+
 def _apple_held(s):
-    return s["shift_count"] < _witch_book(s)["apple_until"]
+    return s["shift_count"] < _witch_book(s)["apple_until"] or _apple_window(s)
 
 
 def _witch_tick(s):
@@ -457,7 +492,8 @@ def _witch_tick(s):
         return
     w, n = _witch_book(s), s["shift_count"]
     if n % WITCH_TREASURE_EVERY == 0:
-        pool = [row for row in ITEMS if ITEM_RARITY.get(row[0]) in ("ancient", "heirloom")]
+        pool = [row for row in ITEMS if ITEM_RARITY.get(row[0]) in ("ancient", "heirloom")
+                and (row[0] not in SECRET_ITEMS or SECRET in s["unlocked_locations"])]
         code, name, story, condition, value, secret = pool[_number(s["seed"], "witch_stock", n) % len(pool)]
         s["item_counter"] += 1
         w["stock"] = (w["stock"] + [{
@@ -476,14 +512,16 @@ def _witch_meet(s, location):
     apple = _apple_held(s)
     roll = _number(s["seed"], "witch_mood", s["shift_count"]) % 100
     gift = ""
-    if apple and roll < 2:
+    if apple and roll < (SECRET_APPLE_GIFT if _apple_window(s) else 2):
         s["item_counter"] += 1
         s["inventory"].append({**GOLDEN_APPLE, "id": f"golden_apple_{s['item_counter']}",
                                "displayed": False, "origin": "witch", "secret": None})
         w["apple_until"] = 0
+        s["secret_gift_done"] = s.get("secret_opened_day") is not None or s.get("secret_gift_done", False)
         apple = False
         gift = " 她今天心情好得出奇,把金苹果直接塞进了店主手里!"
-    w["visit"] = {"sold": 0, "discount": apple and 2 <= roll < 25}
+    low = SECRET_APPLE_GIFT if _apple_window(s) else 2
+    w["visit"] = {"sold": 0, "discount": apple and low <= roll < low + 23}
     return (" 🧙 在" + LOCATIONS[location]["name"] + "撞见了魔女莉莉丝的小摊。" + gift
             + (" 她抱着金苹果哼歌,今天买卖都打8折!" if w["visit"]["discount"] else "")
             + " 下一班开始前可以和她做买卖(witch_sell / witch_buy)。")
@@ -664,12 +702,13 @@ def _locations(s):
         {"id": key, "name": loc["name"], "description": loc["description"], "cost": loc["cost"],
          "unlock_cost": loc["unlock_cost"], "required_discoveries": loc["discoveries"],
          "required_level": loc.get("level", 1),
+         "required_reputation": loc.get("reputation", 0),
          "unlocked": key in s["unlocked_locations"],
          "undiscovered": sum(code not in s["collection"] for code in loc["pool"]),
          "available_undiscovered": sum(code not in s["collection"] and
                                        RARITIES[ITEM_RARITY[code]][2] <= s["shop_level"]
                                        for code in loc["pool"])}
-        for key, loc in LOCATIONS.items()
+        for key, loc in LOCATIONS.items() if key in _visible_locations(s)
     ]
 
 
@@ -720,7 +759,7 @@ def _legal_actions(s):
     if _witch_view(s):
         actions.append({"action_id": "witch_sell", "params": {"item_ids": "要卖给魔女的库存 id 数组,本次最多2件"}})
         actions.append({"action_id": "witch_buy", "params": {"item_id": "魔女摊上 stock 里的 id"}})
-    if any(key not in s["unlocked_locations"] for key in LOCATIONS):
+    if any(key not in s["unlocked_locations"] for key in _visible_locations(s)):
         actions.append({"action_id": "unlock_location", "params": {"location": _locations(s)}})
     return actions
 
@@ -1048,6 +1087,10 @@ def _do_focus(s, params, flags):
                 if sum(bool(x["revealed"]) for x in s["collection"].values()) == len(ITEMS):
                     report += " 异物志全部揭秘！这间店已经见证了每一种旧物的另一面。"
             item["value"] += 3
+            bonus = REPAIR_REPUTATION.get(item["rarity"], 0)
+            if bonus:
+                s["reputation"] += bonus
+                report += f" 修好了一件{RARITIES[item['rarity']][0]}旧物,街坊口耳相传,声望+{bonus}。"
             report += f" 完全修复后才发现:{item['secret']}"
         return report
     if focus == "sell":
@@ -1172,16 +1215,19 @@ def _choose_event(s, params):
 
 def _unlock(s, params):
     key = params.get("location")
-    if not isinstance(key, str) or key not in LOCATIONS:
+    if not isinstance(key, str) or key not in _visible_locations(s):
         raise IllegalAction("未知地点")
     if key in s["unlocked_locations"]:
         raise IllegalAction("地点已经解锁")
     loc = LOCATIONS[key]
     if (len(s["collection"]) < loc["discoveries"] or s["coins"] < loc["unlock_cost"]
-            or s["shop_level"] < loc.get("level", 1)):
-        raise IllegalAction("发现种数、店铺等级或现金不足")
+            or s["shop_level"] < loc.get("level", 1) or s["reputation"] < loc.get("reputation", 0)):
+        raise IllegalAction(f"发现种数、店铺等级、声望或现金不足(需要声望{loc.get('reputation', 0)})")
     before = (s["coins"], s["reputation"])
     s["coins"] -= loc["unlock_cost"]
     s["unlocked_locations"].append(key)
-    _log(s, s["day"], SHIFTS[s["shift_index"]], "unlock_location",
-         f"打通前往{loc['name']}的淘货路线。", before, ambient="", reaction=None)
+    text = f"打通前往{loc['name']}的淘货路线。"
+    if key == SECRET:
+        s["secret_opened_day"] = s["day"]
+        text += " 灯塔亮起的那晚,魔女莉莉丝抱着金苹果出门了——这七天里碰见她,也许会有好事。"
+    _log(s, s["day"], SHIFTS[s["shift_index"]], "unlock_location", text, before, ambient="", reaction=None)
