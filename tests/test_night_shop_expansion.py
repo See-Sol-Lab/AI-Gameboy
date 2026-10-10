@@ -58,8 +58,11 @@ class TestNightExpansion(unittest.TestCase):
         self.assertEqual(set(rules.ITEM_RARITY), codes)
         self.assertEqual({code for loc in rules.LOCATIONS.values() for code in loc["pool"]}, codes)
         linked = {row[1] for row in rules.SPECIAL_CUSTOMERS.values()}
-        self.assertEqual(linked, {code for code, rarity in rules.ITEM_RARITY.items()
-                                 if rarity in ("ancient", "heirloom")})
+        self.assertTrue({code for code, rarity in rules.ITEM_RARITY.items()
+                         if rarity in ("ancient", "heirloom")} <= linked)
+        self.assertEqual(len(rules.SPECIAL_CUSTOMERS), 24)
+        normal = [c[5] for c in rules.CUSTOMERS if c[0] not in rules.SPECIAL_CUSTOMERS]
+        self.assertEqual((len(normal), min(normal), max(normal)), (62, 10, 28))
         for customer in rules.CUSTOMERS:
             self.assertTrue(set(customer[4]) <= set(rules.ITEM_KINDS.values()))
 
@@ -109,7 +112,7 @@ class TestNightExpansion(unittest.TestCase):
         while s["customer"] is not None:
             self.assertNotIn(s["customer"]["id"], rules.SPECIAL_CUSTOMERS)
             rules._spawn_customer(s)
-        self.assertEqual(s["customer_count"], 72 * 8)
+        self.assertEqual(s["customer_count"], 62 * 8)
         s["shop_level"], s["coins"] = 2, 100
         s = rules.apply(s, "seat_a", "work_shift", {"focus": "upgrade"})
         self.assertEqual(s["shop_level"], 3)
@@ -242,6 +245,55 @@ class TestNightExpansion(unittest.TestCase):
         s["reputation"] = 39
         with self.assertRaisesRegex(rules.IllegalAction, "声望不够"):
             rules.apply(s, "seat_a", "buy_slot", {})
+
+    def test_repair_steps_value_and_reveal_rewards_by_rarity(self):
+        for rarity, steps, gain, reward in (("common", 1, 1, 2), ("uncommon", 2, 2, 3), ("rare", 3, 3, 5),
+                                            ("ancient", 3, 5, 10), ("heirloom", 3, 7, 25)):
+            with self.subTest(rarity=rarity):
+                s = rules.new_game(["seat_a"], 4)
+                s["coins"] = 50
+                code = next(c for c, *_ in rules.ITEMS if rules.ITEM_RARITY[c] == rarity)
+                item = rules._make_item(s, "lane", 0)
+                row = next(r for r in rules.ITEMS if r[0] == code)
+                item.update(code=code, rarity=rarity, value=row[4], name=row[1], _secret=row[5],
+                            condition=rules._start_condition(rarity))
+                s["inventory"].append(item)
+                s["collection"].setdefault(code, {"code": code, "revealed": None, "count": 1, "rarity": rarity})
+                coins, value = s["coins"], item["value"]
+                for _ in range(steps):
+                    s = rules.apply(s, "seat_a", "work_shift", {"focus": "repair", "item_id": item["id"]})
+                    while s["pending_event"]:
+                        s = rules.apply(s, "seat_a", "choose_event", {"event_id": s["pending_event"]["id"], "choice": next(
+                            k for k, o in rules.EVENTS[s["pending_event"]["kind"]]["choices"].items() if o["cost"] == 0)})
+                done = next(x for x in s["inventory"] if x["id"] == item["id"])
+                self.assertEqual(done["condition"], 3)
+                self.assertEqual(done["value"] - value, gain)
+                self.assertIn(f"获得{reward}枚古币", s["history"][-1]["text"] + s["history"][-2]["text"]
+                              if len(s["history"]) > 1 else s["history"][-1]["text"])
+
+    def test_every_eighth_reveal_pays_twenty(self):
+        s = rules.new_game(["seat_a"], 4)
+        s["coins"] = 50
+        others = [c for c, *_ in rules.ITEMS][10:17]
+        for c in others:                                    # 已揭开7种
+            s["collection"][c] = {"code": c, "revealed": "x", "count": 1}
+        item = next(x for x in s["inventory"] if x["condition"] < 3)
+        item["condition"] = 2
+        before = s["coins"]
+        s = rules.apply(s, "seat_a", "work_shift", {"focus": "repair", "item_id": item["id"]})
+        text = " ".join(h["text"] for h in s["history"][-2:])
+        self.assertIn("每揭开8种秘密", text)
+        self.assertGreaterEqual(s["coins"] - before, 20)
+
+    def test_witch_buys_ancient_and_heirloom_at_eighty_percent(self):
+        s = rules.new_game(["seat_a"], 21)
+        s.update(coins=100, shop_level=5, unlocked_locations=["lane", "station", "dock", "arcade"])
+        s = rules.apply(s, "seat_a", "work_shift", {"focus": "scavenge", "location": rules._witch_spot(s)})
+        item = dict(s["inventory"][0], id="old_seal", rarity="ancient", value=40)
+        s["inventory"].append(item)
+        if not s["witch"]["visit"]["discount"]:
+            self.assertEqual(rules._witch_price(s, item, True), 32)
+            self.assertEqual(rules._witch_price(s, dict(item, rarity="common", value=10), True), 2)
 
     def test_ancient_and_heirloom_repairs_add_reputation(self):
         s = rules.new_game(["seat_a"], 4)

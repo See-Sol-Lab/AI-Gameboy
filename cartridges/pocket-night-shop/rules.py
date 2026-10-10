@@ -269,7 +269,15 @@ LOCATIONS[SECRET] = {"name": "雾尽灯塔", "description": "所有地图边缘�
                      "reputation": SECRET_REPUTATION, "day": SECRET_DAY, "hidden": True,
                      "pool": list(SECRET_ITEMS)}
 REPAIR_REPUTATION = {"ancient": 5, "heirloom": 10}   # 上古、遗世修满加声望
-SLOT_REPUTATION = 40   # 灯塔开通(全图)后,声望可换货架格子:40 声望一格
+SLOT_REPUTATION = 40
+REPAIR_STEPS = {"common": 1, "uncommon": 2, "rare": 3, "ancient": 3, "heirloom": 3}   # 修满要几次
+REPAIR_EXTRA = {"ancient": 2, "heirloom": 4}       # 每次+1之外,修满时再涨:上古共+5、遗世共+7
+REVEAL_COINS = {"common": 2, "uncommon": 3, "rare": 5, "ancient": 10, "heirloom": 25}
+REVEAL_MILESTONE, REVEAL_MILESTONE_COINS = 8, 20  # 每揭开8种秘密,街坊凑20枚古币谢礼
+
+
+def _start_condition(rarity):
+    return 3 - REPAIR_STEPS[rarity]   # 灯塔开通(全图)后,声望可换货架格子:40 声望一格
 
 
 def _secret_ready(s):
@@ -366,6 +374,15 @@ SPECIAL_CUSTOMERS = {
     "orchardheir": ("最后一座果园的继承人", "lastorchard", "他空着的掌心有新果皮的气味。"),
     "crownrenouncer": ("想过普通夜晚的退位者", "emptycrown", "她只带一只布袋，没有随从。"),
 }
+# 2026-10-10:再让十位老面孔各自点名一件奇珍
+for _cid, _code in {"travelphotographer": "camera", "sailor": "tinwhale", "clockcollector": "shadowclock",
+                    "courier": "ticketpunch", "nightguard": "mothlantern", "bellringer": "echohorn",
+                    "costumier": "memoryribbon", "locksmith": "doorknocker", "nurse": "dreampillow",
+                    "astronomer": "starlace"}.items():
+    _row = next(c for c in CUSTOMERS if c[0] == _cid)
+    CUSTOMERS.remove(_row)
+    SPECIAL_CUSTOMERS[_cid] = (_row[1], _code, _row[3])
+CUSTOMERS = [c[:5] + (c[5] + 3,) for c in CUSTOMERS]   # 普通客人预算 10-28
 for cid, (name, code, clue) in SPECIAL_CUSTOMERS.items():
     template = next(row for row in ITEMS if row[0] == code)
     CUSTOMERS.append((cid, name, f"专程寻找「{template[1]}」，其他旧物不能替代。",
@@ -452,6 +469,7 @@ def _make_item(s, location, salt):
             break
         roll -= weight
     _, name, story, condition, value, secret = next(row for row in ITEMS if row[0] == code)
+    condition = _start_condition(ITEM_RARITY[code])
     s["item_counter"] += 1
     return {"id": f"{code}_{s['item_counter']}", "code": code, "name": name,
             "story": story, "condition": condition, "value": value,
@@ -503,8 +521,9 @@ def _witch_tick(s):
         s["item_counter"] += 1
         w["stock"] = (w["stock"] + [{
             "id": f"{code}_{s['item_counter']}", "code": code, "name": name, "story": story,
-            "condition": condition, "value": value, "displayed": False, "kind": ITEM_KINDS[code],
-            "rarity": ITEM_RARITY[code], "origin": "witch", "secret": None, "_secret": secret}])[-3:]
+            "condition": _start_condition(ITEM_RARITY[code]), "value": value, "displayed": False,
+            "kind": ITEM_KINDS[code], "rarity": ITEM_RARITY[code], "origin": "witch", "secret": None,
+            "_secret": secret}])[-3:]
     if n % WITCH_APPLE_EVERY == 0 and _number(s["seed"], "witch_apple", n) % 2 == 0:
         w["apple_until"] = n + WITCH_APPLE_HOLD
 
@@ -533,7 +552,7 @@ def _witch_meet(s, location):
 
 
 def _witch_price(s, item, selling):
-    if s["witch"]["visit"]["discount"]:
+    if s["witch"]["visit"]["discount"] or (selling and item.get("rarity") in ("ancient", "heirloom")):
         rate = WITCH_DISCOUNT_RATE
     else:
         rate = WITCH_SELL_RATE if selling else 1
@@ -1099,7 +1118,7 @@ def _do_focus(s, params, flags):
     if focus == "repair":
         s["coins"] -= 1
         item["condition"] += 1
-        item["value"] += 2
+        item["value"] += 1
         report = f"修补「{item['name']}」,完好度{item['condition']}/3。"
         if item["condition"] == 3:
             item["secret"] = item["_secret"]
@@ -1108,12 +1127,18 @@ def _do_focus(s, params, flags):
             if first_reveal:
                 row["revealed"] = item["secret"]
                 row["revealed_day"] = s["day"]
-                s["coins"] += 2
+                reward = REVEAL_COINS.get(item["rarity"], 2)
+                s["coins"] += reward
                 flags["new"] = True
-                report += " 图鉴首次揭秘,获得2枚古币。"
+                report += f" 图鉴首次揭秘,获得{reward}枚古币。"
+                revealed = sum(bool(x["revealed"]) for x in s["collection"].values())
+                if revealed % REVEAL_MILESTONE == 0:
+                    s["coins"] += REVEAL_MILESTONE_COINS
+                    report += (f" 每揭开{REVEAL_MILESTONE}种秘密,街坊会凑一笔谢礼:+{REVEAL_MILESTONE_COINS}枚古币。"
+                               if revealed == REVEAL_MILESTONE else f" 街坊又凑来谢礼+{REVEAL_MILESTONE_COINS}枚古币。")
                 if sum(bool(x["revealed"]) for x in s["collection"].values()) == len(ITEMS):
                     report += " 异物志全部揭秘！这间店已经见证了每一种旧物的另一面。"
-            item["value"] += 3
+            item["value"] += REPAIR_EXTRA.get(item["rarity"], 0)
             bonus = REPAIR_REPUTATION.get(item["rarity"], 0)
             if bonus and first_reveal:      # 同一种宝物只在第一次修满时加声望,重复货刷不了
                 s["reputation"] += bonus
