@@ -438,9 +438,9 @@ def _capacity(s):
 def _make_item(s, location, salt):
     pool = [code for code in LOCATIONS[location]["pool"]
             if RARITIES[ITEM_RARITY[code]][2] <= s["shop_level"]]
-    # 后期别被重复货淹没:开了第五张图后没见过的货权重×2,第六张图后×3
+    # 后期别被重复货淹没:开了第五张图后没见过的货权重×2,第六张图后×3,灯塔开通后×5
     opened = len(s["unlocked_locations"])
-    fresh = 3 if opened >= 6 else 2 if opened >= 5 else 1
+    fresh = 5 if SECRET in s["unlocked_locations"] else 3 if opened >= 6 else 2 if opened >= 5 else 1
     weights = [RARITIES[ITEM_RARITY[code]][1] *
                (max(1, s["shop_level"] - 2) if ITEM_RARITY[code] in ("ancient", "heirloom") else 1) *
                (fresh if code not in s["collection"] else 1)
@@ -659,6 +659,9 @@ def _spawn_customer(s):
     pool = [c for c in CUSTOMERS
             if s["customer_book"].get(c[0], {}).get("visits", 0) < MAX_CUSTOMER_VISITS
             and (c[0] not in SPECIAL_CUSTOMERS or s["shop_level"] >= 3)]
+    if SECRET in s["unlocked_locations"]:
+        # 灯塔开通后特殊客人上门概率×2(抽签池里各多放一份)
+        pool += [c for c in pool if c[0] in SPECIAL_CUSTOMERS]
     if not pool:
         s["customer"] = None
         return

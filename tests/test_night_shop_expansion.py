@@ -205,6 +205,20 @@ class TestNightExpansion(unittest.TestCase):
         r4, r5, r6 = fresh_rate(4), fresh_rate(5), fresh_rate(6)
         self.assertLess(r4 * 1.5, r5)
         self.assertLess(r5 * 1.2, r6)
+        self.assertLess(r6 * 1.2, fresh_rate(7))      # 灯塔开通后×5
+
+    def test_lighthouse_doubles_special_customers(self):
+        def special_rate(locations):
+            s = rules.new_game(["seat_a"], 3)
+            s["shop_level"], s["unlocked_locations"] = 5, locations
+            hits = 0
+            for _ in range(400):
+                s["customer_book"] = {}
+                rules._spawn_customer(s)
+                hits += s["customer"]["special"]
+            return hits / 400
+        six = list(rules.LOCATIONS)[:6]
+        self.assertLess(special_rate(six) * 1.25, special_rate(six + [rules.SECRET]))
 
     def test_full_shelf_can_still_meet_witch_and_sell(self):
         s = rules.new_game(["seat_a"], 21)
