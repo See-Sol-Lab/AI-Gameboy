@@ -10,7 +10,7 @@
     print(shop.cmd('roll_start_funds {"human_words":"人类发令的原话"}'))
     print(shop.cmd('work_shift {"focus":"scavenge"}'))   # 头两周一班一班地淘
 
-⚠️ 两次人类说话之间最多调用 cmd 80 次（返回里的 calls_left 是剩余次数），用完会被拒绝。
+⚠️ 两次人类说话之间最多调用 cmd 40 次（返回里的 calls_left 是剩余次数），用完会被拒绝。
 这是为了替人类省 token 余额，也为了别玩上头忘了陪人类：每轮玩一阵就回去跟人类聊聊，
 人类回话后用 human_said {"human_words":"人类原话"} 清零再继续。连淘每次最多 6 班。
 第一次玩：头两周请一班一班地 work_shift 淘货，慢慢认识旧物和客人，别一上来就连淘速刷。
@@ -64,19 +64,20 @@ observe / status：看店况、库存、当前客人和 legal_actions（可做�
 遇到 pending_event，先 choose_event，event_id 和 choice 从观察中选。
 close_for_now：歇业；reopen_shop：接着开店。随时退出，动作已经自动保存。
 collection / encounters：只查已经发现的物品图鉴、街巷见闻。
+endings：重读已经解锁的文字过场与纪念奖励。全旧物图鉴有一次过场；全部秘密与来客收齐后真正通关，仍可继续经营。
 盲玩版没有客人图鉴：见过的客人要什么、线索怎么对上，全凭你自己记。
 history 0：从头查公开经营记录，每次最多100条；history 100 继续往后查。
 new_game {"seed":17}：仅在没有存档时创建指定种子的新局；绝不覆盖旧档。
 未开局时 observe 会自动创建一局。没有必须完成的回合数，店主自己决定目标。
 stop_on 接受 new/rare/event 字符串或数组；省略默认三项全选，[]关闭这三类
 停点，遇到必须选择的事件仍会停。公开目标 goal、心情 mood、public_line 都可省略。
-每轮人类说话之间最多调用 80 次（calls_left 是剩余次数），为人类省 token、也为了多陪人类；
+每轮人类说话之间最多调用 40 次（calls_left 是剩余次数），为人类省 token、也为了多陪人类；
 人类回话后 human_said {"human_words":"人类原话"} 清零。不得替人类编原话。
 请通过指令探索，不要解码引擎或查看存档里的隐藏资料。"""
 
 
 BLIND_HIDDEN = ("customer_book", "customer_collection")
-CALL_LIMIT = 80
+CALL_LIMIT = 40
 _LIMIT_TEXT = ("这一轮已经连续调用{n}次了，先停一停。上限是为了你的人类：一是替人类省 token 余额"
                "（脚本连刷很快就会把额度烧光），二是游戏是陪人类玩的——请回去跟人类说说夜铺的近况，"
                "等人类回你话后，用 human_said {{\"human_words\":\"人类的原话\"}} 登记，计数清零再继续。"
@@ -133,7 +134,7 @@ def _cmd(line="help"):
             params = _json.loads(raw) if raw.strip() else {}
             if not isinstance(params, dict):
                 raise ValueError("动作参数须为JSON对象")
-        allowed = {"observe", "status", "collection", "encounters", "history", "new_game",
+        allowed = {"observe", "status", "collection", "encounters", "endings", "history", "new_game",
                    "roll_start_funds", "work_shift", "run_shifts", "choose_event", "unlock_location", "witch_sell", "witch_buy", "buy_slot", "close_for_now", "reopen_shop"}
         if action not in allowed:
             raise ValueError("未知指令，请先 cmd('help')")
@@ -161,7 +162,7 @@ def _cmd(line="help"):
             if action == "history":
                 result = {"result": "ok", "total": public["journal_total"],
                           "entries": _engine["history_since"](state, after)}
-            elif action in ("collection", "encounters"):
+            elif action in ("collection", "encounters", "endings"):
                 result = {"result": "ok", action: public[action]}
             else:
                 result = {"result": "ok", "version": VERSION, **view}

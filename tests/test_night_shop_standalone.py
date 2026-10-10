@@ -52,7 +52,8 @@ class TestNightStandalone(unittest.TestCase):
         self.assertEqual(self.call('human_said {"human_words":""}')["result"], "rejected")
         self.assertEqual(self.call('human_said {"human_words":"继续玩吧"}')["result"], "ok")
         self.assertEqual(json.loads(self.shop.cmd("status"))["calls_left"], self.shop.CALL_LIMIT - 1)
-        self.assertIn("80", self.shop.cmd("help"))
+        self.assertEqual(self.shop.CALL_LIMIT, 40)
+        self.assertIn("40", self.shop.cmd("help"))
 
     def test_generated_file_matches_rules_template_and_license(self):
         builder = load(ROOT / "tools/build_night_shop.py", "standalone_builder")
@@ -119,7 +120,7 @@ class TestNightStandalone(unittest.TestCase):
         self.call('new_game {"seed":17}')
         self.call('roll_start_funds {"human_words":"掷"}')
         for i in range(110):
-            if i % 20 == 0:
+            if i % 10 == 0:
                 self.call('human_said {"human_words":"继续"}')
             view = self.call("observe")["public_state"]
             if view["pending_event"]:
@@ -152,6 +153,20 @@ class TestNightStandalone(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(json.loads(run.stdout)["result"], "ok")
         self.assertTrue((Path(self.temp.name) / "pocket_night_shop.save.sqlite3").exists())
+
+    def test_earned_endings_can_be_read_after_reload_without_spoilers(self):
+        self.assertEqual(self.call("endings")["endings"], [])
+        with closing(sqlite3.connect(self.shop.SAVE_PATH)) as conn, conn:
+            state = json.loads(conn.execute("SELECT state FROM shop").fetchone()[0])
+            scene = {"id": "collection", "title": "第七面墙", "day": 291,
+                     "reward": "没有背面的店主铭牌", "paragraphs": ["货架后面亮起一盏灯。"]}
+            state["endings"] = [scene]
+            conn.execute("UPDATE shop SET state=?", (json.dumps(state),))
+        reloaded = load(self.path, "standalone_ending_reload")
+        result = json.loads(reloaded.cmd("endings"))
+        self.assertEqual(result["endings"], [scene])
+        self.assertNotIn("夜铺之外", json.dumps(result, ensure_ascii=False))
+        self.assertIn("endings", reloaded.cmd("help"))
 
 
 if __name__ == "__main__":

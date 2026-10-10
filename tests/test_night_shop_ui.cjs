@@ -124,6 +124,25 @@ test("five rarity titles and tier gate are visible without revealing unknown ite
   assert.ok(!html.includes("undefined"));
 });
 
+test("earned endings are readable with progress and safely escaped text", () => {
+  const p = page();
+  assert.equal(p.run(`nightEndings({endings:[]})`), "");
+  const html = p.run(`nightEndings({endings:[{id:"collection",title:"第七面墙",day:291,
+    reward:"铭牌",paragraphs:["<script>秘密</script>"]}],
+    completion:{discoveries:72,items_total:72,secrets:12,guests:35,guests_total:86,true_ending:false}})`);
+  assert.ok(html.includes("第291日"));
+  assert.ok(html.includes("秘密 12/72"));
+  assert.ok(html.includes("来客 35/86"));
+  assert.ok(html.includes("&lt;script&gt;"));
+  assert.ok(!html.includes("<script>"));
+  assert.ok(!html.includes("莉莉丝"));
+  const ending = p.run(`nightEndings({endings:[{id:"true_ending",title:"夜铺之外",day:400,
+    reward:"钥匙",paragraphs:["门开了"]}], completion:{true_ending:true}})`);
+  assert.ok(ending.includes("真正通关"));
+  assert.ok(ending.includes("仍可继续经营"));
+  assert.ok(ending.includes("night-ending-tunnel"));
+});
+
 test("story collection hint is limited to completed adventures with a written ending", () => {
   const p = page();
   for (const id of ["pocket-crossing", "pocket-tabletop"]) {

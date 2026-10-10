@@ -97,6 +97,7 @@ class TestHumanSeat(unittest.TestCase):
 
     def test_night_shop_calls_capped_until_human_said(self):
         from console import game_host
+        self.assertEqual(game_host.CALL_LIMIT, 30)
         c = self.host.create_session("pocket-night-shop", "solo_ai")
         sid, token = c["session_id"], c["seats"][0]["seat_token"]
         r = self.host.act(sid, token, 0, "introduce", {"display_name": "K", "surface": "T"})

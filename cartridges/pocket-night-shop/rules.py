@@ -640,6 +640,53 @@ def _collect(s, item):
 
 
 START_FUNDS_MIN, START_FUNDS_MAX = 11, 66
+STARTER_STOCK_HINT = ("新手经营提示：货架缺少合适类别时，可以主动用 work_shift 的 scavenge 出去淘货、补库存和囤货。"
+                      "连续几位客人都没有货匹配，就考虑补库存，而不是一直送客等货来；地图可选已解锁地点。")
+COLLECTION_SCENE = [
+    "你把最后一件旧物记进异物志。最后一页合上，柜台深处传来一声很轻的咔哒。",
+    "你丈量过这间铺子。可货架后面，此刻多出了一段不该存在的距离。灯光沿着那段距离往里走，照见更多空着的架子，再往后，像是一条尚未有人命名的街。",
+    "门外有人放下一束花。花束旁压着几张便条。最上面的一张写着：『原来你真的一直开着。』",
+    "柜台上多了一块没有背面的店主铭牌，留着等你刻下自己的名字。你翻过它，背面依旧是正面。它不占货架，却从此属于这间铺子。",
+    "异物志最后一页慢慢浮出一行新字：你已见过所有旧物。它们仍有一些话，只肯告诉修好它们的人。",
+]
+TRUE_ENDING_SCENE = [
+    "门铃响了。魔女莉莉丝站在门口，手里没有货。",
+    "她走过你的柜台，指尖轻轻拂过异物志。那些曾经修好的东西，有些早已被客人带走；可这一晚，你听见它们的声音从很远的地方回来。每一位来客，都在顾客簿上留下了自己的名字。",
+    "『我第一次来时，这里还是一间小铺子。』她看着你，笑了一下。『现在，迷路的东西知道该往哪里去了。』",
+    "她推开货架尽头那扇门。门后没有墙。一条幽蓝的隧道伸向深处，远处亮着许多窗。有一扇窗后，似乎也有人正在整理柜台。",
+    "莉莉丝把钥匙留在你手里。『恭喜，店主。你可以过去看看。』她替你扶住门，又回头看了一眼还亮着灯的铺子。『也可以先把今晚的生意做完。』",
+    "《口袋夜铺》真正通关。隧道已经打开，店铺仍属于你。这条路尚未写进地图；今晚，你可以留在自己的柜台后，也可以暂时歇业，把下一段旅程留给以后。",
+]
+
+
+def _check_endings(s):
+    """Permanent collection milestones; old saves earn them on their next action."""
+    endings = s.setdefault("endings", [])
+    earned = {row["id"] for row in endings}
+    discovered = all(code in s["collection"] for code in ITEMS)
+    revealed = discovered and all(s["collection"][code]["revealed"] for code in ITEMS)
+    guests = all(customer[0] in s["customer_book"] for customer in CUSTOMERS)
+    unlocked = False
+    for key, ready, title, reward, pages in (
+        ("collection", discovered, "第七面墙", "没有背面的店主铭牌", COLLECTION_SCENE),
+        ("true_ending", revealed and guests, "夜铺之外", "通往亚空间的钥匙", TRUE_ENDING_SCENE),
+    ):
+        if not ready or key in earned:
+            continue
+        paragraphs = list(pages)
+        if key == "collection":
+            names = [row["name"] for row in s["customer_book"].values()][:3]
+            if names:
+                paragraphs[2] += "你认出" + "、".join(names) + "留下的字迹。"
+        scene = {"id": key, "title": title, "day": s["day"],
+                 "reward": reward, "paragraphs": paragraphs}
+        endings.append(scene)
+        _log(s, s["day"], SHIFTS[s["shift_index"]], "ending",
+             title + " · " + "\n\n".join(paragraphs), (s["coins"], s["reputation"]),
+             event=True, ending=key)
+        unlocked = True
+    return unlocked
+
 START_FUNDS_HINT = ("开店前要掷启动资金:两颗六面骰,第一颗当十位、第二颗当个位(11-66枚古币)。"
                     "⚠️ 这一掷要由你的人类发令:先停下来,告诉人类夜铺要掷启动资金了,"
                     "等人类亲口说「掷」(或类似的话)之后,再调用 roll_start_funds,"
@@ -653,7 +700,7 @@ def new_game(seats, seed):
         "phase": "playing", "seed": seed, "seats": list(seats), "shopkeeper": seats[0],
         "day": 1, "shift_index": 0, "coins": 0, "reputation": 0,
         "shop_level": 1, "extra_capacity": 0, "inventory": [], "item_counter": 0,
-        "shift_count": 0, "history": [], "diary": [], "weekly": [],
+        "shift_count": 0, "history": [], "diary": [], "weekly": [], "endings": [],
         "current_goal": "认识旧货巷的旧物,补全第一批图鉴",
         "resting": False, "last_checkpoint": None,
         "collection": {}, "encounters": {}, "unlocked_locations": ["lane"],
@@ -819,6 +866,11 @@ def observe(full_state, seat_id):
         "collection": {"found": len(s["collection"]), "total": len(ITEMS),
                        "revealed": sum(bool(row["revealed"]) for row in s["collection"].values()),
                        "entries": deepcopy(list(s["collection"].values()))},
+        "endings": deepcopy(s.get("endings", [])),
+        "completion": {"discoveries": len(s["collection"]), "items_total": len(ITEMS),
+                       "secrets": sum(bool(row["revealed"]) for row in s["collection"].values()),
+                       "guests": len(s["customer_book"]), "guests_total": len(CUSTOMERS),
+                       "true_ending": any(row["id"] == "true_ending" for row in s.get("endings", []))},
         "encounters": {"found": len(s["encounters"]), "total": len(EVENTS),
                        "entries": deepcopy(list(s["encounters"].values()))},
         "locations": _locations(s), "location": s["location"],
@@ -941,11 +993,13 @@ def apply(full_state, seat_id, action_id, params):
         s["last_checkpoint"] = {"day": s["day"], "shift": SHIFTS[s["shift_index"]],
                                 "coins": s["coins"], "goal": s["current_goal"],
                                 "week": s["weekly"][-1]["week"] if s["weekly"] else None}
+        _check_endings(s)
         return s
     if action_id == "reopen_shop":
         if not s["resting"]:
             raise IllegalAction("店铺已经开门")
         s["resting"] = False
+        _check_endings(s)
         return s
     if s["resting"]:
         raise IllegalAction("请先 reopen_shop 续档")
@@ -961,7 +1015,7 @@ def apply(full_state, seat_id, action_id, params):
         s["start_funds_pending"] = False
         _log(s, s["day"], SHIFTS[s["shift_index"]], "start_funds",
              f"人类发令「{words.strip()[:40]}」,两颗骰子落下:十位{tens}、个位{ones}"
-             f"——启动资金{s['coins']}枚古币。夜铺开门了。", (0, s["reputation"]))
+             f"——启动资金{s['coins']}枚古币。夜铺开门了。 {STARTER_STOCK_HINT}", (0, s["reputation"]))
         return s
     if action_id == "roll_start_funds":
         raise IllegalAction("启动资金已经掷过了")
@@ -994,6 +1048,7 @@ def apply(full_state, seat_id, action_id, params):
             _run_shifts(s, params)
     else:
         raise IllegalAction(f"没有这个动作:{action_id}")
+    _check_endings(s)
     return s
 
 
@@ -1023,6 +1078,9 @@ def _run_shifts(s, params):
             break
         flags = _work_shift(s, params)
         done += 1
+        if flags.get("ending"):
+            reason = "ending"
+            break
         if s["pending_event"]:
             reason = "decision"
             break
@@ -1095,6 +1153,9 @@ def _work_shift(s, params):
          customer=customer, offer=offer,
          customer_arrived=deepcopy(_public_customer(s)) if s["customer_count"] != customer_count else None,
          **flags)
+    if _check_endings(s):
+        flags["ending"] = True
+        flags["event"] = True
     return flags
 
 

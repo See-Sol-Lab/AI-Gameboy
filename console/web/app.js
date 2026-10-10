@@ -496,6 +496,23 @@ function nightJournalEntry(entry) {
   </details>`;
 }
 
+function nightEndings(ps) {
+  const scenes = ps.endings || [];
+  if (!scenes.length) return "";
+  const progress = ps.completion;
+  return `<section class="night-endings" aria-label="夜铺里程碑">
+    <div class="night-section-title">${progress?.true_ending ? "真正通关 · 夜铺仍可继续经营" : "异物志收齐 · 夜铺向你敞开了"}</div>
+    ${progress ? `<div class="dim">旧物 ${progress.discoveries}/${progress.items_total} ·
+      秘密 ${progress.secrets}/${progress.items_total} · 来客 ${progress.guests}/${progress.guests_total}</div>` : ""}
+    ${scenes.map(scene => `<details class="night-history night-ending" data-panel="ending-${esc(scene.id)}">
+      <summary>第${scene.day}日 · ${esc(scene.title)} · 展开重读过场</summary>
+      <div class="night-ending-scene${scene.id === "true_ending" ? " night-ending-tunnel" : ""}" tabindex="0">
+        ${(scene.paragraphs || []).map(text => `<p>${esc(text)}</p>`).join("")}
+        <div class="night-ending-reward">纪念奖励 · ${esc(scene.reward)}<br><small>永久保留 · 不占库存</small></div>
+      </div></details>`).join("")}
+  </section>`;
+}
+
 function nightCollection(ps) {
   const locations = Object.fromEntries(ps.locations.map(x => [x.id, x.name]));
   const rarities = {common: "寻常", uncommon: "少见", rare: "奇珍", ancient: "上古", heirloom: "遗世"};
@@ -587,6 +604,7 @@ const CART_UI = {
         ${week ? `<div class="night-week">第 ${week.week} 周账 · 经过第${week.through_day}日 ·
           成交${week.deals}次 · 古币${week.coins} · 声望${week.reputation}</div>` : ""}
         <div class="night-goal">店主眼下想做:${esc(ps.current_goal)}</div>
+        ${nightEndings(ps)}
         <details class="night-history night-journal" data-panel="history">
           <summary>逐轮经营记录 · ${S.night.journal.length}/${ps.journal_total || 0} 条 · 从开店看起</summary>
           <p class="dim">按发生顺序排列，展开每条查看来客、店主行动与结果。公开目标来自店主填写。</p>
@@ -601,7 +619,7 @@ const CART_UI = {
         ${rollFunds}${customer}
         ${ps.last_run ? `<div class="night-week">本次连续行动：${ps.last_run.completed}/${ps.last_run.requested}班
           · 停于 ${esc({count:"计划完成",new:"新发现",rare:"奇珍",event:"街巷事件",decision:"等待店主选择",
-             reserve:"现金保留线",inventory_full:"货架已满",repair_complete:"修复完成",
+             reserve:"现金保留线",inventory_full:"货架已满",repair_complete:"修复完成",ending:"结局过场",
              insufficient_coins:"现金不足"}[ps.last_run.stop_reason] || ps.last_run.stop_reason)}</div>` : ""}
         <div class="night-play-controls">
           <button class="soft" data-act="night-pause">${S.night.paused ? "继续回放" : "暂停回放"}</button>

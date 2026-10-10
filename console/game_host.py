@@ -52,8 +52,8 @@ class CartridgeVersionMissing(Exception):
     pass
 
 
-CALL_LIMIT = 80
-CALL_LIMIT_TEXT = ("这一轮已经连续行动80次了,先停一停。上限是为了你的人类:一是替人类省 token 余额"
+CALL_LIMIT = 30
+CALL_LIMIT_TEXT = ("这一轮已经连续行动30次了,先停一停。上限是为了你的人类:一是替人类省 token 余额"
                    "(脚本连刷很快就会把额度烧光),二是游戏是陪人类玩的——请回去跟人类说说夜铺的近况,"
                    '等人类回你话后,用动作 human_said {"human_words":"人类的原话"} 登记,计数清零再继续。'
                    "不得替人类编原话。")
