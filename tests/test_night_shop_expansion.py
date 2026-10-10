@@ -214,6 +214,12 @@ class TestNightExpansion(unittest.TestCase):
         before = s["reputation"]
         s = rules.apply(s, "seat_a", "work_shift", {"focus": "repair", "item_id": item["id"]})
         self.assertEqual(s["reputation"] - before, 10)
+        dup = deepcopy(s["inventory"][-1] if s["inventory"][-1]["code"] == item["code"] else item)
+        dup.update(id="dup_1", condition=2, secret=None, _secret="秘密")
+        s["inventory"].append(dup)
+        before = s["reputation"]
+        s = rules.apply(s, "seat_a", "work_shift", {"focus": "repair", "item_id": "dup_1"})
+        self.assertEqual(s["reputation"] - before, 0)      # 重复货修满不再加声望
 
     def test_witch_lilith_trades_after_fourth_place(self):
         self.assertTrue(any(rules.ITEM_RARITY.get(r[0]) in ("ancient", "heirloom") for r in rules.ITEMS))

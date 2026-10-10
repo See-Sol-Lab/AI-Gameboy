@@ -1082,7 +1082,8 @@ def _do_focus(s, params, flags):
         if item["condition"] == 3:
             item["secret"] = item["_secret"]
             row = s["collection"][item["code"]]
-            if row["revealed"] is None:
+            first_reveal = row["revealed"] is None
+            if first_reveal:
                 row["revealed"] = item["secret"]
                 row["revealed_day"] = s["day"]
                 s["coins"] += 2
@@ -1092,7 +1093,7 @@ def _do_focus(s, params, flags):
                     report += " 异物志全部揭秘！这间店已经见证了每一种旧物的另一面。"
             item["value"] += 3
             bonus = REPAIR_REPUTATION.get(item["rarity"], 0)
-            if bonus:
+            if bonus and first_reveal:      # 同一种宝物只在第一次修满时加声望,重复货刷不了
                 s["reputation"] += bonus
                 report += f" 修好了一件{RARITIES[item['rarity']][0]}旧物,街坊口耳相传,声望+{bonus}。"
             report += f" 完全修复后才发现:{item['secret']}"
