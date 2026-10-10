@@ -269,6 +269,7 @@ LOCATIONS[SECRET] = {"name": "雾尽灯塔", "description": "所有地图边缘�
                      "reputation": SECRET_REPUTATION, "day": SECRET_DAY, "hidden": True,
                      "pool": list(SECRET_ITEMS)}
 REPAIR_REPUTATION = {"ancient": 5, "heirloom": 10}   # 上古、遗世修满加声望
+SLOT_REPUTATION = 40   # 灯塔开通(全图)后,声望可换货架格子:40 声望一格
 
 
 def _secret_ready(s):
@@ -763,6 +764,9 @@ def _legal_actions(s):
             **({"advice": NEWCOMER_ADVICE} if s["shift_count"] < NEWCOMER_SHIFTS else {})}},
         {"action_id": "close_for_now", "params": {}},
     ]
+    if SECRET in s["unlocked_locations"] and s["reputation"] >= SLOT_REPUTATION:
+        actions.append({"action_id": "buy_slot",
+                        "params": {"_": f"用{SLOT_REPUTATION}声望换一格货架,不占班次"}})
     if _witch_view(s):
         actions.append({"action_id": "witch_sell", "params": {"item_ids": "要卖给魔女的库存 id 数组,本次最多2件"}})
         actions.append({"action_id": "witch_buy", "params": {"item_id": "魔女摊上 stock 里的 id"}})
@@ -950,6 +954,16 @@ def apply(full_state, seat_id, action_id, params):
         _unlock(s, params)
     elif action_id in ("witch_sell", "witch_buy"):
         _witch_trade(s, action_id, params)
+    elif action_id == "buy_slot":
+        if SECRET not in s["unlocked_locations"]:
+            raise IllegalAction("还不能用声望换货架")
+        if s["reputation"] < SLOT_REPUTATION:
+            raise IllegalAction(f"声望不够(一格要{SLOT_REPUTATION}声望,现在{s['reputation']})")
+        before = (s["coins"], s["reputation"])
+        s["reputation"] -= SLOT_REPUTATION
+        s["extra_capacity"] += 1
+        _log(s, s["day"], SHIFTS[s["shift_index"]], "buy_slot",
+             f"街坊们凑来一块旧木板,货架多了一格(现在{_capacity(s)}格)。声望-{SLOT_REPUTATION}。", before)
     elif action_id in ("work_shift", "run_shifts"):
         _validate_work(s, params)
         if action_id == "work_shift":

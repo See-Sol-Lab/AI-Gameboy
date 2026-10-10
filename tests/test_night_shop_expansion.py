@@ -230,6 +230,19 @@ class TestNightExpansion(unittest.TestCase):
         s = rules.apply(s, "seat_a", "witch_sell", {"item_ids": [s["inventory"][-1]["id"], s["inventory"][-2]["id"]]})
         self.assertEqual(len(s["inventory"]), rules._capacity(s) - 2)
 
+    def test_reputation_buys_shelf_slots_after_lighthouse(self):
+        s = rules.new_game(["seat_a"], 5)
+        s["reputation"] = 100
+        with self.assertRaises(rules.IllegalAction):
+            rules.apply(s, "seat_a", "buy_slot", {})
+        s["unlocked_locations"].append(rules.SECRET)
+        cap = rules._capacity(s)
+        s = rules.apply(s, "seat_a", "buy_slot", {})
+        self.assertEqual((rules._capacity(s), s["reputation"], s["shift_count"]), (cap + 1, 60, 0))
+        s["reputation"] = 39
+        with self.assertRaisesRegex(rules.IllegalAction, "声望不够"):
+            rules.apply(s, "seat_a", "buy_slot", {})
+
     def test_ancient_and_heirloom_repairs_add_reputation(self):
         s = rules.new_game(["seat_a"], 4)
         s["coins"] = 50
