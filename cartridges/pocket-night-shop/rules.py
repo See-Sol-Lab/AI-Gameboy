@@ -574,7 +574,8 @@ def _teleport(s):
     if not s.get("scroll"):
         raise IllegalAction("手上没有传送卷轴")
     if len(s["inventory"]) >= _capacity(s):
-        raise IllegalAction(f"货架满了({len(s['inventory'])}/{_capacity(s)}件),先卖出或回收腾一格再用;"
+        raise IllegalAction(f"货架满了({len(s['inventory'])}/{_capacity(s)}件),先腾一格再用:"
+                            '回收 work_shift {"focus":"recycle","item_id":"…"}、同种重复的 merge、卖给客人或魔女;'
                             "卷轴还在手上,别忘了打烊前用掉。")
     opened = _open_locations(s)
     if not opened:
@@ -1456,6 +1457,7 @@ def _work_shift(s, params):
         elif c and c.setdefault("_arrived_day", s["day"] - 1) + CUSTOMER_WAIT_DAYS <= s["day"]:
             report += f" {c['name']}等了三天,没等到合适的东西,走了。"
             _spawn_customer(s)
+        report += " " + _day_summary(s, day)
     else:
         s["shift_index"] += 1
     reaction = None
@@ -1469,6 +1471,21 @@ def _work_shift(s, params):
         flags["ending"] = True
         flags["event"] = True
     return flags
+
+
+def _day_summary(s, day):
+    """一天才变几次的数字,打烊时写一行;白天的返回就不必每班都带。"""
+    start = s.get("day_open") or {}
+    def delta(key):
+        return f"(今天{s[key] - start[key]:+d})" if key in start else ""
+    revealed = sum(1 for row in s["collection"].values() if row.get("revealed"))
+    text = (f"第{day}天打烊小结:古币{s['coins']}{delta('coins')},声望{s['reputation']}{delta('reputation')},"
+            f"图鉴{len(s['collection'])}/{len(ITEMS)}、揭秘{revealed},星沙{s.get('stardust', 0)},"
+            f"店铺{s['shop_level']}级,货架{len(s['inventory'])}/{_capacity(s)}。")
+    if s["current_goal"]:
+        text += f" 目标:{s['current_goal']}"
+    s["day_open"] = {"coins": s["coins"], "reputation": s["reputation"]}
+    return text
 
 
 MERGE_RARITIES = ("common", "uncommon", "rare")   # 前三档可拆重复货来修,上古遗世不行

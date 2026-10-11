@@ -59,6 +59,8 @@ observe / status：看店况、库存、当前客人和 legal_actions（可做�
   run_shifts {"focus":"scavenge","count":6,"stop_on":"new"}
   work_shift {"focus":"repair","item_id":"从库存选"}
   work_shift {"focus":"sell","item_id":"从库存选","asking_price":5}
+货架满了怎么腾格子：卖给客人（sell）；回收拆零件 work_shift {"focus":"recycle","item_id":"…"}（得价值三分之一的古币，还掉星沙）；
+  同种重复的用 merge 拆一件修另一件；碰到魔女用 witch_sell 卖给她；扩建 upgrade 每级多2格；开了灯塔后 buy_slot 用声望换格子。
 开了第四个地点后，魔女莉莉丝每天待在某个已开地点；去那里淘货撞见她，就能在下一班前
   witch_sell {"item_ids":["库存id","库存id"]}（2折收货，每次最多2件）或 witch_buy {"item_id":"摊上id"}。
 淘到重复的寻常/少见/奇珍旧物，可以拆一件去修同种的另一件：merge {"item_id":"要修的","from_id":"被拆的"}（不花钱不占班）。
@@ -84,27 +86,73 @@ stop_on 接受 new/rare/event 字符串或数组；省略默认 new+rare（event
 
 
 BLIND_HIDDEN = ("customer_book", "customer_collection")
-_BRIEF_KEYS = ("day", "shift", "coins", "reputation", "stardust", "door", "scroll", "rescue_ready", "rescues_left", "bankrupt", "shop_level", "capacity", "location", "resting",
-               "start_funds_pending", "current_goal", "customer", "pending_event", "witch", "last_run",
-               "journal_total")
+# 每一班都要的:时刻、古币、星沙,外加按需出现的(下午没开门、卷轴、事件、魔女、救店……)。
+# 声望、等级、图鉴、目标这些一天变不了几次,打烊小结里写,白天要看用 observe。
+_BRIEF_KEYS = ("day", "shift", "coins", "stardust", "door", "scroll", "rescue_ready", "rescues_left", "bankrupt",
+               "resting", "start_funds_pending", "customer", "pending_event", "witch", "last_run")
+_FULL_KEYS = _BRIEF_KEYS + ("reputation", "shop_level", "capacity", "location", "current_goal", "journal_total")
 
 
-def _brief(view, new_log, full_legal=False):
-    """日常返回只给眼下要用的:店况、货架精简、客人、事件、这一步新发生的记录。
-    图鉴/见闻/地图/完整记录各有专门指令,省得每一步都把几十KB塞进上下文。"""
-    p = view["public_state"]
-    brief = {k: p[k] for k in _BRIEF_KEYS if k in p}
+def _shelf(p):
     # 一行一件:id|名字|类别|稀有度|完好度|价值
-    brief["inventory"] = [f"{i['id']}|{i['name']}|{i['kind']}|{i['rarity']}|{i['condition']}/3|{i['value']}"
-                          for i in p.get("inventory", [])]
-    brief["collection"] = {k: v for k, v in p.get("collection", {}).items() if k != "entries"}
-    if brief.get("customer") and p.get("day", 1) > 14:      # 新手提示只在头两周带
-        brief["customer"] = {k: v for k, v in brief["customer"].items() if k != "hint"}
-    brief["new_log"] = new_log
+    return [f"{i['id']}|{i['name']}|{i['kind']}|{i['rarity']}|{i['condition']}/3|{i['value']}"
+            for i in p.get("inventory", [])]
+
+
+def _shelf_change(old, new):
+    """只列货架上变了的:+ 新到的,~ 修过/变了的,- 卖掉或拆掉的。"""
+    o = {line.split("|", 1)[0]: line for line in old}
+    n = {line.split("|", 1)[0]: line for line in new}
+    return ([f"+ {line}" for key, line in n.items() if key not in o]
+            + [f"~ {line}" for key, line in n.items() if key in o and o[key] != line]
+            + [f"- {'|'.join(line.split('|')[:2])}" for key, line in o.items() if key not in n])
+
+
+def _customer(p, full):
+    customer = p.get("customer")
+    if not customer:
+        return customer
+    customer = {k: v for k, v in customer.items() if k not in ("max_visits", "special") or (k == "special" and v)}
+    if not full or p.get("day", 1) > 14:           # 新手提示只在头两周的 observe 里给
+        customer.pop("hint", None)
+    return customer
+
+
+def _fold(lines):
+    """连续一模一样的记录合成一行,连续整理六班不必重复六遍。"""
+    out = []
+    for line in lines:
+        if out and out[-1][0] == line:
+            out[-1][1] += 1
+        else:
+            out.append([line, 1])
+    return [text if n == 1 else f"{text}(×{n})" for text, n in out]
+
+
+def _brief(view, new_log, full=False, before=None):
+    """日常返回只给每一班都要的;货架和客人只报变化;observe 才给全貌。"""
+    p = view["public_state"]
+    keys = _FULL_KEYS if full else _BRIEF_KEYS
+    brief = {k: p[k] for k in keys if k in p and (full or (p[k] is not None and p[k] is not False))}
+    shelf = _shelf(p)
+    brief["shelf"] = f"{len(shelf)}/{p.get('capacity', len(shelf))}件"
+    if full or before is None:
+        brief["inventory"] = shelf
+    elif before["shelf"] != shelf:
+        brief["shelf_change"] = _shelf_change(before["shelf"], shelf)
+    customer = _customer(p, full)
+    if not full and before is not None and customer and before["customer"] == customer:
+        customer = f"还是{customer['name']}(没变)"
+    if customer or full:
+        brief["customer"] = customer
+    if brief.get("last_run") and not full:
+        brief["last_run"] = {k: v for k, v in brief["last_run"].items()
+                             if k in ("requested", "completed", "stop_reason", "stop_text") and v is not None}
+    if full:
+        brief["collection"] = {k: v for k, v in p.get("collection", {}).items() if k != "entries"}
+    brief["new_log"] = _fold(new_log)
     legal = view.get("legal_actions", [])
-    return {"public_state": brief,
-            "legal_actions": legal if full_legal else [a["action_id"] for a in legal],
-            "waiting_for": view.get("waiting_for", [])}
+    return {"public_state": brief, "legal_actions": legal if full else [a["action_id"] for a in legal]}
 CALL_LIMIT = 40
 _LIMIT_TEXT = ("这一轮已经连续调用{n}次了，先停一停。上限是为了你的人类：一是替人类省 token 余额"
                "（脚本连刷很快就会把额度烧光），二是游戏是陪人类玩的——请回去跟人类说说夜铺的近况，"
@@ -182,6 +230,10 @@ def _cmd(line="help"):
                     raise ValueError("seed须为整数")
                 state = _engine["new_game"](["seat_a"], seed)
             seen = len(state.get("history", []))
+            before = None
+            if "inventory" in state:
+                was = _engine["observe"](state, "seat_a")["public_state"]
+                before = {"shelf": _shelf(was), "customer": _customer(was, False)}
             if action in {"roll_start_funds", "work_shift", "run_shifts", "choose_event", "unlock_location", "witch_sell", "witch_buy", "buy_slot", "merge", "sand_repair", "teleport", "call_human", "close_for_now", "reopen_shop"}:
                 state = _engine["apply"](state, "seat_a", action, params)
             view = _engine["observe"](state, "seat_a")
@@ -199,8 +251,9 @@ def _cmd(line="help"):
                 result = {"result": "ok", "version": VERSION, **view}
             else:
                 new_log = [row["text"] for row in state.get("history", [])[seen:]]
-                result = {"result": "ok", "version": VERSION,
-                          **_brief(view, new_log, full_legal=action in ("observe", "status", "new_game"))}
+                full = action in ("observe", "status", "new_game")
+                result = {"result": "ok", **({"version": VERSION} if full else {}),
+                          **_brief(view, new_log, full=full, before=None if full else before)}
             conn.execute("INSERT INTO shop VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state",
                          (VERSION, _json.dumps(state, ensure_ascii=False)))
         return _json.dumps(result, ensure_ascii=False)

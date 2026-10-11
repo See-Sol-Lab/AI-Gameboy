@@ -95,10 +95,31 @@ class TestNightStandalone(unittest.TestCase):
         result = self.call("run_shifts " + json.dumps(params))
         self.assertEqual(result["result"], "ok")
         self.assertEqual(full(), blind(canonical.observe(state, "seat_a")["public_state"]))
-        # 日常返回是精简版:不带整本图鉴,但带这一步的新记录
-        self.assertNotIn("entries", result["public_state"]["collection"])
+        # 日常返回是精简版:不带图鉴和整份货架,但带这一步的新记录
+        self.assertNotIn("collection", result["public_state"])
         self.assertTrue(result["public_state"]["new_log"])
         self.assertLess(len(json.dumps(result, ensure_ascii=False)), 6000)
+
+    def test_routine_replies_skip_unchanged_shelf_and_fold_repeats(self):
+        self.call('new_game {"seed":17}')
+        self.call('roll_start_funds {"human_words":"掷"}')
+        tidy = self.call('work_shift {"focus":"tidy"}')["public_state"]
+        self.assertNotIn("inventory", tidy)
+        self.assertNotIn("shelf_change", tidy)                    # 货架没变就不提
+        self.assertRegex(tidy["shelf"], r"^\d+/\d+件$")
+        for key in ("reputation", "shop_level", "current_goal", "location"):
+            self.assertNotIn(key, tidy)                            # 打烊小结里才写
+        self.assertNotIn("pending_event", tidy)
+        self.assertNotIn("hint", json.dumps(tidy, ensure_ascii=False))
+        batch = self.call('run_shifts {"focus":"tidy","count":6,"stop_on":[]}')["public_state"]
+        self.assertLess(len(batch["new_log"]), batch["last_run"]["completed"])
+        self.assertNotIn("highlights", batch["last_run"])
+        self.assertTrue(any("打烊小结" in line for line in batch["new_log"]))
+        found = self.call('work_shift {"focus":"scavenge"}')["public_state"]
+        self.assertTrue(found["shelf_change"][0].startswith("+ "))
+        full = self.call("observe")["public_state"]
+        self.assertIsInstance(full["inventory"], list)
+        self.assertIn("pending_event", full)
 
     def test_close_reopen_and_fresh_module_resume_disk_state(self):
         self.call('new_game {"seed":17}')
@@ -110,9 +131,11 @@ class TestNightStandalone(unittest.TestCase):
         self.assertEqual({k: v for k, v in json.loads(fresh.cmd("observe")).items() if k != "calls_left"}, closed)
         self.shop = fresh
         opened = self.call("reopen_shop")
-        self.assertFalse(opened["public_state"]["resting"])
+        self.assertFalse(opened["public_state"].get("resting"))       # 日常返回省掉空字段
+        self.assertNotIn("shelf_change", opened["public_state"])
+        reopened = self.call("observe")["public_state"]
         for key in ("inventory", "day", "coins", "collection", "pending_event"):
-            self.assertEqual(opened["public_state"][key], closed["public_state"][key])
+            self.assertEqual(reopened[key], closed["public_state"][key])
 
     def test_invalid_actions_and_new_game_do_not_overwrite_save(self):
         before = self.call('new_game {"seed":17}')
