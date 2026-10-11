@@ -49,7 +49,7 @@ class TestNightExpansion(unittest.TestCase):
         self.assertEqual(len({row[0] for row in rules.CUSTOMERS}), 86)
         self.assertEqual(len({row[1] for row in rules.CUSTOMERS}), 86)
         self.assertEqual(len(rules.LOCATIONS), 7)   # 含第七张隐藏地图
-        self.assertEqual(len(rules.EVENTS), 18)
+        self.assertEqual(len(rules.EVENTS), 24)
         self.assertEqual(len(rules.AMBIENT), 24)
         self.assertEqual(Counter(rules.ITEM_RARITY.values()),
                          {"common": 24, "uncommon": 20, "rare": 14, "ancient": 9, "heirloom": 5})
@@ -200,6 +200,45 @@ class TestNightExpansion(unittest.TestCase):
             if got:
                 self.assertFalse(rules._apple_window(t))
         self.assertTrue(60 < gifts < 140)
+
+    def test_teleport_scroll_is_free_same_day_and_expires(self):
+        self.assertEqual(sum(bool(e.get("scroll")) for e in rules.EVENTS.values()), 6)
+        s = rules.new_game(["seat_a"], 9)
+        s.update(coins=20, unlocked_locations=["lane", "station"])
+        s["inventory"] = s["inventory"][:2]
+        with self.assertRaisesRegex(rules.IllegalAction, "没有传送卷轴"):
+            rules.apply(s, "seat_a", "teleport", {})
+        # 黄昏拿到:当天打烊就失效
+        s["shift_index"], s["scroll"] = 0, {"until_day": s["day"]}
+        self.assertIn("teleport", [a["action_id"] for a in rules.observe(s, "seat_a")["legal_actions"]])
+        before = deepcopy(s)
+        t = rules.apply(s, "seat_a", "teleport", {})
+        self.assertEqual((t["coins"] - before["coins"]) in (0, 2), True)   # 只可能多出新发现的2枚
+        self.assertEqual((t["shift_count"], t["day"]), (before["shift_count"], before["day"]))
+        self.assertEqual(len(t["inventory"]), 3)
+        self.assertIsNone(t["scroll"])
+        self.assertIn(t["inventory"][-1]["origin"], ("lane", "station"))
+        # 不用的话打烊化成灰
+        u = deepcopy(before)
+        while u["day"] == before["day"]:
+            u = free_event(rules.apply(u, "seat_a", "work_shift", {"focus": "tidy"}))
+        self.assertTrue(any("化成了灰" in h["text"] for h in u["history"]))
+        self.assertNotIn("scroll", rules.observe(u, "seat_a")["public_state"])
+        # 深夜见闻给的卷轴留到第二天
+        v = deepcopy(before)
+        v.update(shift_index=1, scroll=None)
+        for n in range(500):
+            v["shift_count"] = n
+            text = rules._maybe_event(v)
+            if v.get("scroll"):
+                break
+        self.assertEqual(v["scroll"]["until_day"], v["day"] + 1)
+        self.assertIn("明天", text)
+        # 货架满时拒绝,卷轴保留
+        w = deepcopy(before)
+        w["inventory"] = [dict(w["inventory"][0], id=f"x{i}") for i in range(rules._capacity(w))]
+        with self.assertRaisesRegex(rules.IllegalAction, "货架满了"):
+            rules.apply(w, "seat_a", "teleport", {})
 
     def test_lighthouse_dreams_one_per_condition(self):
         s = rules.new_game(["seat_a"], 9)

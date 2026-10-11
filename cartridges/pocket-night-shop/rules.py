@@ -534,6 +534,37 @@ EVENTS.update({
                               "outcome": "店主重新扎紧邮包，星邮人带着它去寻找下一盏灯。"}}},
 })
 
+# 后六种见闻都送传送卷轴:不花钱、不占班,随机去一张已开的地图带回一件货,当天不用就化成灰。
+EVENTS.update({
+    "wind_page": {"name": "风吹来的书页", "text": "一阵风把一页泛黄的纸拍在橱窗上，纸上画着一扇随手就能推开的门。", "scroll": True},
+    "apple_note": {"name": "门缝里的便笺", "text": "门缝里塞着一张便笺，落款只画了一只苹果：『出去走走吧，店我替你看一会儿。』", "scroll": True},
+    "lamplighter": {"name": "点灯人的余火", "text": "点灯人把最后一截火绳留在柜台上，说点着它，脚下的路会自己铺开。", "scroll": True},
+    "lost_stamp": {"name": "迷路的邮票", "text": "一枚盖错地址的邮票落在账本上，邮戳上的地名每看一眼都不一样。", "scroll": True},
+    "tide_ticket": {"name": "潮水送来的船票", "text": "退潮后门口留下一张湿船票，目的地那一栏是空的。", "scroll": True},
+    "chalk_circle": {"name": "发光的粉笔圈", "text": "一个孩子用发光的粉笔在门口画了个圈，说站进去就能去任何走过的地方。", "scroll": True},
+})
+SCROLL_TEXT = ("它在店主手里化成一张传送卷轴:teleport {{}},不花古币、不占班次,"
+               "随机传到一张已开的地图带回一件旧物。{when}打烊前必须用掉,过时就化成灰。")
+
+
+def _teleport(s):
+    if not s.get("scroll"):
+        raise IllegalAction("手上没有传送卷轴")
+    if len(s["inventory"]) >= _capacity(s):
+        raise IllegalAction(f"货架满了({len(s['inventory'])}/{_capacity(s)}件),先卖出或回收腾一格再用;"
+                            "卷轴还在手上,别忘了打烊前用掉。")
+    opened = s["unlocked_locations"]
+    location = opened[_number(s["seed"], "teleport", s["item_counter"]) % len(opened)]
+    s["scroll"] = None
+    before = (s["coins"], s["reputation"])
+    found = _make_item(s, location, f"teleport{s['item_counter']}")
+    new = _collect(s, found)
+    text = (f"展开传送卷轴,一眨眼站在{LOCATIONS[location]['name']},带回「{found['name']}」。"
+            + ("新发现,图鉴收录+2枚古币。" if new else "这件见过,图鉴数量+1。")
+            + (" 这种你修过,带回来就是修好的。" if found.get("pre_repaired") else "") + f" {found['story']}")
+    _log(s, s["day"], SHIFTS[s["shift_index"]], "teleport", text, before, ambient="", reaction=None,
+         new=new, rare=found["rarity"] in ("rare", "ancient", "heirloom"))
+
 
 class IllegalAction(Exception):
     pass
@@ -969,6 +1000,9 @@ def _legal_actions(s):
     if sandable:
         actions.append({"action_id": "sand_repair", "params": {
             "item_id": "用星沙一次修满(奇珍22/上古33/遗世55粒,不占班)", "可修": sandable[:6]}})
+    if s.get("scroll"):
+        actions.append({"action_id": "teleport", "params": {
+            "_": f"用传送卷轴免费去一张随机的已开地图淘一件货,不占班次;第{s['scroll']['until_day']}天打烊前要用掉"}})
     if _rescue_ready(s):
         actions.append({"action_id": "call_human", "params": {"human_words": RESCUE_TEXT}})
     if _merge_pairs(s):
@@ -993,6 +1027,8 @@ def observe(full_state, seat_id):
         "phase": s["phase"], "day": s["day"], "shift": SHIFTS[s["shift_index"]],
         "coins": s["coins"], "reputation": s["reputation"], "shop_level": s["shop_level"],
         "stardust": s.get("stardust", 0),
+        **({"scroll": f"手上有传送卷轴,第{s['scroll']['until_day']}天打烊前用 teleport {{}},过时化成灰"}
+           if s.get("scroll") else {}),
         # 救店信息只在真要救店/已破产时出现,平时不挂在店况里给 AI 添压力
         **({"rescue_ready": True, "rescues_left": RESCUE_LIMIT - s.get("rescues", 0)}
            if _rescue_ready(s) else {}),
@@ -1198,6 +1234,8 @@ def apply(full_state, seat_id, action_id, params):
         _witch_trade(s, action_id, params)
     elif action_id == "merge":
         _merge(s, params)
+    elif action_id == "teleport":
+        _teleport(s)
     elif action_id == "sand_repair":
         _sand_repair(s, params)
     elif action_id == "buy_slot":
@@ -1265,6 +1303,9 @@ def _run_shifts(s, params):
         if flags.get("dream"):
             reason = "dream"
             break
+        if flags.get("scroll"):
+            reason = "scroll"
+            break
         hit = next((key for key in ("event", "new", "rare") if key in stops and flags[key]), None)
         if hit:
             reason = hit
@@ -1276,7 +1317,8 @@ def _run_shifts(s, params):
                      "stop_text": (_block_text(s, params, reason) if reason in BLOCK_TEXT else
                                    "路上碰到街巷见闻,已经自动结算,不需要处理。" if reason == "event" else
                                    "碰到要你选择的事件,先 choose_event 再继续。" if reason == "decision" else
-                                   "店主昨晚做了一个梦,看看最后一条记录。" if reason == "dream" else None),
+                                   "店主昨晚做了一个梦,看看最后一条记录。" if reason == "dream" else
+                                   "拿到一张传送卷轴,限时要用:teleport {}(不占班次)。" if reason == "scroll" else None),
                      "from_seq": start + 1 if done else None, "to_seq": len(s["history"]),
                      "highlights": [row["text"] for row in s["history"][start:]
                                     if row.get("new") or row.get("rare") or row.get("event")]}
@@ -1305,10 +1347,12 @@ def _work_shift(s, params):
     ambient = AMBIENT[_number(s["seed"], "ambient", s["shift_count"]) % len(AMBIENT)]
     s["shift_count"] += 1
     _witch_tick(s)
+    scroll_before = s.get("scroll")
     event_text = _maybe_event(s)
     if event_text:
         report += " " + event_text
         flags["event"] = True
+        flags["scroll"] = s.get("scroll") is not scroll_before
     if s["shift_index"] == 1:
         upkeep = s["shop_level"]   # 每天维护费 = 店铺等级
         paid = min(upkeep, s["coins"])
@@ -1335,6 +1379,9 @@ def _work_shift(s, params):
                 "reputation": s["reputation"], "shop_level": s["shop_level"],
                 "inventory": len(s["inventory"]), "deals": sum(x["deals"] for x in s["customer_book"].values()),
                 "discoveries": len(s["collection"]), "encounters": len(s["encounters"])})
+        if s.get("scroll") and s["scroll"]["until_day"] <= day:
+            s["scroll"] = None
+            report += " 没用上的传送卷轴在打烊时化成了灰。"
         dream = _lighthouse_dream(s)
         if dream:
             report += " " + dream
@@ -1572,7 +1619,12 @@ def _maybe_event(s):
     s["coins"] += event.get("coins", 0)
     s["reputation"] += event.get("reputation", 0)
     _record_event(s, key, "happened", event["text"])
-    return f"街巷见闻「{event['name']}」:{event['text']}"
+    text = f"街巷见闻「{event['name']}」:{event['text']}"
+    if event.get("scroll"):
+        # 深夜拿到的卷轴,这一班就打烊了,所以留到明天打烊
+        s["scroll"] = {"until_day": s["day"] + s["shift_index"]}
+        text += " " + SCROLL_TEXT.format(when="明天" if s["shift_index"] else "今天")
+    return text
 
 
 def _choose_event(s, params):
