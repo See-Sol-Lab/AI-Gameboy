@@ -774,6 +774,8 @@ def _spawn_customer(s):
                      "_wants": list(wants), "_budget": max(3, base + n // 8 % 4 - 1 + row["trust"])}
     if cid in SPECIAL_CUSTOMERS:
         s["customer"]["_item_code"] = SPECIAL_CUSTOMERS[cid][1]
+        s["customer"]["_arrived_day"] = s["day"]
+        s["customer"]["stay"] = "只待到今晚打烊,明天一早就走"
 
 
 def _public_item(item):
@@ -1225,6 +1227,11 @@ def _work_shift(s, params):
                 "discoveries": len(s["collection"]), "encounters": len(s["encounters"])})
         s["day"] += 1
         s["shift_index"] = 0
+        c = s["customer"]
+        if c and c.get("special") and c.get("_arrived_day", s["day"] - 1) < s["day"]:
+            # 特殊客人不久留:来的当天待到打烊,第二天一早就走
+            report += f" {c['name']}没等到要找的东西,天亮前悄悄走了。"
+            _spawn_customer(s)
     else:
         s["shift_index"] = 1
     reaction = None

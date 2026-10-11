@@ -384,6 +384,20 @@ class TestNightExpansion(unittest.TestCase):
         with self.assertRaisesRegex(rules.IllegalAction, "破产"):
             rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"})
 
+    def test_special_customer_leaves_next_morning(self):
+        s = rules.new_game(["seat_a"], 30)
+        s["shop_level"] = 3
+        while not s["customer"]["special"]:
+            rules._spawn_customer(s)
+        sid = s["customer"]["id"]
+        self.assertIn("今晚打烊", rules.observe(s, "seat_a")["public_state"]["customer"]["stay"])
+        s["shift_index"] = 0
+        s = rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"})        # 黄昏:还在
+        self.assertEqual(s["customer"]["id"], sid)
+        s = rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"})        # 深夜打烊,天亮就走
+        self.assertNotEqual((s["customer"] or {}).get("id"), sid)
+        self.assertIn("天亮前悄悄走了", s["history"][-1]["text"] + " ".join(h["text"] for h in s["history"][-3:]))
+
     def test_witch_buys_ancient_and_heirloom_at_eighty_percent(self):
         s = rules.new_game(["seat_a"], 21)
         s.update(coins=100, shop_level=5, unlocked_locations=["lane", "station", "dock", "arcade"])
