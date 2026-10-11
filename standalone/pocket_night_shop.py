@@ -501,7 +501,8 @@ observe / status：看店况、库存、当前客人和 legal_actions（可做�
 走遍所有地图以后，声望可以换货架格子：buy_slot {}（40 声望一格，不占班次）。
 遇到 pending_event，先 choose_event，event_id 和 choice 从观察中选。
 close_for_now：歇业；reopen_shop：接着开店。随时退出，动作已经自动保存。
-collection / encounters：只查已经发现的物品图鉴、街巷见闻。
+collection / encounters / map：查物品图鉴、街巷见闻、地图（平时的返回只给精简店况，省上下文）。
+detail：一次性看完整店况（很长，少用）。做动作后只列能做的动作名，参数说明看 observe。
 endings：重读已经解锁的文字过场与纪念奖励。全旧物图鉴有一次过场；全部秘密与来客收齐后真正通关，仍可继续经营。
 盲玩版没有客人图鉴：见过的客人要什么、线索怎么对上，全凭你自己记。
 history 0：从头查公开经营记录，每次最多100条；history 100 继续往后查。
@@ -515,6 +516,27 @@ stop_on 接受 new/rare/event 字符串或数组；省略默认三项全选，[]
 
 
 BLIND_HIDDEN = ("customer_book", "customer_collection")
+_BRIEF_KEYS = ("day", "shift", "coins", "reputation", "shop_level", "capacity", "location", "resting",
+               "start_funds_pending", "current_goal", "customer", "pending_event", "witch", "last_run",
+               "journal_total")
+
+
+def _brief(view, new_log, full_legal=False):
+    """日常返回只给眼下要用的:店况、货架精简、客人、事件、这一步新发生的记录。
+    图鉴/见闻/地图/完整记录各有专门指令,省得每一步都把几十KB塞进上下文。"""
+    p = view["public_state"]
+    brief = {k: p[k] for k in _BRIEF_KEYS if k in p}
+    # 一行一件:id|名字|类别|稀有度|完好度|价值
+    brief["inventory"] = [f"{i['id']}|{i['name']}|{i['kind']}|{i['rarity']}|{i['condition']}/3|{i['value']}"
+                          for i in p.get("inventory", [])]
+    brief["collection"] = {k: v for k, v in p.get("collection", {}).items() if k != "entries"}
+    if brief.get("customer") and p.get("day", 1) > 14:      # 新手提示只在头两周带
+        brief["customer"] = {k: v for k, v in brief["customer"].items() if k != "hint"}
+    brief["new_log"] = new_log
+    legal = view.get("legal_actions", [])
+    return {"public_state": brief,
+            "legal_actions": legal if full_legal else [a["action_id"] for a in legal],
+            "waiting_for": view.get("waiting_for", [])}
 CALL_LIMIT = 40
 _LIMIT_TEXT = ("这一轮已经连续调用{n}次了，先停一停。上限是为了你的人类：一是替人类省 token 余额"
                "（脚本连刷很快就会把额度烧光），二是游戏是陪人类玩的——请回去跟人类说说夜铺的近况，"
@@ -552,7 +574,7 @@ def cmd(line="help"):
                             "message": "收到人类的话，本轮计数清零。"}, ensure_ascii=False)
     out = _cmd(line)
     if out.startswith("{"):
-        out = _json.dumps({**_json.loads(out), "calls_left": CALL_LIMIT - calls}, ensure_ascii=False, indent=2)
+        out = _json.dumps({**_json.loads(out), "calls_left": CALL_LIMIT - calls}, ensure_ascii=False)
     return out
 
 
@@ -572,7 +594,7 @@ def _cmd(line="help"):
             params = _json.loads(raw) if raw.strip() else {}
             if not isinstance(params, dict):
                 raise ValueError("动作参数须为JSON对象")
-        allowed = {"observe", "status", "collection", "encounters", "endings", "history", "new_game",
+        allowed = {"observe", "status", "collection", "encounters", "endings", "history", "new_game", "map", "detail",
                    "roll_start_funds", "work_shift", "run_shifts", "choose_event", "unlock_location", "witch_sell", "witch_buy", "buy_slot", "close_for_now", "reopen_shop"}
         if action not in allowed:
             raise ValueError("未知指令，请先 cmd('help')")
@@ -591,6 +613,7 @@ def _cmd(line="help"):
                 if type(seed) is not int:
                     raise ValueError("seed须为整数")
                 state = _engine["new_game"](["seat_a"], seed)
+            seen = len(state.get("history", []))
             if action in {"roll_start_funds", "work_shift", "run_shifts", "choose_event", "unlock_location", "witch_sell", "witch_buy", "buy_slot", "close_for_now", "reopen_shop"}:
                 state = _engine["apply"](state, "seat_a", action, params)
             view = _engine["observe"](state, "seat_a")
@@ -602,11 +625,17 @@ def _cmd(line="help"):
                           "entries": _engine["history_since"](state, after)}
             elif action in ("collection", "encounters", "endings"):
                 result = {"result": "ok", action: public[action]}
-            else:
+            elif action == "map":
+                result = {"result": "ok", "locations": public.get("locations", [])}
+            elif action == "detail":
                 result = {"result": "ok", "version": VERSION, **view}
+            else:
+                new_log = [row["text"] for row in state.get("history", [])[seen:]]
+                result = {"result": "ok", "version": VERSION,
+                          **_brief(view, new_log, full_legal=action in ("observe", "status", "new_game"))}
             conn.execute("INSERT INTO shop VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state",
                          (VERSION, _json.dumps(state, ensure_ascii=False)))
-        return _json.dumps(result, ensure_ascii=False, indent=2)
+        return _json.dumps(result, ensure_ascii=False)
     except (ValueError, _engine["IllegalAction"], _sqlite3.Error, OSError) as error:
         return _json.dumps({"result": "rejected", "message": str(error)}, ensure_ascii=False)
     except (KeyError, TypeError, AttributeError) as error:   # 参数类型不对等意外:事务已回滚,存档不变

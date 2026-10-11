@@ -84,21 +84,28 @@ class TestNightStandalone(unittest.TestCase):
         canonical = load(ROOT / "cartridges/pocket-night-shop/rules.py", "standalone_canonical")
         blind = lambda p: {k: v for k, v in p.items() if k not in self.shop.BLIND_HIDDEN}
         state = canonical.new_game(["seat_a"], 17)
-        self.assertEqual(self.call('new_game {"seed":17}')["public_state"], blind(canonical.observe(state, "seat_a")["public_state"]))
+        self.call('new_game {"seed":17}')
+        full = lambda: self.call("detail")["public_state"]
+        self.assertEqual(full(), blind(canonical.observe(state, "seat_a")["public_state"]))
         state = canonical.apply(state, "seat_a", "roll_start_funds", {"human_words": "掷"})
-        self.assertEqual(self.call('roll_start_funds {"human_words":"掷"}')["public_state"],
-                         blind(canonical.observe(state, "seat_a")["public_state"]))
+        self.call('roll_start_funds {"human_words":"掷"}')
+        self.assertEqual(full(), blind(canonical.observe(state, "seat_a")["public_state"]))
         params = {"focus": "scavenge", "count": 6, "stop_on": "new"}
         state = canonical.apply(state, "seat_a", "run_shifts", params)
         result = self.call("run_shifts " + json.dumps(params))
         self.assertEqual(result["result"], "ok")
-        self.assertEqual(result["public_state"], blind(canonical.observe(state, "seat_a")["public_state"]))
+        self.assertEqual(full(), blind(canonical.observe(state, "seat_a")["public_state"]))
+        # 日常返回是精简版:不带整本图鉴,但带这一步的新记录
+        self.assertNotIn("entries", result["public_state"]["collection"])
+        self.assertTrue(result["public_state"]["new_log"])
+        self.assertLess(len(json.dumps(result, ensure_ascii=False)), 6000)
 
     def test_close_reopen_and_fresh_module_resume_disk_state(self):
         self.call('new_game {"seed":17}')
         self.call('roll_start_funds {"human_words":"掷"}')
         self.call('work_shift {"focus":"tidy"}')
-        closed = self.call("close_for_now")
+        self.call("close_for_now")
+        closed = self.call("observe")
         fresh = load(self.path, "standalone_resumed")
         self.assertEqual({k: v for k, v in json.loads(fresh.cmd("observe")).items() if k != "calls_left"}, closed)
         self.shop = fresh
