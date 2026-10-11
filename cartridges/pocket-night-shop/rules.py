@@ -832,6 +832,11 @@ def _legal_actions(s):
             **({"advice": NEWCOMER_ADVICE} if s["shift_count"] < NEWCOMER_SHIFTS else {})}},
         {"action_id": "close_for_now", "params": {}},
     ]
+    sandable = [x["id"] for x in s["inventory"] if x["condition"] < 3
+                and s.get("stardust", 0) >= SAND_REPAIR.get(x["rarity"], 10 ** 9)]
+    if sandable:
+        actions.append({"action_id": "sand_repair", "params": {
+            "item_id": "用星沙一次修满(奇珍22/上古33/遗世55粒,不占班)", "可修": sandable[:6]}})
     if _merge_pairs(s):
         actions.append({"action_id": "merge", "params": {
             "item_id": "要修的那件", "from_id": "同种被拆掉的那件", "pairs": _merge_pairs(s)[:6]}})
@@ -853,6 +858,7 @@ def observe(full_state, seat_id):
     public = {
         "phase": s["phase"], "day": s["day"], "shift": SHIFTS[s["shift_index"]],
         "coins": s["coins"], "reputation": s["reputation"], "shop_level": s["shop_level"],
+        "stardust": s.get("stardust", 0),
         "capacity": _capacity(s), "inventory": [_public_item(item) for item in s["inventory"]],
         "current_goal": s["current_goal"], "resting": s["resting"],
         "start_funds_pending": bool(s.get("start_funds_pending")),
@@ -1034,6 +1040,8 @@ def apply(full_state, seat_id, action_id, params):
         _witch_trade(s, action_id, params)
     elif action_id == "merge":
         _merge(s, params)
+    elif action_id == "sand_repair":
+        _sand_repair(s, params)
     elif action_id == "buy_slot":
         if SECRET not in s["unlocked_locations"]:
             raise IllegalAction("还不能用声望换货架")
@@ -1169,6 +1177,29 @@ def _work_shift(s, params):
 
 
 MERGE_RARITIES = ("common", "uncommon", "rare")   # 前三档可拆重复货来修,上古遗世不行
+SAND_DROP = {"common": 1, "uncommon": 2, "rare": 3}             # 回收前三档时掉落星沙
+SAND_REPAIR = {"rare": 22, "ancient": 33, "heirloom": 55}       # 用星沙一次修满,不占班
+
+
+def _sand_repair(s, params):
+    item = next((x for x in s["inventory"] if x["id"] == params.get("item_id")), None)
+    if item is None:
+        raise IllegalAction("请选库存中的旧物")
+    cost = SAND_REPAIR.get(item["rarity"])
+    if cost is None:
+        raise IllegalAction("星沙只用来修奇珍、上古、遗世;寻常和少见用 merge 或普通修理")
+    if item["condition"] >= 3:
+        raise IllegalAction(BLOCK_TEXT["repair_complete"])
+    if s.get("stardust", 0) < cost:
+        raise IllegalAction(f"星沙不够(修满要{cost}粒,手上{s.get('stardust', 0)}粒)")
+    before = (s["coins"], s["reputation"])
+    s["stardust"] -= cost
+    report = f"撒下{cost}粒星沙,「{item['name']}」的裂缝一点点合拢。"
+    while item["condition"] < 2:              # 前几次只涨完好度和价值
+        item["condition"] += 1
+        item["value"] += 1
+    report += " " + _repair_once(s, item, {"new": False})   # 最后一次走正常修满:揭秘、奖励、声望
+    _log(s, s["day"], SHIFTS[s["shift_index"]], "sand_repair", report, before)
 
 
 def _merge_pairs(s):
@@ -1284,7 +1315,10 @@ def _do_focus(s, params, flags):
         price = max(1, item["value"] // 3)
         s["coins"] += price
         s["inventory"].remove(item)
-        return f"把「{item['name']}」作为零件回收,得{price}枚古币。图鉴记录保留。"
+        sand = SAND_DROP.get(item["rarity"], 0)
+        s["stardust"] = s.get("stardust", 0) + sand
+        return (f"把「{item['name']}」作为零件回收,得{price}枚古币" + (f",筛出{sand}粒星沙" if sand else "")
+                + "。图鉴记录保留。")
     if focus == "dismiss":
         name = s["customer"]["name"]
         _spawn_customer(s)

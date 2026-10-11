@@ -328,6 +328,30 @@ class TestNightExpansion(unittest.TestCase):
         with self.assertRaisesRegex(rules.IllegalAction, "上古"):
             rules.apply(s, "seat_a", "merge", {"item_id": "x1", "from_id": "x2"})
 
+    def test_recycle_drops_stardust_and_sand_repairs_to_full(self):
+        s = rules.new_game(["seat_a"], 6)
+        s["coins"] = 20
+        item = s["inventory"][0]
+        item["rarity"] = "uncommon"
+        s = rules.apply(s, "seat_a", "work_shift", {"focus": "recycle", "item_id": item["id"]})
+        self.assertEqual(s["stardust"], 2)
+        self.assertIn("2粒星沙", s["history"][-1]["text"])
+        code = next(c for c, *_ in rules.ITEMS if rules.ITEM_RARITY[c] == "heirloom")
+        row = next(r for r in rules.ITEMS if r[0] == code)
+        treasure = dict(s["inventory"][0], id="t1", code=code, name=row[1], rarity="heirloom",
+                        condition=0, value=row[4], _secret=row[5])
+        s["inventory"].append(treasure)
+        s["collection"].setdefault(code, {"code": code, "revealed": None, "count": 1})
+        with self.assertRaisesRegex(rules.IllegalAction, "星沙不够"):
+            rules.apply(s, "seat_a", "sand_repair", {"item_id": "t1"})
+        s["stardust"], coins, shifts, rep = 60, s["coins"], s["shift_count"], s["reputation"]
+        s = rules.apply(s, "seat_a", "sand_repair", {"item_id": "t1"})
+        t = next(x for x in s["inventory"] if x["id"] == "t1")
+        self.assertEqual((t["condition"], t["value"], s["stardust"], s["shift_count"]), (3, row[4] + 7, 5, shifts))
+        self.assertEqual((s["coins"] - coins, s["reputation"] - rep), (25, 10))   # 遗世揭秘25、声望+10
+        with self.assertRaisesRegex(rules.IllegalAction, "寻常和少见"):
+            rules.apply(s, "seat_a", "sand_repair", {"item_id": s["inventory"][0]["id"]})
+
     def test_witch_buys_ancient_and_heirloom_at_eighty_percent(self):
         s = rules.new_game(["seat_a"], 21)
         s.update(coins=100, shop_level=5, unlocked_locations=["lane", "station", "dock", "arcade"])

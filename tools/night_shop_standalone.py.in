@@ -62,6 +62,7 @@ observe / status：看店况、库存、当前客人和 legal_actions（可做�
 开了第四个地点后，魔女莉莉丝每天待在某个已开地点；去那里淘货撞见她，就能在下一班前
   witch_sell {"item_ids":["库存id","库存id"]}（2折收货，每次最多2件）或 witch_buy {"item_id":"摊上id"}。
 淘到重复的寻常/少见/奇珍旧物，可以拆一件去修同种的另一件：merge {"item_id":"要修的","from_id":"被拆的"}（不花钱不占班）。
+回收寻常/少见/奇珍会掉星沙（1/2/3 粒）；星沙能一次修满奇珍/上古/遗世：sand_repair {"item_id":"…"}（22/33/55 粒，不占班）。
 走遍所有地图以后，声望可以换货架格子：buy_slot {}（40 声望一格，不占班次）。
 遇到 pending_event，先 choose_event，event_id 和 choice 从观察中选。
 close_for_now：歇业；reopen_shop：接着开店。随时退出，动作已经自动保存。
@@ -80,7 +81,7 @@ stop_on 接受 new/rare/event 字符串或数组；省略默认 new+rare（event
 
 
 BLIND_HIDDEN = ("customer_book", "customer_collection")
-_BRIEF_KEYS = ("day", "shift", "coins", "reputation", "shop_level", "capacity", "location", "resting",
+_BRIEF_KEYS = ("day", "shift", "coins", "reputation", "stardust", "shop_level", "capacity", "location", "resting",
                "start_funds_pending", "current_goal", "customer", "pending_event", "witch", "last_run",
                "journal_total")
 
@@ -159,7 +160,7 @@ def _cmd(line="help"):
             if not isinstance(params, dict):
                 raise ValueError("动作参数须为JSON对象")
         allowed = {"observe", "status", "collection", "encounters", "endings", "history", "new_game", "map", "detail",
-                   "roll_start_funds", "work_shift", "run_shifts", "choose_event", "unlock_location", "witch_sell", "witch_buy", "buy_slot", "merge", "close_for_now", "reopen_shop"}
+                   "roll_start_funds", "work_shift", "run_shifts", "choose_event", "unlock_location", "witch_sell", "witch_buy", "buy_slot", "merge", "sand_repair", "close_for_now", "reopen_shop"}
         if action not in allowed:
             raise ValueError("未知指令，请先 cmd('help')")
         with _closing(_sqlite3.connect(str(SAVE_PATH))) as conn, conn:
@@ -178,7 +179,7 @@ def _cmd(line="help"):
                     raise ValueError("seed须为整数")
                 state = _engine["new_game"](["seat_a"], seed)
             seen = len(state.get("history", []))
-            if action in {"roll_start_funds", "work_shift", "run_shifts", "choose_event", "unlock_location", "witch_sell", "witch_buy", "buy_slot", "merge", "close_for_now", "reopen_shop"}:
+            if action in {"roll_start_funds", "work_shift", "run_shifts", "choose_event", "unlock_location", "witch_sell", "witch_buy", "buy_slot", "merge", "sand_repair", "close_for_now", "reopen_shop"}:
                 state = _engine["apply"](state, "seat_a", action, params)
             view = _engine["observe"](state, "seat_a")
             public = view["public_state"]
