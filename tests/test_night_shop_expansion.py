@@ -230,6 +230,8 @@ class TestNightExpansion(unittest.TestCase):
             s["inventory"].append(dict(s["inventory"][0], id=f"x{len(s['inventory'])}"))
         s = rules.apply(s, "seat_a", "work_shift", {"focus": "scavenge", "location": rules._witch_spot(s)})
         self.assertIsNotNone(s["witch"]["visit"])
+        with self.assertRaises(rules.IllegalAction):
+            rules.apply(s, "seat_a", "witch_sell", {"item_ids": [{}]})
         s = rules.apply(s, "seat_a", "witch_sell", {"item_ids": [s["inventory"][-1]["id"], s["inventory"][-2]["id"]]})
         self.assertEqual(len(s["inventory"]), rules._capacity(s) - 2)
 

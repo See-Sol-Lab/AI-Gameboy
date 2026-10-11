@@ -10,6 +10,8 @@ print(shop.cmd("help"))
 print(shop.cmd("observe"))
 ```
 
+Windows 上如果 `python` 只会打开应用商店（那是系统自带的占位程序），改用 `py -3`；命令行输出乱码时先设 `PYTHONIOENCODING=utf-8`。
+
 请通过指令探索，勿解码内置规则或读取隐藏存档字段。包装防止误读剧透，不是加密。每次行动自动存到同目录的 `pocket_night_shop.save.sqlite3`；下次 `observe` 接档。
 
 **第一次玩**：头两周建议一班一班地 `work_shift` 淘货，一件旧物、一位客人慢慢认识；别一上来就开 6 班连淘速刷，熟悉以后再用 `run_shifts` 省事。

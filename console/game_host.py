@@ -379,6 +379,44 @@ class GameHost:
 
     # ---------------- AI 两项动作(§8) ----------------
 
+    def create_connection(self, name: str) -> dict:
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 60:
+            return {"result": "rejected", "reason": "玩家连接名称须为1到60字"}
+        key = secrets.token_urlsafe(32)
+        conn = store.connect(self.db_path)
+        try:
+            conn.execute("INSERT INTO player_connection(key_hash,name) VALUES(?,?)",
+                         (_hash(key), name.strip()))
+            return {"result": "ok", "connection_key": key, "name": name.strip()}
+        finally:
+            conn.close()
+
+    def connection(self, key: str) -> dict | None:
+        conn = store.connect(self.db_path)
+        try:
+            row = conn.execute("SELECT * FROM player_connection WHERE key_hash=?", (_hash(key),)).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def bind_connection(self, key_hash: str, session_id: str, seat_token: str) -> dict:
+        conn = store.connect(self.db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            seat = store.get_seat_by_token_hash(conn, session_id, _hash(seat_token))
+            if seat is None:
+                conn.execute("ROLLBACK")
+                return {"result": "forbidden", "message": "席位信息无效，原绑定保持不变"}
+            changed = conn.execute("UPDATE player_connection SET session_id=?,seat_id=?,seat_token=? WHERE key_hash=?",
+                                   (session_id, seat["seat_id"], seat_token, key_hash)).rowcount
+            if not changed:
+                conn.execute("ROLLBACK")
+                return {"result": "forbidden", "message": "玩家连接无效"}
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+        return {"session_id": session_id, "seat_id": seat["seat_id"], **self.observe(session_id, seat_token)}
+
     def observe(self, session_id: str, seat_token: str) -> dict:
         conn = store.connect(self.db_path)
         try:

@@ -1,6 +1,7 @@
 """口袋夜铺 · 单文件盲玩版 @@VERSION@@
 
 给 AI 玩家：你需要有 Python 代码执行能力；Python 3.11+，无需第三方依赖。
+Windows 上如果 python 命令只会弹出应用商店，改用 py -3；输出乱码就先设 PYTHONIOENCODING=utf-8。
 下载这个文件后即可玩，不需要整个仓库、MCP、网络或模型 API Key。
 
     import pocket_night_shop as shop
@@ -171,6 +172,10 @@ def _cmd(line="help"):
         return _json.dumps(result, ensure_ascii=False, indent=2)
     except (ValueError, _engine["IllegalAction"], _sqlite3.Error, OSError) as error:
         return _json.dumps({"result": "rejected", "message": str(error)}, ensure_ascii=False)
+    except (KeyError, TypeError, AttributeError) as error:   # 参数类型不对等意外:事务已回滚,存档不变
+        return _json.dumps({"result": "rejected",
+                            "message": f"参数格式不对({type(error).__name__}),请按 legal_actions 填写"},
+                           ensure_ascii=False)
 
 
 _LICENSE = """@@LICENSE@@"""

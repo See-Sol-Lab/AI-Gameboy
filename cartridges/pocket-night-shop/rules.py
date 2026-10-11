@@ -581,7 +581,8 @@ def _witch_trade(s, action_id, params):
     if action_id == "witch_sell":
         ids = params.get("item_ids")
         left = WITCH_SELL_LIMIT - v["sold"]
-        if not isinstance(ids, list) or not ids or len(set(ids)) != len(ids) or len(ids) > left:
+        if (not isinstance(ids, list) or not ids or not all(isinstance(i, str) for i in ids)
+                or len(set(ids)) != len(ids) or len(ids) > left):
             raise IllegalAction(f"item_ids 填要卖给魔女的货(数组),这次碰面还能卖 {left} 件")
         items = [next((x for x in s["inventory"] if x["id"] == i), None) for i in ids]
         if None in items:

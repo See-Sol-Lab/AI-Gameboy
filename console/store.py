@@ -28,6 +28,13 @@ CREATE TABLE IF NOT EXISTS seat (
     joined_at           TEXT,
     PRIMARY KEY (session_id, seat_id)
 );
+CREATE TABLE IF NOT EXISTS player_connection (
+    key_hash TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    session_id TEXT,
+    seat_id TEXT,
+    seat_token TEXT
+);
 """
 
 

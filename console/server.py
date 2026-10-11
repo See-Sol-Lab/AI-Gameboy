@@ -22,8 +22,10 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
+from urllib.parse import parse_qs, urlencode
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver import Context
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse
@@ -42,6 +44,8 @@ mcp = MCPServer(
     "ai-gameboy",
     instructions=(
         "AI-Gameboy 牌桌。你需要人类交给你的 session_id 与 seat_token 才能入座。"
+        "使用长期私有玩家连接时，首次用game_connect绑定人类交给你的席位；以后先game_resume恢复，"
+        "无需记住或重复提交token，game_observe/game_act可省略席位信息。失忆后调用game_resume，不要新建存档。"
         "先 game_observe 看自己的桌面,再按 legal_actions 用 game_act 行动;"
         "第一步通常是 introduce 自我介绍。口袋电路对抗局中,人类会先锁牌;"
         "轮到你 play_card 时先调用 game_act,提交前不要在聊天里说出牌号或具体策略。"
@@ -61,26 +65,28 @@ mcp = MCPServer(
 # ---------------- AI 的两项动作 ----------------
 
 @mcp.tool()
-def game_observe(session_id: str, seat_token: str) -> dict:
+def game_observe(session_id: str = "", seat_token: str = "", ctx: Context | None = None) -> dict:
     """看我的桌面:返回本局中只属于你这个席位的观察。
 
-    session_id / seat_token 来自人类交给你的连接信息。
+    session_id / seat_token 来自人类交给你的连接信息。长期私有连接绑定后可全部省略；失忆用game_resume。
     返回:revision(提交动作时原样带上)、status、public_state、
     private_state(只有你能看到,别人的私牌不会出现)、
     legal_actions(你现在能做什么)、waiting_for(在等谁)。
     只读、可随时调用;断开后凭原令牌调用即可回到原局。
     """
-    return host.observe(session_id, seat_token)
+    binding, error = _credentials(ctx, session_id, seat_token)
+    return error or host.observe(*binding)
 
 
 @mcp.tool()
-def game_act(session_id: str, seat_token: str, expected_revision: int,
-             action_id: str, params: dict | None = None,
-             table_line: str = "") -> dict:
+def game_act(session_id: str = "", seat_token: str = "", expected_revision: int = -1,
+             action_id: str = "", params: dict | None = None,
+             table_line: str = "", ctx: Context | None = None) -> dict:
     """提交我的动作。先用 game_observe 拿到最新 revision 和 legal_actions。
 
     - expected_revision:填你刚观察到的 revision;若已过期,返回
       stale_revision 与新观察,请重新决定后再提交;
+    - 长期私有连接已经绑定时，session_id/seat_token可省略，不用把凭证写回聊天。
     - action_id / params:从 legal_actions 里选。大厅中是
       introduce(display_name、surface 必填,now、public_anchors 可选);
       开局后如 play_card,params 形如 {"card": 3};口袋夜铺的 work_shift
@@ -98,8 +104,51 @@ def game_act(session_id: str, seat_token: str, expected_revision: int,
     mood/public_line 不是作业,只有真有反应时才写。每次工具返回后可继续下一班;
     随时可用 close_for_now 歇业,下次用 reopen_shop 继续。未决事件也能存档。
     """
-    return host.act(session_id, seat_token, expected_revision,
-                    action_id, params, table_line)
+    binding, error = _credentials(ctx, session_id, seat_token)
+    return error or host.act(*binding, expected_revision, action_id, params, table_line)
+
+
+def _player(ctx):
+    return ctx.request_context.request.scope.get("gameboy_player") if ctx else None
+
+
+def _credentials(ctx, session_id, seat_token):
+    player = _player(ctx)
+    if player:
+        if not player["seat_token"]:
+            return None, {"result": "rejected", "message": "此私有连接尚未绑定席位，请先 game_connect"}
+        if (session_id and session_id != player["session_id"]) or (seat_token and seat_token != player["seat_token"]):
+            return None, {"result": "forbidden", "message": "席位与此玩家连接不一致；换局请用 game_connect 授权绑定"}
+        return (player["session_id"], player["seat_token"]), None
+    return (session_id, seat_token), None
+
+
+@mcp.tool()
+def game_connect(session_id: str, seat_token: str, ctx: Context | None = None) -> dict:
+    """首次入座或换局：在自己的长期私有MCP连接中绑定人类授予的席位。
+
+    凭证只保存于本机工具侧，返回观察不含token；以后用game_resume或无参数game_observe续档。
+    每位玩家各用自己的私有连接。公共/mcp不能使用此功能。
+    """
+    player = _player(ctx)
+    if not player:
+        return {"result": "forbidden", "message": "需要已安装的长期私有玩家连接"}
+    return host.bind_connection(player["key_hash"], session_id, seat_token)
+
+
+@mcp.tool()
+def game_resume(ctx: Context | None = None) -> dict:
+    """失忆、断线或重启后恢复自己的已授权席位。不需要任何参数，不返回token，不重建存档。
+
+    返回session_id、seat_id以及当前revision、桌面和legal_actions；随后game_act可省略席位信息。
+    未绑定或失效时明确报错，请找人类授权；不会猜测或进入其他人的席位。
+    """
+    player = _player(ctx)
+    if not player:
+        return {"result": "forbidden", "message": "需要已安装的长期私有玩家连接"}
+    binding, error = _credentials(ctx, "", "")
+    return error or {"session_id": player["session_id"], "seat_id": player["seat_id"],
+                     **host.observe(*binding)}
 
 
 # ---------------- 人类页面(同进程、同端口) ----------------
@@ -157,6 +206,19 @@ async def sessions(request: Request):
             body.get("cartridge_id", "pocket-circuit"),
             body.get("mode", "ai_ai")))
     return JSONResponse(host.list_sessions())
+
+
+@mcp.custom_route("/api/player-connections", methods=["POST"])
+async def player_connections(request: Request):
+    """Local-only setup: the private address is shown once, then stored by the connector."""
+    body = await _json_body(request)
+    result = host.create_connection(body.get("name", ""))
+    if result["result"] == "ok":
+        key = result.pop("connection_key")
+        base = BRIDGE["mcp_url"] or f"http://{HOST}:{PORT}/mcp"
+        result["mcp_url"] = base + "?" + urlencode({"player": key})
+        result["note"] = "私有地址是连接凭证，仅显示这一次；请保存在该玩家的插件配置中，勿发到聊天或公开分享。"
+    return JSONResponse(result)
 
 
 # ---- 人类席:与 MCP 完全同构的薄封装,令牌走 POST body 不进 URL ----
@@ -246,6 +308,16 @@ class Guard:
                 await JSONResponse({"result": "forbidden", "reason": reason},
                                    status_code=403)(scope, receive, send)
                 return
+            if path in ("/mcp", "/mcp/"):
+                query = parse_qs(scope.get("query_string", b"").decode("utf-8"), keep_blank_values=True)
+                if "player" in query:
+                    keys = query["player"]
+                    player = host.connection(keys[0]) if len(keys) == 1 and keys[0] else None
+                    if not player:
+                        await JSONResponse({"result": "forbidden", "message": "玩家连接凭证无效"},
+                                           status_code=403)(scope, receive, send)
+                        return
+                    scope = dict(scope, query_string=b"", gameboy_player=player)
         await self.app(scope, receive, send)
 
 
@@ -308,7 +380,7 @@ def serve(bridge: bool) -> None:
     else:
         print(f"【本地模式】MCP 入口(只有本机能连):http://{HOST}:{PORT}/mcp")
     try:
-        uvicorn.run(app, host=HOST, port=PORT)
+        uvicorn.run(app, host=HOST, port=PORT, access_log=False)
     finally:
         if tunnel:
             tunnel.terminate()
