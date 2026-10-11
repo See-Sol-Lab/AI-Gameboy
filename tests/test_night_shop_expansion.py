@@ -304,6 +304,30 @@ class TestNightExpansion(unittest.TestCase):
                          {"focus": "sell", "item_id": item["id"], "asking_price": ceiling})
         self.assertIn("满意", ok["history"][-1]["text"])
 
+    def test_merge_duplicate_repairs_without_shift_or_coins(self):
+        s = rules.new_game(["seat_a"], 6)
+        s["coins"] = 20
+        code = next(c for c, *_ in rules.ITEMS if rules.ITEM_RARITY[c] == "common")
+        a = rules._make_item(s, "lane", 1); b = rules._make_item(s, "lane", 2)
+        row = next(r for r in rules.ITEMS if r[0] == code)
+        for x in (a, b):
+            x.update(code=code, name=row[1], rarity="common", condition=2, value=row[4], _secret=row[5])
+        s["inventory"] += [a, b]
+        s["collection"].setdefault(code, {"code": code, "revealed": None, "count": 2})
+        self.assertIn("merge", [x["action_id"] for x in rules._legal_actions(s)])
+        coins, shifts, n = s["coins"], s["shift_count"], len(s["inventory"])
+        s = rules.apply(s, "seat_a", "merge", {"item_id": a["id"], "from_id": b["id"]})
+        fixed = next(x for x in s["inventory"] if x["id"] == a["id"])
+        self.assertEqual((fixed["condition"], len(s["inventory"]), s["shift_count"]), (3, n - 1, shifts))
+        self.assertEqual(s["coins"] - coins, 2)                  # 不花钱,只拿寻常揭秘奖励
+        self.assertIn("拆下一件", s["history"][-1]["text"])
+        # 上古不能拆件修理
+        anc = next(c for c, *_ in rules.ITEMS if rules.ITEM_RARITY[c] == "ancient")
+        c1, c2 = dict(a, id="x1", code=anc, rarity="ancient", condition=1), dict(a, id="x2", code=anc, rarity="ancient", condition=1)
+        s["inventory"] += [c1, c2]
+        with self.assertRaisesRegex(rules.IllegalAction, "上古"):
+            rules.apply(s, "seat_a", "merge", {"item_id": "x1", "from_id": "x2"})
+
     def test_witch_buys_ancient_and_heirloom_at_eighty_percent(self):
         s = rules.new_game(["seat_a"], 21)
         s.update(coins=100, shop_level=5, unlocked_locations=["lane", "station", "dock", "arcade"])

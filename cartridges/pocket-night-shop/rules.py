@@ -832,6 +832,9 @@ def _legal_actions(s):
             **({"advice": NEWCOMER_ADVICE} if s["shift_count"] < NEWCOMER_SHIFTS else {})}},
         {"action_id": "close_for_now", "params": {}},
     ]
+    if _merge_pairs(s):
+        actions.append({"action_id": "merge", "params": {
+            "item_id": "要修的那件", "from_id": "同种被拆掉的那件", "pairs": _merge_pairs(s)[:6]}})
     if SECRET in s["unlocked_locations"] and s["reputation"] >= SLOT_REPUTATION:
         actions.append({"action_id": "buy_slot",
                         "params": {"_": f"用{SLOT_REPUTATION}声望换一格货架,不占班次"}})
@@ -1029,6 +1032,8 @@ def apply(full_state, seat_id, action_id, params):
         _unlock(s, params)
     elif action_id in ("witch_sell", "witch_buy"):
         _witch_trade(s, action_id, params)
+    elif action_id == "merge":
+        _merge(s, params)
     elif action_id == "buy_slot":
         if SECRET not in s["unlocked_locations"]:
             raise IllegalAction("还不能用声望换货架")
@@ -1163,6 +1168,67 @@ def _work_shift(s, params):
     return flags
 
 
+MERGE_RARITIES = ("common", "uncommon", "rare")   # 前三档可拆重复货来修,上古遗世不行
+
+
+def _merge_pairs(s):
+    """可拆件修理的组合:同种、前三档、目标未修满。"""
+    pairs = []
+    for target in s["inventory"]:
+        if target["rarity"] not in MERGE_RARITIES or target["condition"] >= 3:
+            continue
+        spare = next((x for x in s["inventory"] if x["code"] == target["code"] and x["id"] != target["id"]), None)
+        if spare:
+            pairs.append({"item_id": target["id"], "from_id": spare["id"], "name": target["name"]})
+    return pairs
+
+
+def _merge(s, params):
+    target = next((x for x in s["inventory"] if x["id"] == params.get("item_id")), None)
+    spare = next((x for x in s["inventory"] if x["id"] == params.get("from_id")), None)
+    if target is None or spare is None or target is spare or target["code"] != spare["code"]:
+        raise IllegalAction("item_id 填要修的那件,from_id 填同种的另一件(会被拆掉)")
+    if target["rarity"] not in MERGE_RARITIES:
+        raise IllegalAction("上古、遗世旧物不能拆件修理")
+    if target["condition"] >= 3:
+        raise IllegalAction(BLOCK_TEXT["repair_complete"])
+    before = (s["coins"], s["reputation"])
+    s["inventory"].remove(spare)
+    report = f"拆下一件「{spare['name']}」的零件来修另一件。" + _repair_once(s, target, {"new": False})
+    _log(s, s["day"], SHIFTS[s["shift_index"]], "merge", report, before)
+
+
+def _repair_once(s, item, flags):
+    item["condition"] += 1
+    item["value"] += 1
+    report = f"修补「{item['name']}」,完好度{item['condition']}/3。"
+    if item["condition"] == 3:
+        item["secret"] = item["_secret"]
+        row = s["collection"][item["code"]]
+        first_reveal = row["revealed"] is None
+        if first_reveal:
+            row["revealed"] = item["secret"]
+            row["revealed_day"] = s["day"]
+            reward = REVEAL_COINS.get(item["rarity"], 2)
+            s["coins"] += reward
+            flags["new"] = True
+            report += f" 图鉴首次揭秘,获得{reward}枚古币。"
+            revealed = sum(bool(x["revealed"]) for x in s["collection"].values())
+            if revealed % REVEAL_MILESTONE == 0:
+                s["coins"] += REVEAL_MILESTONE_COINS
+                report += (f" 每揭开{REVEAL_MILESTONE}种秘密,街坊会凑一笔谢礼:+{REVEAL_MILESTONE_COINS}枚古币。"
+                           if revealed == REVEAL_MILESTONE else f" 街坊又凑来谢礼+{REVEAL_MILESTONE_COINS}枚古币。")
+            if sum(bool(x["revealed"]) for x in s["collection"].values()) == len(ITEMS):
+                report += " 异物志全部揭秘！这间店已经见证了每一种旧物的另一面。"
+        item["value"] += REPAIR_EXTRA.get(item["rarity"], 0)
+        bonus = REPAIR_REPUTATION.get(item["rarity"], 0)
+        if bonus and first_reveal:      # 同一种宝物只在第一次修满时加声望,重复货刷不了
+            s["reputation"] += bonus
+            report += f" 修好了一件{RARITIES[item['rarity']][0]}旧物,街坊口耳相传,声望+{bonus}。"
+        report += f" 完全修复后才发现:{item['secret']}"
+    return report
+
+
 def _do_focus(s, params, flags):
     focus = params["focus"]
     item = next((x for x in s["inventory"] if x["id"] == params.get("item_id")), None)
@@ -1177,39 +1243,16 @@ def _do_focus(s, params, flags):
         flags["new"] = _collect(s, found)
         flags["rare"] = found["rarity"] in ("rare", "ancient", "heirloom")
         prefix = "新发现,图鉴收录+2枚古币。" if flags["new"] else "这件见过,图鉴数量+1。"
+        same = [x for x in s["inventory"] if x["code"] == found["code"]]
+        if (not flags["new"] and found["rarity"] in MERGE_RARITIES and len(same) > 1
+                and any(x["condition"] < 3 for x in same)):
+            prefix += " 可以拆一件同种的去修另一件(merge,不花钱不占班)。"
         if flags["new"] and len(s["collection"]) == len(ITEMS):
             prefix += " 异物志全部物种已发现！还可继续补完修复秘密。"
         return f"从{LOCATIONS[location]['name']}带回「{found['name']}」。{prefix} {found['story']}"
     if focus == "repair":
         s["coins"] -= 1
-        item["condition"] += 1
-        item["value"] += 1
-        report = f"修补「{item['name']}」,完好度{item['condition']}/3。"
-        if item["condition"] == 3:
-            item["secret"] = item["_secret"]
-            row = s["collection"][item["code"]]
-            first_reveal = row["revealed"] is None
-            if first_reveal:
-                row["revealed"] = item["secret"]
-                row["revealed_day"] = s["day"]
-                reward = REVEAL_COINS.get(item["rarity"], 2)
-                s["coins"] += reward
-                flags["new"] = True
-                report += f" 图鉴首次揭秘,获得{reward}枚古币。"
-                revealed = sum(bool(x["revealed"]) for x in s["collection"].values())
-                if revealed % REVEAL_MILESTONE == 0:
-                    s["coins"] += REVEAL_MILESTONE_COINS
-                    report += (f" 每揭开{REVEAL_MILESTONE}种秘密,街坊会凑一笔谢礼:+{REVEAL_MILESTONE_COINS}枚古币。"
-                               if revealed == REVEAL_MILESTONE else f" 街坊又凑来谢礼+{REVEAL_MILESTONE_COINS}枚古币。")
-                if sum(bool(x["revealed"]) for x in s["collection"].values()) == len(ITEMS):
-                    report += " 异物志全部揭秘！这间店已经见证了每一种旧物的另一面。"
-            item["value"] += REPAIR_EXTRA.get(item["rarity"], 0)
-            bonus = REPAIR_REPUTATION.get(item["rarity"], 0)
-            if bonus and first_reveal:      # 同一种宝物只在第一次修满时加声望,重复货刷不了
-                s["reputation"] += bonus
-                report += f" 修好了一件{RARITIES[item['rarity']][0]}旧物,街坊口耳相传,声望+{bonus}。"
-            report += f" 完全修复后才发现:{item['secret']}"
-        return report
+        return _repair_once(s, item, flags)
     if focus == "sell":
         c = s["customer"]
         price = params["asking_price"]
