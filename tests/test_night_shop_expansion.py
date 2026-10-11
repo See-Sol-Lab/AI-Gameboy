@@ -390,7 +390,7 @@ class TestNightExpansion(unittest.TestCase):
         while not s["customer"]["special"]:
             rules._spawn_customer(s)
         sid = s["customer"]["id"]
-        self.assertIn("今晚打烊", rules.observe(s, "seat_a")["public_state"]["customer"]["stay"])
+        self.assertNotIn("stay", rules.observe(s, "seat_a")["public_state"]["customer"])   # 不提前预告
         s["shift_index"] = 0
         s = rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"})        # 黄昏:还在
         self.assertEqual(s["customer"]["id"], sid)
