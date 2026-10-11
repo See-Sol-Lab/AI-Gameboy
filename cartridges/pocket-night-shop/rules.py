@@ -469,12 +469,24 @@ def _make_item(s, location, salt):
             break
         roll -= weight
     _, name, story, condition, value, secret = next(row for row in ITEMS if row[0] == code)
-    condition = _start_condition(ITEM_RARITY[code])
     s["item_counter"] += 1
-    return {"id": f"{code}_{s['item_counter']}", "code": code, "name": name,
-            "story": story, "condition": condition, "value": value,
+    item = {"id": f"{code}_{s['item_counter']}", "code": code, "name": name,
+            "story": story, "condition": _start_condition(ITEM_RARITY[code]), "value": value,
             "displayed": False, "kind": ITEM_KINDS[code], "rarity": ITEM_RARITY[code],
             "origin": location, "secret": None, "_secret": secret}
+    return _arrive_repaired(s, item)
+
+
+def _arrive_repaired(s, item):
+    """这一种修满揭秘过,以后再得到就是修好的样子:完好度3/3、价值按修满算、秘密直接可见。"""
+    row = s["collection"].get(item["code"])
+    if row and row.get("revealed") and item["condition"] < 3:
+        steps = 3 - item["condition"]
+        item["condition"] = 3
+        item["value"] += steps + REPAIR_EXTRA.get(item["rarity"], 0)
+        item["secret"] = item["_secret"]
+        item["pre_repaired"] = True
+    return item
 
 
 # ---------------- 魔女莉莉丝:开了第四个地点后出没的流动商人 ----------------
@@ -616,6 +628,7 @@ def _witch_trade(s, action_id, params):
             s["inventory"].append(item)
         else:
             w["stock"].remove(item)
+            _arrive_repaired(s, item)
             if item["code"] in s["collection"]:
                 s["collection"][item["code"]]["count"] += 1
                 s["inventory"].append(item)
@@ -1355,6 +1368,8 @@ def _do_focus(s, params, flags):
         flags["new"] = _collect(s, found)
         flags["rare"] = found["rarity"] in ("rare", "ancient", "heirloom")
         prefix = "新发现,图鉴收录+2枚古币。" if flags["new"] else "这件见过,图鉴数量+1。"
+        if found.get("pre_repaired"):
+            prefix += " 这种你修过,带回来就是修好的。"
         same = [x for x in s["inventory"] if x["code"] == found["code"]]
         if (not flags["new"] and found["rarity"] in MERGE_RARITIES and len(same) > 1
                 and any(x["condition"] < 3 for x in same)):

@@ -398,6 +398,27 @@ class TestNightExpansion(unittest.TestCase):
         self.assertNotEqual((s["customer"] or {}).get("id"), sid)
         self.assertIn("天亮前悄悄走了", s["history"][-1]["text"] + " ".join(h["text"] for h in s["history"][-3:]))
 
+    def test_revealed_species_arrive_already_repaired(self):
+        s = rules.new_game(["seat_a"], 6)
+        first = rules._make_item(s, "lane", 1)
+        self.assertLess(first["condition"], 3)                   # 还没揭秘:照常是破的
+        code = first["code"]
+        s["collection"].setdefault(code, {"code": code, "count": 1})
+        s["collection"][code]["revealed"] = "已揭开"
+        again = None
+        for salt in range(400):
+            x = rules._make_item(s, "lane", salt)
+            if x["code"] == code:
+                again = x
+                break
+        self.assertIsNotNone(again)
+        row = next(r for r in rules.ITEMS if r[0] == code)
+        self.assertEqual(again["condition"], 3)
+        self.assertTrue(again["pre_repaired"])
+        self.assertEqual(again["secret"], row[5])
+        steps = rules.REPAIR_STEPS[again["rarity"]]
+        self.assertEqual(again["value"], row[4] + steps + rules.REPAIR_EXTRA.get(again["rarity"], 0))
+
     def test_witch_buys_ancient_and_heirloom_at_eighty_percent(self):
         s = rules.new_game(["seat_a"], 21)
         s.update(coins=100, shop_level=5, unlocked_locations=["lane", "station", "dock", "arcade"])
