@@ -222,7 +222,8 @@ class TestNightShop(unittest.TestCase):
         seed = next(i for i in range(100) if rules._number(i, "event", 1) % 4)
         s = rules.new_game(SEATS, seed)
         for code in rules.ITEM_KINDS:   # 全见过,淘货不再有新发现奖励干扰现金线
-            s["collection"].setdefault(code, {"count": 0})
+            s["collection"].setdefault(code, {"count": 0, "revealed": None})
+        s["endings"] = [{"id": "collection"}]   # 全图鉴结局视为已看过,别在这里打断连淘
         s["coins"] = 8
         with self.assertRaisesRegex(rules.IllegalAction, "保留线"):
             rules.apply(s, "seat_a", "run_shifts",

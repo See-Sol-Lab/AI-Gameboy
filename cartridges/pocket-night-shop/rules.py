@@ -660,12 +660,34 @@ TRUE_ENDING_SCENE = [
 ]
 
 
+CLOSED_SCENE = [
+    "最后一班打烊时，你没有再把门口的灯拧亮。账本摊在柜台上，最后一行停在一个付不出的数字。",
+    "风从门缝挤进来，带进几片落叶。它们落在货架上，落在那些还没等到主人的旧物上，像替你盖了一层薄薄的布。",
+    "第二天夜里，有人在门外站了一会儿，敲了两下门，又走了。第三天，脚步声只是经过。",
+    "巷口的魔女摊子再也没有出现。有人说在别的街角见过她，抱着金苹果，没有回头。",
+    "门牌上的字一点点淡下去。来过的客人们偶尔还会想起，这条巷子里好像有过一间只在夜里开门的铺子，卖过一些修好的旧东西。可他们已经想不起，它在第几个路口。",
+    "《口袋夜铺》在这里关上了门。店里的东西都还在，异物志也还在，只是这盏灯，不会再为谁亮起。",
+]
+
+
+def _close_scene(s):
+    """三次救店之后再陷入破产:萧瑟的闭店过场,只给一次。"""
+    endings = s.setdefault("endings", [])
+    if any(row["id"] == "closed" for row in endings):
+        return
+    endings.append({"id": "closed", "title": "落叶封门", "day": s["day"], "reward": None,
+                    "paragraphs": list(CLOSED_SCENE)})
+    _log(s, s["day"], SHIFTS[s["shift_index"]], "ending", "落叶封门 · " + "\n\n".join(CLOSED_SCENE),
+         (s["coins"], s["reputation"]), event=True, ending="closed")
+
+
 def _check_endings(s):
     """Permanent collection milestones; old saves earn them on their next action."""
     endings = s.setdefault("endings", [])
     earned = {row["id"] for row in endings}
-    discovered = all(code in s["collection"] for code in ITEMS)
-    revealed = discovered and all(s["collection"][code]["revealed"] for code in ITEMS)
+    codes = [row[0] for row in ITEMS]       # ITEMS 是元组列表,按编号比
+    discovered = all(code in s["collection"] for code in codes)
+    revealed = discovered and all(s["collection"][code]["revealed"] for code in codes)
     guests = all(customer[0] in s["customer_book"] for customer in CUSTOMERS)
     unlocked = False
     for key, ready, title, reward, pages in (
@@ -1090,6 +1112,8 @@ def apply(full_state, seat_id, action_id, params):
     else:
         raise IllegalAction(f"没有这个动作:{action_id}")
     _check_endings(s)
+    if s.pop("_close_pending", False):   # 这一班打烊后破产:在当班记录之后放闭店过场
+        _close_scene(s)
     return s
 
 
@@ -1189,6 +1213,7 @@ def _work_shift(s, params):
                 else:
                     s["bankrupt"] = True
                     report += " " + BANKRUPT_TEXT
+                    s["_close_pending"] = True
         s["diary"].append({"day": day, "text": f"打烊时手上{s['coins']}枚古币,声望{s['reputation']}。",
                            "upkeep": paid})
         if day % 7 == 0:

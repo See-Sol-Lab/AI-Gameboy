@@ -377,6 +377,9 @@ class TestNightExpansion(unittest.TestCase):
         s = broke_days(s, 3)
         self.assertTrue(s["bankrupt"])
         self.assertEqual(rules._legal_actions(s), [])
+        self.assertEqual(s["endings"][-1]["id"], "closed")
+        self.assertIn("落叶封门", s["history"][-1]["text"])
+        self.assertNotIn("_close_pending", s)
         with self.assertRaisesRegex(rules.IllegalAction, "破产"):
             rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"})
 

@@ -18,7 +18,7 @@ class TestEndings(unittest.TestCase):
 
     def fill(self, secrets=False, guests=False):
         self.state["collection"] = {code: {"revealed": "a repaired secret" if secrets else None}
-                                    for code in rules.ITEMS}
+                                    for code, *_ in rules.ITEMS}
         if guests:
             self.state["customer_book"] = {c[0]: {"name": c[1], "visits": 1} for c in rules.CUSTOMERS}
 
@@ -41,9 +41,9 @@ class TestEndings(unittest.TestCase):
         rules._check_endings(self.state)
         self.assertEqual(len(self.state["endings"]), 1)
         self.state["customer_book"][rules.CUSTOMERS[-1][0]] = missing
-        self.state["collection"][next(iter(rules.ITEMS))]["revealed"] = None
+        self.state["collection"][rules.ITEMS[0][0]]["revealed"] = None
         self.assertFalse(rules._check_endings(self.state))
-        self.state["collection"][next(iter(rules.ITEMS))]["revealed"] = "repaired"
+        self.state["collection"][rules.ITEMS[0][0]]["revealed"] = "repaired"
         self.state["inventory"] = []
         self.assertTrue(rules._check_endings(self.state))
         self.assertEqual(self.state["endings"][-1]["id"], "true_ending")
