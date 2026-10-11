@@ -177,12 +177,17 @@ class TestNightExpansion(unittest.TestCase):
         self.assertNotIn(rules.SECRET, ids)
         with self.assertRaisesRegex(rules.IllegalAction, "未知地点"):
             rules.apply(s, "seat_a", "unlock_location", {"location": rules.SECRET})
-        s["day"] = 180
+        s["day"], s["dreams"] = 180, 2
+        # 三个条件都满足,也要等当晚打烊做完第三个梦,灯塔才出现
+        self.assertNotIn(rules.SECRET, [r["id"] for r in rules.observe(s, "seat_a")["public_state"]["locations"]])
+        while s["day"] == 180:
+            s = free_event(rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"}))
+        self.assertTrue(any("雾尽灯塔" in h["text"] for h in s["history"]))
         self.assertIn(rules.SECRET, [r["id"] for r in rules.observe(s, "seat_a")["public_state"]["locations"]])
         s = rules.apply(s, "seat_a", "unlock_location", {"location": rules.SECRET})
-        self.assertEqual(s["secret_opened_day"], 180)
+        self.assertEqual(s["secret_opened_day"], 181)
         self.assertTrue(rules._apple_held(s))                    # 7天内魔女必持金苹果
-        s["day"] = 187
+        s["day"] = 188
         self.assertFalse(rules._apple_window(s))
         # 7天内碰面,约一半机会送金苹果,只送一次
         gifts = 0
@@ -195,6 +200,24 @@ class TestNightExpansion(unittest.TestCase):
             if got:
                 self.assertFalse(rules._apple_window(t))
         self.assertTrue(60 < gifts < 140)
+
+    def test_lighthouse_dreams_one_per_condition(self):
+        s = rules.new_game(["seat_a"], 9)
+        s["day"] = 180
+        self.assertEqual(rules._lighthouse_dream(s), rules.LIGHTHOUSE_DREAMS[0])
+        self.assertIsNone(rules._lighthouse_dream(s))             # 同一个条件不重复做梦
+        s["reputation"] = rules.SECRET_REPUTATION
+        self.assertEqual(rules._lighthouse_dream(s), rules.LIGHTHOUSE_DREAMS[1])
+        self.assertNotIn(rules.SECRET, rules._visible_locations(s))
+        s["collection"] = {c: {} for c, *_ in rules.ITEMS[:rules.SECRET_DISCOVERIES]}
+        self.assertEqual(rules._lighthouse_dream(s), rules.LIGHTHOUSE_DREAMS[2])
+        self.assertIn(rules.SECRET, rules._visible_locations(s))
+        # 连续经营遇到梦会停下来
+        t = rules.new_game(["seat_a"], 9)
+        t.update(day=180, coins=100)
+        t = rules.apply(t, "seat_a", "run_shifts", {"focus": "tidy", "count": 6, "stop_on": []})
+        self.assertEqual(t["last_run"]["stop_reason"], "dream")
+        self.assertIn("梦", t["last_run"]["stop_text"])
 
     def test_unseen_items_weighted_up_after_fifth_and_sixth_place(self):
         def fresh_rate(opened):

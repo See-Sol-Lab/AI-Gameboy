@@ -280,14 +280,31 @@ def _start_condition(rarity):
     return 3 - REPAIR_STEPS[rarity]   # 灯塔开通(全图)后,声望可换货架格子:40 声望一格
 
 
-def _secret_ready(s):
-    return (s["day"] >= SECRET_DAY and len(s["collection"]) >= SECRET_DISCOVERIES
-            and s["reputation"] >= SECRET_REPUTATION)
+# 灯塔三个条件每达成一个,当晚打烊做一个梦;第三个梦醒来,灯塔才出现在地图上。
+LIGHTHOUSE_DREAMS = (
+    "打烊后店主趴在柜台上睡着,做了个梦:四面都是雾,脚下的石板一块接一块沉下去。"
+    "远处好像有一点光,一眨眼又不见了。醒来时,手心是潮的。",
+    "这一晚又梦见那片雾。雾里有船板嘎吱作响,有人在很远的地方喊店主的名字,声音被浪打碎。"
+    "那点光比上次近了些,一明一灭,像在数着什么。醒来时,门口的风铃自己响了一下。",
+    "又是那片雾。这一次店主一脚踩空,冰冷的水漫上来——就在那时,一道光从雾的尽头扫过来,"
+    "雾一层层退开,海边立着一座灯塔。醒来时,摊在柜台上的地图边缘多出一处从没见过的地方:雾尽灯塔。",
+)
+
+
+def _lighthouse_dream(s):
+    if SECRET in s["unlocked_locations"]:
+        return None
+    met = ((s["day"] >= SECRET_DAY) + (len(s["collection"]) >= SECRET_DISCOVERIES)
+           + (s["reputation"] >= SECRET_REPUTATION))
+    if met <= s.get("dreams", 0):
+        return None
+    s["dreams"] = met
+    return LIGHTHOUSE_DREAMS[met - 1]
 
 
 def _visible_locations(s):
     return [k for k, loc in LOCATIONS.items()
-            if not loc.get("hidden") or k in s["unlocked_locations"] or _secret_ready(s)]
+            if not loc.get("hidden") or k in s["unlocked_locations"] or s.get("dreams", 0) >= 3]
 
 # 普通来客有各自的需求、可观察线索和预算；不从职业名推测成交结果。
 CUSTOMERS += [
@@ -1245,6 +1262,9 @@ def _run_shifts(s, params):
         if flags.get("witch"):
             reason = "witch"
             break
+        if flags.get("dream"):
+            reason = "dream"
+            break
         hit = next((key for key in ("event", "new", "rare") if key in stops and flags[key]), None)
         if hit:
             reason = hit
@@ -1255,7 +1275,8 @@ def _run_shifts(s, params):
     s["last_run"] = {"requested": count, "completed": done, "stop_reason": reason,
                      "stop_text": (_block_text(s, params, reason) if reason in BLOCK_TEXT else
                                    "路上碰到街巷见闻,已经自动结算,不需要处理。" if reason == "event" else
-                                   "碰到要你选择的事件,先 choose_event 再继续。" if reason == "decision" else None),
+                                   "碰到要你选择的事件,先 choose_event 再继续。" if reason == "decision" else
+                                   "店主昨晚做了一个梦,看看最后一条记录。" if reason == "dream" else None),
                      "from_seq": start + 1 if done else None, "to_seq": len(s["history"]),
                      "highlights": [row["text"] for row in s["history"][start:]
                                     if row.get("new") or row.get("rare") or row.get("event")]}
@@ -1314,6 +1335,10 @@ def _work_shift(s, params):
                 "reputation": s["reputation"], "shop_level": s["shop_level"],
                 "inventory": len(s["inventory"]), "deals": sum(x["deals"] for x in s["customer_book"].values()),
                 "discoveries": len(s["collection"]), "encounters": len(s["encounters"])})
+        dream = _lighthouse_dream(s)
+        if dream:
+            report += " " + dream
+            flags["dream"] = flags["event"] = True
         s["day"] += 1
         s["shift_index"] = 0
         c = s["customer"]
