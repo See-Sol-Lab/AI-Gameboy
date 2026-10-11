@@ -5,6 +5,7 @@ import unittest
 from collections import Counter
 from copy import deepcopy
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -150,7 +151,7 @@ class TestNightExpansion(unittest.TestCase):
         s = free_event(s)
         with self.assertRaises(rules.IllegalAction):
             rules.apply(s, "seat_a", "work_shift", {"focus": "upgrade"})
-        s["coins"], s["shift_index"] = 0, 1
+        s["coins"], s["shift_index"] = 0, rules.LAST_SHIFT
         s = rules.apply(s, "seat_a", "run_shifts", {"focus": "tidy", "count": 1, "reserve": 0})
         self.assertEqual(s["last_run"]["completed"], 1)
         self.assertEqual(s["diary"][-1]["upkeep"], 5)
@@ -208,7 +209,7 @@ class TestNightExpansion(unittest.TestCase):
         s["inventory"] = s["inventory"][:2]
         with self.assertRaisesRegex(rules.IllegalAction, "没有传送卷轴"):
             rules.apply(s, "seat_a", "teleport", {})
-        # 黄昏拿到:当天打烊就失效
+        # 白天拿到:当天打烊就失效
         s["shift_index"], s["scroll"] = 0, {"until_day": s["day"]}
         self.assertIn("teleport", [a["action_id"] for a in rules.observe(s, "seat_a")["legal_actions"]])
         before = deepcopy(s)
@@ -220,13 +221,14 @@ class TestNightExpansion(unittest.TestCase):
         self.assertIn(t["inventory"][-1]["origin"], ("lane", "station"))
         # 不用的话打烊化成灰
         u = deepcopy(before)
-        while u["day"] == before["day"]:
-            u = free_event(rules.apply(u, "seat_a", "work_shift", {"focus": "tidy"}))
+        with mock.patch.object(rules, "_maybe_event", return_value=""):   # 别让新卷轴顶掉旧的
+            while u["day"] == before["day"]:
+                u = rules.apply(u, "seat_a", "work_shift", {"focus": "tidy"})
         self.assertTrue(any("化成了灰" in h["text"] for h in u["history"]))
         self.assertNotIn("scroll", rules.observe(u, "seat_a")["public_state"])
         # 深夜见闻给的卷轴留到第二天
         v = deepcopy(before)
-        v.update(shift_index=1, scroll=None)
+        v.update(shift_index=rules.LAST_SHIFT, scroll=None)
         for n in range(500):
             v["shift_count"] = n
             text = rules._maybe_event(v)
@@ -239,6 +241,88 @@ class TestNightExpansion(unittest.TestCase):
         w["inventory"] = [dict(w["inventory"][0], id=f"x{i}") for i in range(rules._capacity(w))]
         with self.assertRaisesRegex(rules.IllegalAction, "货架满了"):
             rules.apply(w, "seat_a", "teleport", {})
+
+    def test_afternoon_closed_half_price_and_map_complete_reputation(self):
+        s = rules.new_game(["seat_a"], 4)
+        s.update(coins=30, shift_index=0, unlocked_locations=["lane", "station", "dock"])
+        view = rules.observe(s, "seat_a")["public_state"]
+        self.assertIsNone(view["customer"])
+        self.assertIn("door", view)
+        for focus in ("sell", "dismiss"):
+            with self.assertRaisesRegex(rules.IllegalAction, "下午还没开门"):
+                rules.apply(s, "seat_a", "work_shift",
+                            {"focus": focus, "item_id": s["inventory"][0]["id"], "asking_price": 1})
+        self.assertEqual([rules.LOCATIONS[k]["cost"] for k in rules.LOCATIONS], [2, 2, 2, 2, 4, 4, 4])
+        self.assertEqual(rules._work_cost(s, {"focus": "scavenge", "location": "observatory"}), 2)   # 下午半价
+        self.assertEqual(rules._work_cost(s, {"focus": "scavenge", "location": "lane"}), 1)
+        s["shift_index"] = rules.OPEN_SHIFT
+        self.assertEqual(rules._work_cost(s, {"focus": "scavenge", "location": "observatory"}), 4)
+        self.assertIsNotNone(rules.observe(s, "seat_a")["public_state"]["customer"])
+        # 收齐一张图的旧物,声望+5,只给一次
+        pool = rules.LOCATIONS["station"]["pool"]
+        s["collection"] = {c: {"count": 1} for c in pool[:-1]}
+        rep = s["reputation"]
+        item = rules._make_item(s, "lane", "x")
+        item.update(code=pool[-1])
+        rules._collect(s, item)
+        self.assertEqual(s["reputation"], rep + rules.MAP_COMPLETE_REPUTATION)
+        self.assertEqual(s["maps_done"], ["station"])
+        s = rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"})
+        self.assertIn("全部收进图鉴", s["history"][-1]["text"])
+
+    def test_witch_stock_of_revealed_species_is_already_repaired(self):
+        s = rules.new_game(["seat_a"], 4)
+        s.update(unlocked_locations=list(rules.LOCATIONS)[:4], shop_level=3)
+        codes = [c for c, *_ in rules.ITEMS if rules.ITEM_RARITY[c] in ("ancient", "heirloom")]
+        s["collection"] = {c: {"code": c, "count": 1, "revealed": "x"} for c in codes}
+        s["shift_count"] = rules.WITCH_TREASURE_EVERY
+        rules._witch_tick(s)
+        item = rules._witch_book(s)["stock"][-1]
+        self.assertEqual((item["condition"], item.get("pre_repaired")), (3, True))
+        self.assertIsNotNone(item["secret"])
+
+    def test_fully_lit_items_vanish_and_finished_market_closes(self):
+        s = rules.new_game(["seat_a"], 4)
+        s.update(coins=50, unlocked_locations=["lane", "station"])
+        s["inventory"] = []
+
+        def light(code):
+            s["collection"][code] = {"code": code, "count": 1, "revealed": "x",
+                                     "rarity": rules.ITEM_RARITY[code]}
+            cid = rules.BOND_BY_CODE[code]
+            s["customer_book"].setdefault(cid, {"id": cid, "name": cid, "request": None, "clue": "",
+                                                "special": False, "first_day": 1, "visits": 0,
+                                                "deals": 1, "trust": 0, "neighbor": True})["bond"] = True
+
+        lane = rules.LOCATIONS["lane"]["pool"]
+        for code in lane[:-1]:
+            light(code)
+        self.assertEqual({rules._make_item(s, "lane", i)["code"] for i in range(50)}, {lane[-1]})
+        self.assertFalse(rules._closed(s, "lane"))
+        light(lane[-1])
+        self.assertTrue(rules._closed(s, "lane"))
+        self.assertEqual(rules._open_locations(s), ["station"])
+        with self.assertRaisesRegex(rules.IllegalAction, "不再开放"):
+            rules.apply(s, "seat_a", "work_shift", {"focus": "scavenge", "location": "lane"})
+        s = rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"})
+        self.assertIn("旧货巷的旧物都讲完了", s["history"][-1]["text"])
+        s = rules.apply(free_event(s), "seat_a", "work_shift", {"focus": "tidy"})
+        self.assertNotIn("旧货巷", s["history"][-1]["text"])           # 只宣布一次
+        lane_row = next(r for r in rules.observe(s, "seat_a")["public_state"]["locations"] if r["id"] == "lane")
+        self.assertTrue(lane_row["closed"])
+        s["scroll"] = {"until_day": s["day"]}
+        s = rules.apply(s, "seat_a", "teleport", {})
+        self.assertEqual(s["inventory"][-1]["origin"], "station")
+        # 魔女也不再进点亮的宝物
+        treasures = [c for c, *_ in rules.ITEMS if rules.ITEM_RARITY[c] in ("ancient", "heirloom")
+                     and c not in rules.SECRET_ITEMS]
+        for code in treasures[:-1]:
+            light(code)
+        s.update(unlocked_locations=list(rules.LOCATIONS)[:4], shop_level=5)
+        for k in range(1, 6):
+            s["shift_count"] = rules.WITCH_TREASURE_EVERY * k
+            rules._witch_tick(s)
+        self.assertEqual({x["code"] for x in rules._witch_book(s)["stock"]}, {treasures[-1]})
 
     def test_lighthouse_dreams_one_per_condition(self):
         s = rules.new_game(["seat_a"], 9)
@@ -403,6 +487,26 @@ class TestNightExpansion(unittest.TestCase):
         self.assertIn("满意", s["history"][-1]["text"])
         self.assertNotIn(line, s["history"][-1]["text"])
 
+    def test_special_customer_says_farewell_after_bond_and_never_returns(self):
+        s = rules.new_game(["seat_a"], 30)
+        s["shop_level"] = 3
+        while not s["customer"]["special"]:
+            rules._spawn_customer(s)
+        sid = s["customer"]["id"]
+        code = s["customer"]["_item_code"]
+        s["inventory"][0].update(code=code, kind=rules.ITEM_KINDS[code], condition=3)
+        s = rules.apply(s, "seat_a", "work_shift",
+                        {"focus": "sell", "item_id": s["inventory"][0]["id"], "asking_price": 1})
+        text = s["history"][-1]["text"]
+        self.assertIn(rules.BOND_LINES[sid][1], text)
+        self.assertIn("同你告别", text)
+        self.assertTrue(s["customer_book"][sid]["farewell"])
+        for _ in range(2000):
+            rules._spawn_customer(s)
+            if s["customer"] is None:
+                break
+            self.assertNotEqual(s["customer"]["id"], sid)
+
     def test_merge_duplicate_repairs_without_shift_or_coins(self):
         s = rules.new_game(["seat_a"], 6)
         s["coins"] = 20
@@ -454,7 +558,7 @@ class TestNightExpansion(unittest.TestCase):
     def test_rescue_after_three_unpaid_days_then_bankrupt(self):
         def broke_days(s, days):
             for _ in range(days):
-                s["coins"], s["shift_index"] = 0, 1
+                s["coins"], s["shift_index"] = 0, rules.LAST_SHIFT
                 s = rules.apply(s, "seat_a", "work_shift", {"focus": "dismiss"})
                 while s["pending_event"]:
                     s = rules.apply(s, "seat_a", "choose_event", {"event_id": s["pending_event"]["id"], "choice": next(
@@ -490,8 +594,8 @@ class TestNightExpansion(unittest.TestCase):
             rules._spawn_customer(s)
         sid = s["customer"]["id"]
         self.assertNotIn("stay", rules.observe(s, "seat_a")["public_state"]["customer"])   # 不提前预告
-        s["shift_index"] = 0
-        s = rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"})        # 黄昏:还在
+        s["shift_index"] = rules.LAST_SHIFT - 1
+        s = rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"})        # 傍晚:还在
         self.assertEqual(s["customer"]["id"], sid)
         s = rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"})        # 深夜打烊,天亮就走
         self.assertNotEqual((s["customer"] or {}).get("id"), sid)
@@ -634,11 +738,17 @@ class TestNightExpansion(unittest.TestCase):
         s = rules.new_game(["seat_a"], 6)
         customer = deepcopy(s["customer"])
         visits = s["customer_count"]
-        for _ in range(24):
+        # 开张那天傍晚起算:第1天3班、第2天5班、第3天前4班,客人一直等着
+        for _ in range(12):
             s = free_event(s)
             s = rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"})
+        self.assertEqual(s["day"], 3)
         self.assertEqual(s["customer"], customer)
         self.assertEqual(s["customer_count"], visits)
+        # 第三天打烊:没买到想要的,自己走
+        s = rules.apply(free_event(s), "seat_a", "work_shift", {"focus": "tidy"})
+        self.assertNotEqual(s["customer"]["id"], customer["id"])
+        self.assertIn("等了三天", s["history"][-1]["text"])
 
 
 

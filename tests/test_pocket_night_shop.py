@@ -228,7 +228,7 @@ class TestNightShop(unittest.TestCase):
         with self.assertRaisesRegex(rules.IllegalAction, "保留线"):
             rules.apply(s, "seat_a", "run_shifts",
                         {"focus": "scavenge", "count": 6, "reserve": 9, "stop_on": []})
-        s["coins"] = 10
+        s["coins"] = 11
         result = rules.apply(s, "seat_a", "run_shifts",
                              {"focus": "scavenge", "count": 6, "reserve": 9, "stop_on": []})
         self.assertEqual(result["last_run"]["completed"], 1)
@@ -312,7 +312,7 @@ class TestNightShop(unittest.TestCase):
 
     def test_zero_cash_can_use_known_tidy_income_for_upkeep(self):
         s = rules.new_game(SEATS, 3)
-        s["coins"], s["shift_index"] = 0, 1
+        s["coins"], s["shift_index"] = 0, rules.LAST_SHIFT
         s = rules.apply(s, "seat_a", "run_shifts",
                         {"focus": "tidy", "count": 1, "reserve": 0})
         self.assertEqual(s["last_run"]["completed"], 1)
@@ -377,8 +377,8 @@ class TestNightShop(unittest.TestCase):
         s = rules.new_game(SEATS, 9)
         for _ in range(120):
             s = resolve(work(s))
-        self.assertEqual(s["day"], 61)
-        self.assertEqual(len(s["weekly"]), 8)
+        self.assertEqual(s["day"], 25)          # 开张日傍晚起3班,之后每天5班
+        self.assertEqual(len(s["weekly"]), 3)
         whole = rules.history_since(s, 0) + rules.history_since(s, 100)
         self.assertEqual(whole, s["history"])
         self.assertEqual([x["seq"] for x in whole], list(range(1, len(whole) + 1)))

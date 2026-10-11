@@ -7,7 +7,10 @@ AI 是唯一玩家；所有随机结果由种子决定。展示端只接收公�
 import hashlib
 from copy import deepcopy
 
-SHIFTS = ["黄昏", "深夜"]
+# 一天五班:下午两班还没开门(客人不来,出门半价),傍晚两班、深夜一班接客,深夜打烊。
+SHIFTS = ["下午", "下午", "傍晚", "傍晚", "深夜"]
+OPEN_SHIFT, LAST_SHIFT = 2, len(SHIFTS) - 1
+CUSTOMER_WAIT_DAYS = 3   # 普通客人连着三天没买到想要的,第三天打烊后自己走
 FOCI = ["sell", "repair", "scavenge", "curate", "upgrade", "tidy", "recycle", "dismiss"]
 MOODS = ["期待", "专注", "犹豫", "烦躁", "眷恋", "疲惫", "得意"]
 MAX_SHOP_LEVEL = 5
@@ -96,13 +99,13 @@ ITEM_RARITY = {
     "bird": "uncommon", "tinwhale": "rare", "seedbox": "common", "glove": "uncommon",
 }
 LOCATIONS = {
-    "lane": {"name": "旧货巷", "description": "日常旧物与被遗忘的小事。", "cost": 1,
+    "lane": {"name": "旧货巷", "description": "日常旧物与被遗忘的小事。", "cost": 2,
              "unlock_cost": 0, "discoveries": 0,
              "pool": ["watch", "key", "scarf", "teacup", "lamp", "buttonjar", "letter", "shoe"]},
     "station": {"name": "废弃车站", "description": "时间、声音和往返的痕迹。", "cost": 2,
                 "unlock_cost": 8, "discoveries": 4,
                 "pool": ["watch", "shoe", "camera", "musicbox", "notebook", "bell"]},
-    "dock": {"name": "码头仓库", "description": "远航留下的机械与异物。", "cost": 3,
+    "dock": {"name": "码头仓库", "description": "远航留下的机械与异物。", "cost": 2,
              "unlock_cost": 12, "discoveries": 8,
              "pool": ["key", "scarf", "bird", "tinwhale", "seedbox", "glove"]},
 }
@@ -244,7 +247,7 @@ LOCATIONS.update({
                "unlock_cost": 15, "discoveries": 12, "level": 2, "pool": []},
     "observatory": {"name": "停用观星台", "description": "星轨与失传机械；三级后可能寻到上古和遗世旧物。", "cost": 4,
                     "unlock_cost": 25, "discoveries": 24, "level": 3, "pool": []},
-    "archive": {"name": "沉灯档案库", "description": "被注销的名字与旧约；三级后可能寻到上古和遗世旧物。", "cost": 5,
+    "archive": {"name": "沉灯档案库", "description": "被注销的名字与旧约；三级后可能寻到上古和遗世旧物。", "cost": 4,
                 "unlock_cost": 35, "discoveries": 32, "level": 3, "pool": []},
 })
 for row in MORE_ITEMS:
@@ -258,14 +261,15 @@ for _key, _rep in {"lane": 0, "station": 0, "dock": 10, "arcade": 25,
 # 第七张隐藏地图:条件不公开,满足后才出现在地图里。
 # 上古里最后 3 件、遗世里最后 2 件从原地点挪到这里,让后期有盼头。
 SECRET = "lighthouse"
-SECRET_DAY, SECRET_DISCOVERIES, SECRET_REPUTATION = 180, 60, 166
+SECRET_DAY, SECRET_DISCOVERIES, SECRET_REPUTATION = 100, 60, 120
+MAP_COMPLETE_REPUTATION = 5   # 前六张图各自的旧物全收进图鉴,街坊传开,声望+5
 SECRET_APPLE_DAYS, SECRET_APPLE_GIFT = 7, 50   # 开图后7天魔女必持金苹果,碰面一半机会相赠
 SECRET_ITEMS = ([c for c, *_ in ITEMS if ITEM_RARITY.get(c) == "ancient"][-3:]
                 + [c for c, *_ in ITEMS if ITEM_RARITY.get(c) == "heirloom"][-2:])
 for _loc in LOCATIONS.values():
     _loc["pool"] = [c for c in _loc["pool"] if c not in SECRET_ITEMS]
 LOCATIONS[SECRET] = {"name": "雾尽灯塔", "description": "所有地图边缘之外的灯塔,只给走得够远的店主亮灯。",
-                     "cost": 6, "unlock_cost": 50, "discoveries": SECRET_DISCOVERIES, "level": 5,
+                     "cost": 4, "unlock_cost": 50, "discoveries": SECRET_DISCOVERIES, "level": 5,
                      "reputation": SECRET_REPUTATION, "day": SECRET_DAY, "hidden": True,
                      "pool": list(SECRET_ITEMS)}
 REPAIR_REPUTATION = {"ancient": 5, "heirloom": 10}   # 上古、遗世修满加声望
@@ -481,6 +485,25 @@ BOND_LINES = {
     "stationcook": ("comb", "我总说昨晚没淋到雨，回家的人也就信了。这把梳子偏偏全记得。"),
     "gardener": ("seedpendulum", "我把空地留着，不是怕它种不活，是怕它醒来时没地方长。冬天数完，就来吧。"),
 }
+BOND_BY_CODE = {code: cid for cid, (code, _) in BOND_LINES.items()}
+
+
+def _lit(s, code):
+    """发现过、修满揭过秘、也交到了等它的人手里:这件旧物的故事全讲完了,不再出现。"""
+    row = s["collection"].get(code)
+    return bool(row and row.get("revealed")
+                and s["customer_book"].get(BOND_BY_CODE[code], {}).get("bond"))
+
+
+def _closed(s, key):
+    return all(_lit(s, code) for code in LOCATIONS[key]["pool"])
+
+
+def _open_locations(s):
+    return [key for key in s["unlocked_locations"] if not _closed(s, key)]
+
+
+CLOSED_TEXT = "{name}的旧物都讲完了自己的故事,这里的旧货市场不再开放。"
 
 AMBIENT += [
     "街角有人收摊，木箱碰出一串轻响。", "楼上晾衣绳垂下来，夹着一只忘记收的手套。",
@@ -553,7 +576,9 @@ def _teleport(s):
     if len(s["inventory"]) >= _capacity(s):
         raise IllegalAction(f"货架满了({len(s['inventory'])}/{_capacity(s)}件),先卖出或回收腾一格再用;"
                             "卷轴还在手上,别忘了打烊前用掉。")
-    opened = s["unlocked_locations"]
+    opened = _open_locations(s)
+    if not opened:
+        raise IllegalAction("所有旧货市场都讲完了自己的故事,卷轴没有地方可去。")
     location = opened[_number(s["seed"], "teleport", s["item_counter"]) % len(opened)]
     s["scroll"] = None
     before = (s["coins"], s["reputation"])
@@ -581,6 +606,7 @@ def _capacity(s):
 def _make_item(s, location, salt):
     pool = [code for code in LOCATIONS[location]["pool"]
             if RARITIES[ITEM_RARITY[code]][2] <= s["shop_level"]]
+    pool = [code for code in pool if not _lit(s, code)] or pool
     # 后期别被重复货淹没:开了第五张图后没见过的货权重×2,第六张图后×3,灯塔开通后×5
     opened = len(s["unlocked_locations"])
     fresh = 5 if SECRET in s["unlocked_locations"] else 3 if opened >= 6 else 2 if opened >= 5 else 1
@@ -630,7 +656,8 @@ def _witch_on(s):
 
 
 def _witch_spot(s):
-    return s["unlocked_locations"][_number(s["seed"], "witch", s["day"]) % len(s["unlocked_locations"])]
+    spots = _open_locations(s) or s["unlocked_locations"]
+    return spots[_number(s["seed"], "witch", s["day"]) % len(spots)]
 
 
 def _witch_book(s):
@@ -651,9 +678,10 @@ def _witch_tick(s):
     if not _witch_on(s):
         return
     w, n = _witch_book(s), s["shift_count"]
-    if n % WITCH_TREASURE_EVERY == 0:
-        pool = [row for row in ITEMS if ITEM_RARITY.get(row[0]) in ("ancient", "heirloom")
-                and (row[0] not in SECRET_ITEMS or SECRET in s["unlocked_locations"])]
+    pool = [row for row in ITEMS if ITEM_RARITY.get(row[0]) in ("ancient", "heirloom")
+            and (row[0] not in SECRET_ITEMS or SECRET in s["unlocked_locations"])
+            and not _lit(s, row[0])] if n % WITCH_TREASURE_EVERY == 0 else []
+    if pool:
         code, name, story, condition, value, secret = pool[_number(s["seed"], "witch_stock", n) % len(pool)]
         s["item_counter"] += 1
         w["stock"] = (w["stock"] + [{
@@ -661,6 +689,7 @@ def _witch_tick(s):
             "condition": _start_condition(ITEM_RARITY[code]), "value": value, "displayed": False,
             "kind": ITEM_KINDS[code], "rarity": ITEM_RARITY[code], "origin": "witch", "secret": None,
             "_secret": secret}])[-3:]
+        _arrive_repaired(s, w["stock"][-1])
     if n % WITCH_APPLE_EVERY == 0 and _number(s["seed"], "witch_apple", n) % 2 == 0:
         w["apple_until"] = n + WITCH_APPLE_HOLD
 
@@ -670,6 +699,9 @@ def _witch_meet(s, location):
         return ""
     w = _witch_book(s)
     w["met"] += 1
+    w["stock"] = [item for item in w["stock"] if not _lit(s, item["code"])]   # 故事讲完的不再摆
+    for item in w["stock"]:      # 摊上的货也按"揭过秘就是修好的"算,看到的和买到的一致
+        _arrive_repaired(s, item)
     apple = _apple_held(s)
     roll = _number(s["seed"], "witch_mood", s["shift_count"]) % 100
     gift = ""
@@ -775,6 +807,14 @@ def _collect(s, item):
         s["coins"] += 2
     s["collection"][code]["count"] += 1
     s["inventory"].append(item)
+    if first:
+        done = s.setdefault("maps_done", [])
+        for key, loc in LOCATIONS.items():
+            if key != SECRET and key not in done and all(c in s["collection"] for c in loc["pool"]):
+                done.append(key)
+                s["reputation"] += MAP_COMPLETE_REPUTATION
+                s.setdefault("_notes", []).append(
+                    f"{loc['name']}的旧物全部收进图鉴,街坊们传开了,声望+{MAP_COMPLETE_REPUTATION}。")
     return first
 
 
@@ -859,7 +899,7 @@ def new_game(seats, seed):
         raise ValueError("口袋夜铺 v0.3 只需要一位 AI 店主")
     s = {
         "phase": "playing", "seed": seed, "seats": list(seats), "shopkeeper": seats[0],
-        "day": 1, "shift_index": 0, "coins": 0, "reputation": 0,
+        "day": 1, "shift_index": OPEN_SHIFT, "coins": 0, "reputation": 0,
         "shop_level": 1, "extra_capacity": 0, "inventory": [], "item_counter": 0,
         "shift_count": 0, "history": [], "diary": [], "weekly": [], "endings": [],
         "current_goal": "认识旧货巷的旧物,补全第一批图鉴",
@@ -886,6 +926,7 @@ REGULAR_VISITS = 5
 def _spawn_customer(s):
     pool = [c for c in CUSTOMERS
             if s["customer_book"].get(c[0], {}).get("visits", 0) < MAX_CUSTOMER_VISITS
+            and not s["customer_book"].get(c[0], {}).get("farewell")
             and (c[0] not in SPECIAL_CUSTOMERS or s["shop_level"] >= 3)]
     if SECRET in s["unlocked_locations"]:
         # 灯塔开通后特殊客人上门概率×2(抽签池里各多放一份)
@@ -912,7 +953,7 @@ def _spawn_customer(s):
                      "_wants": list(wants), "_budget": max(3, base + n // 8 % 4 - 1 + row["trust"])}
     if cid in SPECIAL_CUSTOMERS:
         s["customer"]["_item_code"] = SPECIAL_CUSTOMERS[cid][1]
-        s["customer"]["_arrived_day"] = s["day"]   # 第二天一早悄悄走,不提前告诉玩家,免得催着乱淘货
+    s["customer"]["_arrived_day"] = s["day"]   # 走的时候不提前告诉玩家,免得催着乱淘货
 
 
 def _public_item(item):
@@ -925,8 +966,12 @@ CUSTOMER_HINT = ("新手提示:客人只认旧物的「类别」——就是库�
                  "手上没有对的类别,就用 work_shift 的 dismiss 送客(不另收费),等下一位客人。")
 
 
+def _is_open(s):
+    return s["shift_index"] >= OPEN_SHIFT
+
+
 def _public_customer(s):
-    if s["customer"] is None:
+    if s["customer"] is None or not _is_open(s):
         return None
     view = {key: value for key, value in s["customer"].items() if not key.startswith("_")}
     view["hint"] = CUSTOMER_HINT
@@ -940,6 +985,7 @@ def _locations(s):
          "required_level": loc.get("level", 1),
          "required_reputation": loc.get("reputation", 0),
          "unlocked": key in s["unlocked_locations"],
+         **({"closed": True} if key in s["unlocked_locations"] and _closed(s, key) else {}),
          "undiscovered": sum(code not in s["collection"] for code in loc["pool"]),
          "available_undiscovered": sum(code not in s["collection"] and
                                        RARITIES[ITEM_RARITY[code]][2] <= s["shop_level"]
@@ -961,7 +1007,7 @@ def _event_view(s):
     return {"id": pending["id"], "name": event["name"], "text": event["text"], "choices": choices}
 
 
-NEWCOMER_SHIFTS = 28   # 头两周
+NEWCOMER_SHIFTS = 14 * len(SHIFTS)   # 头两周
 NEWCOMER_ADVICE = ("建议:头两周先用 work_shift 一班一班地淘,别急着连淘。"
                    "一班一个故事、一位客人一位客人地认识,才是夜铺的乐趣;连淘会把进度刷得太快。"
                    "熟悉以后再用 run_shifts 省事。")
@@ -1027,6 +1073,7 @@ def observe(full_state, seat_id):
         "phase": s["phase"], "day": s["day"], "shift": SHIFTS[s["shift_index"]],
         "coins": s["coins"], "reputation": s["reputation"], "shop_level": s["shop_level"],
         "stardust": s.get("stardust", 0),
+        **({"door": "下午还没开门,客人傍晚才来;可以整理、修理,出门淘货半价"} if not _is_open(s) else {}),
         **({"scroll": f"手上有传送卷轴,第{s['scroll']['until_day']}天打烊前用 teleport {{}},过时化成灰"}
            if s.get("scroll") else {}),
         # 救店信息只在真要救店/已破产时出现,平时不挂在店况里给 AI 添压力
@@ -1078,6 +1125,14 @@ def history_since(s, after_seq):
 
 
 def _log(s, day, shift, focus, text, before, **extra):
+    notes = s.pop("_notes", None) or []
+    done = s.setdefault("closed_locations", [])
+    for key in s["unlocked_locations"]:
+        if key not in done and _closed(s, key):
+            done.append(key)
+            notes.append(CLOSED_TEXT.format(name=LOCATIONS[key]["name"]))
+    if notes:
+        text += " " + " ".join(notes)
     s["history"].append({
         "seq": len(s["history"]) + 1, "day": day, "shift": shift, "focus": focus,
         "text": text, "coins_delta": s["coins"] - before[0],
@@ -1097,6 +1152,8 @@ def _validate_work(s, params):
     focus = params.get("focus")
     if focus not in FOCI:
         raise IllegalAction("未知经营动作")
+    if focus in ("sell", "dismiss") and not _is_open(s):
+        raise IllegalAction("下午还没开门,客人傍晚才来;下午可以整理、修理,出门淘货只要半价")
     if focus in ("sell", "dismiss") and s["customer"] is None:
         raise IllegalAction("当前没有可接待的客人；仍可淘货、修理、回收或扩建")
     _text_param(params, "goal", 60)
@@ -1115,12 +1172,15 @@ def _validate_work(s, params):
         location = params.get("location", s["location"])
         if not isinstance(location, str) or location not in s["unlocked_locations"]:
             raise IllegalAction("请先解锁淘货地点")
+        if _closed(s, location):
+            raise IllegalAction(CLOSED_TEXT.format(name=LOCATIONS[location]["name"]) + "换一张图吧。")
 
 
 def _work_cost(s, params):
     focus = params["focus"]
     if focus == "scavenge":
-        return LOCATIONS[params.get("location", s["location"])]["cost"]
+        cost = LOCATIONS[params.get("location", s["location"])]["cost"]
+        return cost if _is_open(s) else (cost + 1) // 2
     if focus == "repair":
         return 1
     if focus == "upgrade":
@@ -1283,7 +1343,7 @@ def _run_shifts(s, params):
     done, reason, start = 0, "count", len(s["history"])
     for _ in range(count):
         block = _work_block(s, params, batch=True)
-        upkeep = s["shop_level"] if s["shift_index"] == 1 else 0
+        upkeep = s["shop_level"] if s["shift_index"] == LAST_SHIFT else 0
         known_income = 2 + s["shop_level"] if params["focus"] == "tidy" else 0
         # 不把未知奖励当作已到手的钱;边界在真正花钱前生效。
         if block or s["coins"] + known_income - _work_cost(s, params) - upkeep < reserve:
@@ -1353,7 +1413,7 @@ def _work_shift(s, params):
         report += " " + event_text
         flags["event"] = True
         flags["scroll"] = s.get("scroll") is not scroll_before
-    if s["shift_index"] == 1:
+    if s["shift_index"] == LAST_SHIFT:
         upkeep = s["shop_level"]   # 每天维护费 = 店铺等级
         paid = min(upkeep, s["coins"])
         s["coins"] -= paid
@@ -1393,8 +1453,11 @@ def _work_shift(s, params):
             # 特殊客人不久留:来的当天待到打烊,第二天一早就走
             report += f" {c['name']}没等到要找的东西,天亮前悄悄走了。"
             _spawn_customer(s)
+        elif c and c.setdefault("_arrived_day", s["day"] - 1) + CUSTOMER_WAIT_DAYS <= s["day"]:
+            report += f" {c['name']}等了三天,没等到合适的东西,走了。"
+            _spawn_customer(s)
     else:
-        s["shift_index"] = 1
+        s["shift_index"] += 1
     reaction = None
     if params.get("mood") is not None or params.get("public_line") is not None:
         reaction = {"mood": params.get("mood"), "text": _text_param(params, "public_line", 80)}
@@ -1509,7 +1572,7 @@ def _do_focus(s, params, flags):
     if focus == "scavenge":
         location = params.get("location", s["location"])
         s["location"] = location
-        s["coins"] -= LOCATIONS[location]["cost"]
+        s["coins"] -= _work_cost(s, params)
         if len(s["inventory"]) >= _capacity(s):
             return (f"去{LOCATIONS[location]['name']}转了一圈,货架已满({len(s['inventory'])}/{_capacity(s)}件),"
                     "空手而归。碰见魔女的话可以把不要的货卖给她腾位置。")
@@ -1550,6 +1613,11 @@ def _do_focus(s, params, flags):
                 s["reputation"] += BOND_REPUTATION
                 report += (f" {c['name']}把它捧在手里看了很久:「{bond[1]}」"
                            f"临走又多放下{BOND_COINS}枚古币道谢。")
+                if c.get("special"):
+                    # 特殊客人只为这一件而来:心愿了了就远行,不再上门
+                    row["farewell"] = True
+                    report += (f" 「终于找到「{item['name']}」了。我要远行了,今天是来同你告别的。」"
+                               f"{c['name']}以后不会再来了。")
             _spawn_customer(s)
             return report
         c["patience"] -= 1
@@ -1622,8 +1690,9 @@ def _maybe_event(s):
     text = f"街巷见闻「{event['name']}」:{event['text']}"
     if event.get("scroll"):
         # 深夜拿到的卷轴,这一班就打烊了,所以留到明天打烊
-        s["scroll"] = {"until_day": s["day"] + s["shift_index"]}
-        text += " " + SCROLL_TEXT.format(when="明天" if s["shift_index"] else "今天")
+        late = s["shift_index"] == LAST_SHIFT
+        s["scroll"] = {"until_day": s["day"] + late}
+        text += " " + SCROLL_TEXT.format(when="明天" if late else "今天")
     return text
 
 

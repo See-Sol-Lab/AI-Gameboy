@@ -63,6 +63,7 @@ observe / status：看店况、库存、当前客人和 legal_actions（可做�
   witch_sell {"item_ids":["库存id","库存id"]}（2折收货，每次最多2件）或 witch_buy {"item_id":"摊上id"}。
 淘到重复的寻常/少见/奇珍旧物，可以拆一件去修同种的另一件：merge {"item_id":"要修的","from_id":"被拆的"}（不花钱不占班）。
 回收寻常/少见/奇珍会掉星沙（1/2/3 粒）；星沙能一次修满奇珍/上古/遗世：sand_repair {"item_id":"…"}（22/33/55 粒，不占班）。
+一天五班：下午两班还没开门（客人傍晚才来，出门淘货半价），傍晚两班、深夜一班接客，深夜打烊结算维护费。
 街巷见闻有时会送传送卷轴：teleport {}，不花钱不占班，随机去一张已开的地图带回一件货；拿到当天打烊前要用掉（深夜拿到的留到第二天），过时化成灰。
 手头紧就先整理（tidy 不花钱）。连续 3 天交不齐维护费，才能请人类救店：call_human {"human_words":"人类原话"}（一局最多 3 次，之后再破产就关店）。
 走遍所有地图以后，声望可以换货架格子：buy_slot {}（40 声望一格，不占班次）。
@@ -83,7 +84,7 @@ stop_on 接受 new/rare/event 字符串或数组；省略默认 new+rare（event
 
 
 BLIND_HIDDEN = ("customer_book", "customer_collection")
-_BRIEF_KEYS = ("day", "shift", "coins", "reputation", "stardust", "scroll", "rescue_ready", "rescues_left", "bankrupt", "shop_level", "capacity", "location", "resting",
+_BRIEF_KEYS = ("day", "shift", "coins", "reputation", "stardust", "door", "scroll", "rescue_ready", "rescues_left", "bankrupt", "shop_level", "capacity", "location", "resting",
                "start_funds_pending", "current_goal", "customer", "pending_event", "witch", "last_run",
                "journal_total")
 
