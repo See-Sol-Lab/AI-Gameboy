@@ -287,6 +287,23 @@ class TestNightExpansion(unittest.TestCase):
         self.assertIn("每揭开8种秘密", text)
         self.assertGreaterEqual(s["coins"] - before, 20)
 
+    def test_price_feedback_tells_how_far_off(self):
+        s = rules.new_game(["seat_a"], 5)
+        s["coins"] = 50
+        c = s["customer"]
+        item = s["inventory"][0]
+        item["kind"] = c["_wants"][0]
+        ceiling = min(c["_budget"], item["value"] + item["condition"] + s["shop_level"])
+        near = rules.apply(deepcopy(s), "seat_a", "work_shift",
+                           {"focus": "sell", "item_id": item["id"], "asking_price": ceiling + 1})
+        self.assertIn("差一点", near["history"][-1]["text"])
+        far = rules.apply(deepcopy(s), "seat_a", "work_shift",
+                          {"focus": "sell", "item_id": item["id"], "asking_price": ceiling * 2 + 5})
+        self.assertIn("差得远", far["history"][-1]["text"])
+        ok = rules.apply(deepcopy(s), "seat_a", "work_shift",
+                         {"focus": "sell", "item_id": item["id"], "asking_price": ceiling})
+        self.assertIn("满意", ok["history"][-1]["text"])
+
     def test_witch_buys_ancient_and_heirloom_at_eighty_percent(self):
         s = rules.new_game(["seat_a"], 21)
         s.update(coins=100, shop_level=5, unlocked_locations=["lane", "station", "dock", "arcade"])

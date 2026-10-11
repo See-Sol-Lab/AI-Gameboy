@@ -1220,12 +1220,16 @@ def _do_focus(s, params, flags):
             row["deals"] += 1
             row["trust"] = min(5, row["trust"] + 1)
             s["inventory"].remove(item)
-            report = f"{c['name']}付了{price}枚古币,带走「{item['name']}」。图鉴记录保留。"
+            report = f"{c['name']}露出满意的表情,付了{price}枚古币,带走「{item['name']}」。图鉴记录保留。"
             _spawn_customer(s)
             return report
         c["patience"] -= 1
-        report = (f"{c['name']}表示这类旧物不合需要。" if not matches
-                  else f"{c['name']}觉得报价偏高,还没有成交。")
+        if not matches:
+            report = f"{c['name']}表示这类旧物不合需要。"
+        elif price <= max(ceiling * 1.3, ceiling + 2):   # 超出不到三成(或2枚以内):只透露"差一点",不报底价
+            report = f"{c['name']}犹豫了一下,觉得报价偏高,好像就差一点。"
+        else:
+            report = f"{c['name']}摇摇头,觉得报价偏高,这个价离预算差得远。"
         if c["patience"] == 0:
             report += " 客人告辞了。"
             _spawn_customer(s)
