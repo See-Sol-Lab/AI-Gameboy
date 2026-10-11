@@ -4,7 +4,13 @@
 
 游戏装在**卡带**里。首发自带几张卡带，**任何人都可以给它做新卡带并提交到这个仓库**，让后来的每个玩家都能玩到。
 
-## 只想玩夜铺？单文件版（纯文字盲玩，无掌机显示）
+> ## 🤖 AI 必读：[AGENT_GUIDE.md](AGENT_GUIDE.md)
+>
+> **如果你是 AI，你的人类把这个仓库交给了你，请先完整读这份教程再动手。** 里面用大白话讲清楚了：怎么帮人类选模式、两种模式一步步怎么开、开桥的安全须知、你作为 AI 玩家怎么上桌，以及怎么和人类一起做一张新卡带并提交回来。读完后，请根据你的人类要玩的方式，用他/她听得懂的话解释给他/她听。
+
+---
+
+## 口袋夜铺单机版，指路
 
 **这是无需游戏机、没有网页显示器的纯文字盲玩版本。需要有 Python 代码执行能力的 AI**，例如能操作本机文件的 Codex、Claude Code；纯聊天窗口不会自动获得电脑访问能力。Python 3.11+ 即可，无需第三方依赖、整个仓库、MCP、域名或模型 API Key。
 
@@ -23,11 +29,6 @@ print(shop.cmd('run_shifts {"focus":"scavenge","count":6,"stop_on":"new"}'))
 行动自动存到文件旁的 `pocket_night_shop.save.sqlite3`，下次调用 `observe` 继续；关闭 Python 或电脑不丢档。迁移时一并备份游戏文件和存档。`close_for_now` 歇业、`reopen_shop` 续店。单文件版与掌机存档独立，**没有网页显示器**；想旁观掌机、玩其他卡带或远程接入，再使用下面的完整游戏机。
 
 维护者：单文件从现有夜铺规则和标准库入口生成。改动规则或模板后运行 `python tools/build_night_shop.py`；`python tools/build_night_shop.py --check` 及测试会检查两版是否同步。
-
----
-> ## 🤖 AI 必读：[AGENT_GUIDE.md](AGENT_GUIDE.md)
->
-> **如果你是 AI，你的人类把这个仓库交给了你，请先完整读这份教程再动手。** 里面用大白话讲清楚了：怎么帮人类选模式、两种模式一步步怎么开、开桥的安全须知、你作为 AI 玩家怎么上桌，以及怎么和人类一起做一张新卡带并提交回来。读完后，请根据你的人类要玩的方式，用他/她听得懂的话解释给他/她听。
 
 ---
 
@@ -56,22 +57,7 @@ git sparse-checkout set console data cartridges/pocket-night-shop
 
 以后想加其他首发卡，可以执行 `git sparse-checkout add cartridges/pocket-crossing` 或 `git sparse-checkout add cartridges/pocket-tabletop`。这只下载本体和选中的卡带文件。已有存档的安装请先检查依赖，不要通过缩小 sparse 范围移除仍有存档的卡带。
 
-### 不喜欢某张卡？隐藏或卸载
-
-让 Agent 在仓库根目录操作：
-
-```sh
-python -m console.cartridges list
-python -m console.cartridges hide pocket-crossing
-python -m console.cartridges show pocket-crossing
-python -m console.cartridges install /path/to/downloaded-card
-```
-
-- `hide`：从卡带架收起，保留游戏文件与全部旧局；`show` 恢复显示。
-- `install`：复制一张已下载、检查过的卡带文件夹，不覆盖同id卡带。安装第三方规则前，Agent 应说明来源并获得人类同意。
-- `uninstall`：确认人类同意后运行 `python -m console.cartridges uninstall <卡带id> --yes`，会删除整张卡的目录。只要还有任何局引用它（包括已结束的局），就会拒绝；请改用 `hide`。**这些命令不删除玩家存档或荷官Key。**
-
-操作后刷新卡带架即可。Agent 的完整安装、更新和存档保护步骤见 [使用教程](AGENT_GUIDE.md#cartridge-management)。
+Agent 的完整安装、更新和存档保护步骤见 [使用教程](AGENT_GUIDE.md#cartridge-management)。
 
 ### 先选模式
 
@@ -89,7 +75,7 @@ python -m console.cartridges install /path/to/downloaded-card
 - **本地模式**只有这台电脑能连。电脑上的 AI 连 `http://127.0.0.1:7777/mcp`，仓库已带 Claude Code 用的 `.mcp.json`。
 - **开桥模式**会开一条临时隧道，窗口里打印一个公网 MCP 网址，把它加进手机或网页 AI 的连接器即可。公网**只开放 AI 上桌的入口**，掌机页面和开局、收局等操作仍然只有本机能做；没有座位令牌动不了任何一局；关掉窗口隧道立即失效，下次开桥会换新网址。
 
-### 网页 ChatGPT 怎么接上？旧插件失效怎么办？
+### 云端AI（比如官GPT） 怎么接上？旧插件失效怎么办？
 
 先让电脑上的 Agent 启动开桥、验证连接，把**本次完整 MCP 地址**交给你。你在 [ChatGPT 插件首页](https://chatgpt.com/plugins) 点 **＋ → 添加自定义 MCP 服务器**，粘贴地址，认证选 **无认证**，阅读风险提示后创建插件。确认有 `game_observe`、`game_act` 两个工具，再在新聊天里选中该插件、发送席位连接信息。
 
@@ -97,13 +83,13 @@ python -m console.cartridges install /path/to/downloaded-card
 
 逐步点击、Agent 分工、缺少入口时的处理和旧地址排查，见 [AI 教程第四部分](AGENT_GUIDE.md#第四部分开桥模式怎么开)。请把技术准备交给 Agent，人类跟着完成账号里的点击与确认。
 
-### 附带的卡带
+### 内置游戏卡带
 
 | 卡带 | 人数 | 玩法 | 需要荷官 |
 |---|---|---|---|
-| 《口袋穿越》v0.6 | 2 | 荷官先写好一部小说世界和它的原结局，两位玩家穿越进去改写它 | 要 |
-| 《口袋跑团》v1.1 | 2 | 经典危机跑团：世界出事了，两个人去解决 | 要 |
-| 《口袋夜铺》v0.3 | 1 | AI 经营旧物夜铺：72种旧物、86位有限来客、五阶店铺与逐轮经营记录 | 不要 |
+| 《口袋穿越》v0.6 | 2 |诸天万界穿越游戏，两位玩家穿越进去改写原结局 | 要 |
+| 《口袋跑团》v1.1 | 2 | 文字跑团游戏：双人进入世界解决危机 | 要 |
+| 《口袋夜铺》v0.3 | 1 | AI 经营旧物夜铺：72种旧物、86位来客、五阶店铺与逐轮经营记录 | 不要 |
 
 **荷官**是另一个 AI 模型，负责写世界和剧情，只写不判。用到荷官的卡带需要在 `data/narrator.json` 填 `base_url`、`api_key`、`model`（任何 OpenAI 兼容接口，该文件不进版本库）。「口袋」系列是原作者随首发附带的内置卡带。
 
