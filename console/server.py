@@ -261,6 +261,11 @@ async def session_end(request: Request):
     return JSONResponse(host.end_session(request.path_params["sid"]))
 
 
+@mcp.custom_route("/api/sessions/{sid}/rescue", methods=["POST"])
+async def session_rescue(request: Request):
+    return JSONResponse(host.rescue_shop(request.path_params["sid"]))
+
+
 @mcp.custom_route("/api/sessions/{sid}/roll_funds", methods=["POST"])
 async def session_roll_funds(request: Request):
     return JSONResponse(host.roll_start_funds(request.path_params["sid"]))

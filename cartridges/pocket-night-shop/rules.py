@@ -864,6 +864,7 @@ def observe(full_state, seat_id):
         "coins": s["coins"], "reputation": s["reputation"], "shop_level": s["shop_level"],
         "stardust": s.get("stardust", 0),
         "rescues_left": RESCUE_LIMIT - s.get("rescues", 0), "bankrupt": bool(s.get("bankrupt")),
+        "rescue_ready": _rescue_ready(s),
         "capacity": _capacity(s), "inventory": [_public_item(item) for item in s["inventory"]],
         "current_goal": s["current_goal"], "resting": s["resting"],
         "start_funds_pending": bool(s.get("start_funds_pending")),

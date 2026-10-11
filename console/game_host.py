@@ -145,6 +145,15 @@ class GameHost:
 
     def roll_start_funds(self, session_id: str) -> dict:
         """夜铺开局:人类在网页按「掷骰」,替店主掷启动资金(两颗六面骰,11-66)。"""
+        return self._night_human_roll(session_id, "start_funds_pending", "roll_start_funds",
+                                      "人类按下了掷骰按钮", "启动资金已经掷过了")
+
+    def rescue_shop(self, session_id: str) -> dict:
+        """夜铺救店:连续3天交不齐维护费后,人类在网页按「注资救店」替店主掷骰(一局最多3次)。"""
+        return self._night_human_roll(session_id, "rescue_ready", "call_human",
+                                      "人类按下了注资救店按钮", "现在还不需要救店")
+
+    def _night_human_roll(self, session_id, ready_key, action_id, words, not_ready) -> dict:
         conn = store.connect(self.db_path)
         try:
             conn.execute("BEGIN IMMEDIATE")
@@ -154,13 +163,15 @@ class GameHost:
                 return {"result": "rejected", "reason": "这一局没有启动资金可掷"}
             engine = json.loads(srow["engine_state_json"])
             state = engine.get("cartridge_state")
-            if not (state or {}).get("start_funds_pending"):
-                conn.execute("ROLLBACK")
-                return {"result": "rejected", "reason": "启动资金已经掷过了"}
             _, rules = self._load_cartridge(srow["cartridge_id"], srow["cartridge_version"])
-            engine["cartridge_state"] = rules.apply(state, state["seats"][0], "roll_start_funds",
-                                                    {"human_words": "人类按下了掷骰按钮"})
-            self._push_event(engine, {"kind": "start_funds", "coins": engine["cartridge_state"]["coins"]})
+            ready = (rules.observe(state, state["seats"][0])["public_state"].get(ready_key)
+                     if state else False)
+            if not ready:
+                conn.execute("ROLLBACK")
+                return {"result": "rejected", "reason": not_ready}
+            engine["cartridge_state"] = rules.apply(state, state["seats"][0], action_id,
+                                                    {"human_words": words})
+            self._push_event(engine, {"kind": action_id, "coins": engine["cartridge_state"]["coins"]})
             store.update_session(conn, session_id, srow["status"], srow["revision"] + 1,
                                  json.dumps(engine, ensure_ascii=False), _now())
             conn.execute("COMMIT")
@@ -472,6 +483,9 @@ class GameHost:
                 if action_id == "roll_start_funds":
                     return rejected("游戏机版的启动资金由人类在网页上按「🎲 掷启动资金」按钮来掷。"
                                     "请告诉人类去按一下,等按完再 observe 开店。")
+                if action_id == "call_human":
+                    return rejected("游戏机版的救店由人类在网页上按「🎲 注资救店」按钮来掷。"
+                                    "请告诉人类夜铺陷入破产循环,请他去按一下,按完再 observe。")
                 if action_id == "human_said":
                     words = params.get("human_words")
                     if not isinstance(words, str) or not words.strip():

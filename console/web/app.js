@@ -571,6 +571,10 @@ const CART_UI = {
           <span class="chip">声望 ${active.reputation_delta >= 0 ? "+" : ""}${active.reputation_delta}</span>
         </div>` : "";
       const logs = S.night.journal.map(nightJournalEntry).join("");
+      const rescue = ps.rescue_ready ? `
+        <div class="night-customer center">夜铺连续三天交不起维护费，陷入破产循环了。请人类替店主掷两颗骰子注资(11-66枚古币)，还能救${esc(ps.rescues_left)}次。
+          <div style="margin-top:.4rem"><button class="soft focusable" data-act="night-rescue">🎲 注资救店</button></div>
+        </div>` : ps.bankrupt ? '<div class="night-customer center">夜铺已经破产关门了。</div>' : "";
       const rollFunds = ps.start_funds_pending ? `
         <div class="night-customer center">夜铺还没有本钱。请人类替店主掷两颗骰子(十位+个位，11-66枚古币)。
           <div style="margin-top:.4rem"><button class="soft focusable" data-act="night-roll">🎲 掷启动资金</button></div>
@@ -616,7 +620,7 @@ const CART_UI = {
           <p>${esc(ps.pending_event.text)}</p>
           <div class="dim">可选：${ps.pending_event.choices.map(c => esc(c.label) + (c.available ? "" : "（暂不可选）")).join(" / ")}</div>
           <div class="dim">由 AI 决定，观看者无需操作。</div></div>` : ""}
-        ${rollFunds}${customer}
+        ${rollFunds}${rescue}${customer}
         ${ps.last_run ? `<div class="night-week">本次连续行动：${ps.last_run.completed}/${ps.last_run.requested}班
           · 停于 ${esc({count:"计划完成",new:"新发现",rare:"奇珍",event:"街巷事件",decision:"等待店主选择",
              reserve:"现金保留线",inventory_full:"货架已满",repair_complete:"修复完成",ending:"结局过场",
@@ -960,6 +964,14 @@ async function humanAct(action_id, params, table_line = "") {
 
 
 
+async function nightRescue(btn) {
+  btn.disabled = true;
+  const r = await api(`/api/sessions/${S.sid}/rescue`, "POST");
+  if (r.result !== "ok") alert("没救成:" + (r.reason || r.result));
+  else alert(`骰子落下——注资 ${r.coins} 枚古币，夜铺缓过来了！`);
+  S.lastSnap = "";
+}
+
 async function nightRoll(btn) {
   btn.disabled = true;
   const r = await api(`/api/sessions/${S.sid}/roll_funds`, "POST");
@@ -1071,6 +1083,7 @@ function act(el) {
   else if (a === "pc-submit") pcSubmit();
   else if (a === "pc-narrate") pcNarrate(el);
   else if (a === "night-roll") nightRoll(el);
+  else if (a === "night-rescue") nightRescue(el);
   else (CART_UI[S.currentCartridgeId] || CART_UI._fallback).onAct?.(a, el);
 }
 

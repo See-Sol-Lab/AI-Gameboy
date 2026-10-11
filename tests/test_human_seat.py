@@ -95,6 +95,28 @@ class TestHumanSeat(unittest.TestCase):
         self.assertEqual(rejected["result"], "rejected")
         self.assertEqual(restarted.observe(sid, token), before)
 
+    def test_night_shop_rescue_is_human_button(self):
+        import json as _json
+        from console import store
+        c = self.host.create_session("pocket-night-shop", "solo_ai")
+        sid, token = c["session_id"], c["seats"][0]["seat_token"]
+        self.host.act(sid, token, 0, "introduce", {"display_name": "K", "surface": "T"})
+        self.host.roll_start_funds(sid)
+        self.assertEqual(self.host.rescue_shop(sid)["result"], "rejected")      # 还没陷入破产循环
+        conn = store.connect(self.host.db_path)
+        row = store.get_session(conn, sid)
+        engine = _json.loads(row["engine_state_json"])
+        engine["cartridge_state"]["unpaid_streak"] = 3
+        store.update_session(conn, sid, row["status"], row["revision"], _json.dumps(engine, ensure_ascii=False), row["updated_at"] if "updated_at" in row.keys() else "")
+        conn.commit(); conn.close()
+        r = self.host.observe(sid, token)
+        self.assertTrue(r["public_state"]["rescue_ready"])
+        self.assertEqual(self.host.act(sid, token, r["revision"], "call_human",
+                                       {"human_words": "救"})["result"], "rejected")
+        ok = self.host.rescue_shop(sid)
+        self.assertEqual(ok["result"], "ok")
+        self.assertEqual(self.host.observe(sid, token)["public_state"]["rescues_left"], 2)
+
     def test_night_shop_calls_capped_until_human_said(self):
         from console import game_host
         self.assertEqual(game_host.CALL_LIMIT, 30)
