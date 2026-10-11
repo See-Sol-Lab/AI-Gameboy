@@ -352,6 +352,34 @@ class TestNightExpansion(unittest.TestCase):
         with self.assertRaisesRegex(rules.IllegalAction, "寻常和少见"):
             rules.apply(s, "seat_a", "sand_repair", {"item_id": s["inventory"][0]["id"]})
 
+    def test_rescue_after_three_unpaid_days_then_bankrupt(self):
+        def broke_days(s, days):
+            for _ in range(days):
+                s["coins"], s["shift_index"] = 0, 1
+                s = rules.apply(s, "seat_a", "work_shift", {"focus": "dismiss"})
+                while s["pending_event"]:
+                    s = rules.apply(s, "seat_a", "choose_event", {"event_id": s["pending_event"]["id"], "choice": next(
+                        k for k, o in rules.EVENTS[s["pending_event"]["kind"]]["choices"].items() if o["cost"] == 0)})
+            return s
+        s = rules.new_game(["seat_a"], 8)
+        s = broke_days(s, 2)
+        with self.assertRaisesRegex(rules.IllegalAction, "还不能"):
+            rules.apply(s, "seat_a", "call_human", {"human_words": "救"})
+        self.assertIn("tidy", s["history"][-1]["text"])
+        for n in range(1, 4):
+            s = broke_days(s, 3)
+            self.assertIn("call_human", [x["action_id"] for x in rules._legal_actions(s)])
+            with self.assertRaises(rules.IllegalAction):
+                rules.apply(s, "seat_a", "call_human", {"human_words": ""})
+            s = rules.apply(s, "seat_a", "call_human", {"human_words": "救救夜铺"})
+            self.assertTrue(11 <= s["coins"] <= 66)
+            self.assertIn(f"第{n}次救店", s["history"][-1]["text"])
+        s = broke_days(s, 3)
+        self.assertTrue(s["bankrupt"])
+        self.assertEqual(rules._legal_actions(s), [])
+        with self.assertRaisesRegex(rules.IllegalAction, "破产"):
+            rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"})
+
     def test_witch_buys_ancient_and_heirloom_at_eighty_percent(self):
         s = rules.new_game(["seat_a"], 21)
         s.update(coins=100, shop_level=5, unlocked_locations=["lane", "station", "dock", "arcade"])

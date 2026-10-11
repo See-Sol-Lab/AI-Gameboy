@@ -807,6 +807,8 @@ NEWCOMER_ADVICE = ("建议:头两周先用 work_shift 一班一班地淘,别急�
 
 
 def _legal_actions(s):
+    if s.get("bankrupt"):
+        return []
     if s.get("start_funds_pending"):
         return [{"action_id": "roll_start_funds", "params": {"human_words": START_FUNDS_HINT}}]
     if s["resting"]:
@@ -837,6 +839,8 @@ def _legal_actions(s):
     if sandable:
         actions.append({"action_id": "sand_repair", "params": {
             "item_id": "用星沙一次修满(奇珍22/上古33/遗世55粒,不占班)", "可修": sandable[:6]}})
+    if _rescue_ready(s):
+        actions.append({"action_id": "call_human", "params": {"human_words": RESCUE_TEXT}})
     if _merge_pairs(s):
         actions.append({"action_id": "merge", "params": {
             "item_id": "要修的那件", "from_id": "同种被拆掉的那件", "pairs": _merge_pairs(s)[:6]}})
@@ -859,6 +863,7 @@ def observe(full_state, seat_id):
         "phase": s["phase"], "day": s["day"], "shift": SHIFTS[s["shift_index"]],
         "coins": s["coins"], "reputation": s["reputation"], "shop_level": s["shop_level"],
         "stardust": s.get("stardust", 0),
+        "rescues_left": RESCUE_LIMIT - s.get("rescues", 0), "bankrupt": bool(s.get("bankrupt")),
         "capacity": _capacity(s), "inventory": [_public_item(item) for item in s["inventory"]],
         "current_goal": s["current_goal"], "resting": s["resting"],
         "start_funds_pending": bool(s.get("start_funds_pending")),
@@ -954,20 +959,23 @@ def _work_cost(s, params):
     return 0
 
 
+TIDY_HINT = "整理(tidy)不花钱,一班能挣{income}枚古币,手头紧时先整理回血。"
+
+
 BLOCK_TEXT = {
     "inventory_full": "货架满了({n}/{cap}件),连淘停下。先卖出、回收(recycle)或扩建(upgrade)腾出位置;"
                       "也可以单班出门(work_shift)去找魔女,把不要的货卖给她。",
     "repair_complete": "这件已经修到最好(完好度3/3),不用再修了。",
     "display_full": "陈列位满了或这件已在陈列,先撤下别的再陈列。",
     "shop_maximum": "店铺已经扩建到最高级。",
-    "insufficient_coins": "古币不够这一班的花销(需要{cost}枚古币,手上{coins}枚古币)。",
+    "insufficient_coins": "古币不够这一班的花销(需要{cost}枚古币,手上{coins}枚古币)。" + TIDY_HINT,
     "reserve": "再做下去手上的古币会低于你设的保留线 reserve,所以没有开工。",
 }
 
 
 def _block_text(s, params, block):
     return BLOCK_TEXT[block].format(n=len(s["inventory"]), cap=_capacity(s),
-                                    cost=_work_cost(s, params), coins=s["coins"])
+                                    cost=_work_cost(s, params), coins=s["coins"], income=2 + s["shop_level"])
 
 
 def _work_block(s, params, batch=False):
@@ -997,6 +1005,8 @@ def apply(full_state, seat_id, action_id, params):
         raise IllegalAction("本局已结束")
     if not isinstance(params, dict):
         raise IllegalAction("params 须是对象")
+    if s.get("bankrupt"):
+        raise IllegalAction(BANKRUPT_TEXT)
     if action_id == "close_for_now":
         if s["resting"]:
             raise IllegalAction("已经歇业")
@@ -1030,6 +1040,21 @@ def apply(full_state, seat_id, action_id, params):
         return s
     if action_id == "roll_start_funds":
         raise IllegalAction("启动资金已经掷过了")
+    if action_id == "call_human":
+        if not _rescue_ready(s):
+            raise IllegalAction("现在还不能请人类救店(连续3天交不齐维护费才行,一局最多3次)")
+        words = params.get("human_words")
+        if not isinstance(words, str) or not words.strip():
+            raise IllegalAction("human_words 要填人类发令时的原话。" + RESCUE_TEXT)
+        s["rescues"] = s.get("rescues", 0) + 1
+        tens, ones = (_number(s["seed"], "rescue", s["rescues"], i) % 6 + 1 for i in (0, 1))
+        before = (s["coins"], s["reputation"])
+        s["coins"] += tens * 10 + ones
+        s["unpaid_streak"] = 0
+        _log(s, s["day"], SHIFTS[s["shift_index"]], "call_human",
+             f"人类发令「{words.strip()[:40]}」救店,两颗骰子落下:十位{tens}、个位{ones}——注资{tens * 10 + ones}枚古币。"
+             f"这是第{s['rescues']}次救店,还剩{RESCUE_LIMIT - s['rescues']}次。", before)
+        return s
     if action_id == "choose_event":
         _choose_event(s, params)
     elif s["pending_event"]:
@@ -1151,7 +1176,18 @@ def _work_shift(s, params):
         s["coins"] -= paid
         if paid < upkeep:
             s["reputation"] = max(0, s["reputation"] - 1)
+            s["unpaid_streak"] = s.get("unpaid_streak", 0) + 1
+        else:
+            s["unpaid_streak"] = 0
         report += f" 打烊维护应付{upkeep}枚古币,实际付{paid}枚古币。"
+        if paid < upkeep:
+            report += " " + TIDY_HINT.format(income=2 + s["shop_level"])
+            if s["unpaid_streak"] >= RESCUE_STREAK:
+                if s.get("rescues", 0) < RESCUE_LIMIT:
+                    report += " " + RESCUE_TEXT
+                else:
+                    s["bankrupt"] = True
+                    report += " " + BANKRUPT_TEXT
         s["diary"].append({"day": day, "text": f"打烊时手上{s['coins']}枚古币,声望{s['reputation']}。",
                            "upkeep": paid})
         if day % 7 == 0:
@@ -1177,6 +1213,17 @@ def _work_shift(s, params):
 
 
 MERGE_RARITIES = ("common", "uncommon", "rare")   # 前三档可拆重复货来修,上古遗世不行
+RESCUE_STREAK, RESCUE_LIMIT = 3, 3      # 连续3天交不齐维护费可请人类救店,一局最多救3次
+RESCUE_TEXT = ("你已经陷入破产循环!实在无法解决的话,请回去找人类注资救店:"
+               "先停下告诉人类,等人类亲口发令后用 call_human 把原话填进 human_words,"
+               "人类会替你掷两颗骰子注资(11-66枚古币)。救店一局最多3次。")
+BANKRUPT_TEXT = "夜铺已经破产关门:三次救店之后又连续三天交不起维护费。可以看图鉴和记录,想再开店请换个空文件夹开新局。"
+
+
+def _rescue_ready(s):
+    return s.get("unpaid_streak", 0) >= RESCUE_STREAK and s.get("rescues", 0) < RESCUE_LIMIT
+
+
 SAND_DROP = {"common": 1, "uncommon": 2, "rare": 3}             # 回收前三档时掉落星沙
 SAND_REPAIR = {"rare": 22, "ancient": 33, "heirloom": 55}       # 用星沙一次修满,不占班
 
