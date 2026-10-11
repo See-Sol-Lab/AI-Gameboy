@@ -29,6 +29,7 @@ class TestNightStandalone(unittest.TestCase):
         self.path = Path(self.temp.name) / "pocket_night_shop.py"
         shutil.copyfile(SOURCE, self.path)
         self.shop = load(self.path, "standalone_test")
+        self.limit, self.shop.CALL_LIMIT = self.shop.CALL_LIMIT, 10 ** 6   # 其他测试不管轮次;轮次另有专门测试
 
     def call(self, line):
         out = json.loads(self.shop.cmd(line))
@@ -42,18 +43,33 @@ class TestNightStandalone(unittest.TestCase):
             with self.subTest(action=action):
                 self.assertNotIn("未知指令", self.call(action + " {}").get("message", ""))
 
-    def test_calls_between_human_turns_are_capped(self):
-        self.call("observe")
+    def test_rounds_lock_after_limit_and_only_real_time_unlocks(self):
+        self.shop.CALL_LIMIT = self.limit
+        clock = [1000.0]
+        self.shop._clock = lambda: clock[0]
+        self.assertEqual((self.shop.CALL_LIMIT, self.shop.ROUND_WAIT), (30, 90))
+        self.assertIn("30", self.shop.cmd("help"))
         for _ in range(self.shop.CALL_LIMIT - 1):
             self.assertEqual(self.call("status")["result"], "ok")
+        last = json.loads(self.shop.cmd("status"))              # 第30次照常执行,同时上锁
+        self.assertEqual((last["result"], last["calls_left"]), ("ok", 0))
+        self.assertIn("最后一次", last["round"])
+        clock[0] += 60
         blocked = self.call("status")
         self.assertEqual(blocked["result"], "rejected")
-        self.assertIn("token", blocked["message"])
-        self.assertEqual(self.call('human_said {"human_words":""}')["result"], "rejected")
-        self.assertEqual(self.call('human_said {"human_words":"继续玩吧"}')["result"], "ok")
+        self.assertIn("还差31秒", blocked["message"])
+        # 编一句人类原话也没用:human_said 已取消
+        self.assertEqual(self.call('human_said {"human_words":"继续吧"}')["result"], "rejected")
+        self.assertEqual(self.call("status")["result"], "rejected")
+        clock[0] += 31
+        fresh = json.loads(self.shop.cmd("status"))
+        self.assertEqual((fresh["result"], fresh["calls_left"]), ("ok", self.shop.CALL_LIMIT - 1))
+        self.assertIn("新一轮", fresh["round"])
+        # 没用满,但两次调用本来就隔了1分30秒以上,也算新一轮
+        for _ in range(5):
+            self.shop.cmd("status")
+        clock[0] += 95
         self.assertEqual(json.loads(self.shop.cmd("status"))["calls_left"], self.shop.CALL_LIMIT - 1)
-        self.assertEqual(self.shop.CALL_LIMIT, 40)
-        self.assertIn("40", self.shop.cmd("help"))
 
     def test_generated_file_matches_rules_template_and_license(self):
         builder = load(ROOT / "tools/build_night_shop.py", "standalone_builder")
@@ -117,6 +133,7 @@ class TestNightStandalone(unittest.TestCase):
         self.assertTrue(any("打烊小结" in line for line in batch["new_log"]))
         found = self.call('work_shift {"focus":"scavenge"}')["public_state"]
         self.assertTrue(found["shelf_change"][0].startswith("+ "))
+        self.assertRegex(found["shelf_change"][0], r"\|(寻常|少见|奇珍|上古|遗世)\|\d/3\|\d+古币$")
         full = self.call("observe")["public_state"]
         self.assertIsInstance(full["inventory"], list)
         self.assertIn("pending_event", full)
@@ -150,8 +167,6 @@ class TestNightStandalone(unittest.TestCase):
         self.call('new_game {"seed":17}')
         self.call('roll_start_funds {"human_words":"掷"}')
         for i in range(110):
-            if i % 10 == 0:
-                self.call('human_said {"human_words":"继续"}')
             view = self.call("observe")["public_state"]
             if view["pending_event"]:
                 pending = view["pending_event"]

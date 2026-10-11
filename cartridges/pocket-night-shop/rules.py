@@ -12,6 +12,7 @@ SHIFTS = ["下午", "下午", "傍晚", "傍晚", "深夜"]
 OPEN_SHIFT, LAST_SHIFT = 2, len(SHIFTS) - 1
 CUSTOMER_WAIT_DAYS = 3   # 普通客人连着三天没买到想要的,第三天打烊后自己走
 FOCI = ["sell", "repair", "scavenge", "curate", "upgrade", "tidy", "recycle", "dismiss"]
+FOCUS_NAMES = "sell卖货 repair修理 scavenge淘货 curate陈列 upgrade扩建 tidy整理 recycle回收 dismiss送客"
 MOODS = ["期待", "专注", "犹豫", "烦躁", "眷恋", "疲惫", "得意"]
 MAX_SHOP_LEVEL = 5
 MAX_CUSTOMER_VISITS = 8
@@ -576,7 +577,7 @@ def _teleport(s):
     if len(s["inventory"]) >= _capacity(s):
         raise IllegalAction(f"货架满了({len(s['inventory'])}/{_capacity(s)}件),先腾一格再用:"
                             '回收 work_shift {"focus":"recycle","item_id":"…"}、同种重复的 merge、卖给客人或魔女;'
-                            "卷轴还在手上,别忘了打烊前用掉。")
+                            "卷轴还在手上,别忘了打烊前用掉。" + _upgrade_hint(s))
     opened = _open_locations(s)
     if not opened:
         raise IllegalAction("所有旧货市场都讲完了自己的故事,卷轴没有地方可去。")
@@ -776,7 +777,7 @@ def _witch_trade(s, action_id, params):
         if s["coins"] < price:
             raise IllegalAction(f"古币不够(要{price}枚古币,手上{s['coins']}枚古币)")
         if len(s["inventory"]) >= _capacity(s):
-            raise IllegalAction(BLOCK_TEXT["inventory_full"].format(n=len(s["inventory"]), cap=_capacity(s)))
+            raise IllegalAction(_block_text(s, {"focus": "tidy"}, "inventory_full"))
         before = (s["coins"], s["reputation"])
         s["coins"] -= price
         if iid == "golden_apple":
@@ -958,7 +959,10 @@ def _spawn_customer(s):
 
 
 def _public_item(item):
-    return {key: deepcopy(value) for key, value in item.items() if not key.startswith("_")}
+    view = {key: deepcopy(value) for key, value in item.items() if not key.startswith("_")}
+    if item.get("rarity") in RARITIES:
+        view["rarity_name"] = RARITIES[item["rarity"]][0]      # 游戏里的中文叫法:寻常/少见/奇珍/上古/遗世
+    return view
 
 
 CUSTOMER_HINT = ("新手提示:客人只认旧物的「类别」——就是库存里每件旧物的 kind 字段,"
@@ -1027,7 +1031,7 @@ def _legal_actions(s):
                 {"action_id": "close_for_now", "params": {}}]
     actions = [
         {"action_id": "work_shift", "params": {
-            "focus": FOCI, "item_id": "sell/repair/curate/recycle 必填,从库存选",
+            "focus": FOCI, "focus_中文": FOCUS_NAMES, "item_id": "sell/repair/curate/recycle 必填,从库存选",
             "asking_price": "sell 必填正整数;店主自己报价",
             "location": "scavenge 可选已解锁地点 id",
             "goal": "可选,1-60字;表达也可省略", "mood": MOODS,
@@ -1194,7 +1198,7 @@ TIDY_HINT = "整理(tidy)不花钱,一班能挣{income}枚古币,手头紧时先
 
 BLOCK_TEXT = {
     "inventory_full": "货架满了({n}/{cap}件),连淘停下。先卖出、回收(recycle)或扩建(upgrade)腾出位置;"
-                      "也可以单班出门(work_shift)去找魔女,把不要的货卖给她。",
+                      "也可以单班出门(work_shift)去找魔女,把不要的货卖给她。{upgrade}",
     "repair_complete": "这件已经修到最好(完好度3/3),不用再修了。",
     "display_full": "陈列位满了或这件已在陈列,先撤下别的再陈列。",
     "shop_maximum": "店铺已经扩建到最高级。",
@@ -1203,8 +1207,15 @@ BLOCK_TEXT = {
 }
 
 
+def _upgrade_hint(s):
+    if s["shop_level"] >= MAX_SHOP_LEVEL:
+        return ""
+    return (f"扩建到{s['shop_level'] + 1}级要{10 * s['shop_level']}枚古币(work_shift upgrade,占一班),"
+            "货架多2格、卖价上限和整理收入各+1,更多地图和客人也看等级。")
+
+
 def _block_text(s, params, block):
-    return BLOCK_TEXT[block].format(n=len(s["inventory"]), cap=_capacity(s),
+    return BLOCK_TEXT[block].format(n=len(s["inventory"]), cap=_capacity(s), upgrade=_upgrade_hint(s),
                                     cost=_work_cost(s, params), coins=s["coins"], income=2 + s["shop_level"])
 
 
@@ -1592,7 +1603,7 @@ def _do_focus(s, params, flags):
         s["coins"] -= _work_cost(s, params)
         if len(s["inventory"]) >= _capacity(s):
             return (f"去{LOCATIONS[location]['name']}转了一圈,货架已满({len(s['inventory'])}/{_capacity(s)}件),"
-                    "空手而归。碰见魔女的话可以把不要的货卖给她腾位置。")
+                    "空手而归。碰见魔女的话可以把不要的货卖给她腾位置。" + _upgrade_hint(s))
         found = _make_item(s, location, f"find{s['shift_count']}")
         flags["new"] = _collect(s, found)
         flags["rare"] = found["rarity"] in ("rare", "ancient", "heirloom")
@@ -1761,9 +1772,17 @@ def _unlock(s, params):
     if key in s["unlocked_locations"]:
         raise IllegalAction("地点已经解锁")
     loc = LOCATIONS[key]
-    if (len(s["collection"]) < loc["discoveries"] or s["coins"] < loc["unlock_cost"]
-            or s["shop_level"] < loc.get("level", 1) or s["reputation"] < loc.get("reputation", 0)):
-        raise IllegalAction(f"发现种数、店铺等级、声望或现金不足(需要声望{loc.get('reputation', 0)})")
+    missing = []
+    if len(s["collection"]) < loc["discoveries"]:
+        missing.append(f"图鉴要{loc['discoveries']}种(现在{len(s['collection'])}种)")
+    if s["shop_level"] < loc.get("level", 1):
+        missing.append(f"店铺要{loc['level']}级(现在{s['shop_level']}级;{_upgrade_hint(s)})")
+    if s["reputation"] < loc.get("reputation", 0):
+        missing.append(f"声望要{loc['reputation']}(现在{s['reputation']})")
+    if s["coins"] < loc["unlock_cost"]:
+        missing.append(f"开路要{loc['unlock_cost']}枚古币(现在{s['coins']}枚)")
+    if missing:
+        raise IllegalAction(f"还开不了{loc['name']}:" + ";".join(missing))
     before = (s["coins"], s["reputation"])
     s["coins"] -= loc["unlock_cost"]
     s["unlocked_locations"].append(key)

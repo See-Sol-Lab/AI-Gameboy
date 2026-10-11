@@ -11,9 +11,9 @@ Windows 上如果 python 命令只会弹出应用商店，改用 py -3；输出�
     print(shop.cmd('roll_start_funds {"human_words":"人类发令的原话"}'))
     print(shop.cmd('work_shift {"focus":"scavenge"}'))   # 头两周一班一班地淘
 
-⚠️ 两次人类说话之间最多调用 cmd 40 次（返回里的 calls_left 是剩余次数），用完会被拒绝。
-这是为了替人类省 token 余额，也为了别玩上头忘了陪人类：每轮玩一阵就回去跟人类聊聊，
-人类回话后用 human_said {"human_words":"人类原话"} 清零再继续。连淘每次最多 6 班。
+⚠️ 每一轮最多调用 cmd 30 次（返回里的 calls_left 是剩余次数），用完就锁住。
+这是为了替人类省 token 余额，也为了别玩上头忘了陪人类：用完就停下来跟人类聊聊店里的事，
+结束这一轮回复。真实时间过 1 分 30 秒后自动开始新一轮，不需要也没有办法自己清零。连淘每次最多 6 班。
 第一次玩：头两周请一班一班地 work_shift 淘货，慢慢认识旧物和客人，别一上来就连淘速刷。
 
 只根据 observe 返回的 legal_actions 和结果自己决定；无需每轮发表感想。
@@ -38,6 +38,7 @@ from pathlib import Path as _Path
 import secrets as _secrets
 import sqlite3 as _sqlite3
 import sys as _sys
+import time as _time
 import zlib as _zlib
 
 VERSION = "@@VERSION@@"
@@ -51,6 +52,8 @@ exec(compile(_zlib.decompress(_base64.b64decode(_RULES_B64)).decode("utf-8"),
 
 _HELP = """口袋夜铺 · 你是独自经营旧物铺的店主。
 observe / status：看店况、库存、当前客人和 legal_actions（可做动作）。
+货架每行：编号|名字|类别|稀有度|完好度|价值。稀有度五阶：寻常、少见、奇珍、上古、遗世。
+指令是英文，跟人类说话请用中文叫法：sell卖货 repair修理 scavenge淘货 curate陈列 upgrade扩建 tidy整理 recycle回收 dismiss送客。
 新局第一步：掷启动资金（两颗六面骰，十位+个位，11-66枚古币）。先停下告诉人类，
 等人类亲口说“掷”，再 roll_start_funds {"human_words":"人类原话"}；不得替人类发令。
 行动格式：动作名 + JSON对象。按刚才的 legal_actions 填参数，例如：
@@ -59,6 +62,7 @@ observe / status：看店况、库存、当前客人和 legal_actions（可做�
   run_shifts {"focus":"scavenge","count":6,"stop_on":"new"}
   work_shift {"focus":"repair","item_id":"从库存选"}
   work_shift {"focus":"sell","item_id":"从库存选","asking_price":5}
+扩建店铺 work_shift {"focus":"upgrade"}：当前等级×10枚古币（1升2要10枚），最高5级。每级货架+2格、卖价上限和整理收入+1；旧书街要2级，观星台、档案库要3级，3级起才遇得到上古遗世旧物和特殊客人；维护费每天=店铺等级。
 货架满了怎么腾格子：卖给客人（sell）；回收拆零件 work_shift {"focus":"recycle","item_id":"…"}（得价值三分之一的古币，还掉星沙）；
   同种重复的用 merge 拆一件修另一件；碰到魔女用 witch_sell 卖给她；扩建 upgrade 每级多2格；开了灯塔后 buy_slot 用声望换格子。
 开了第四个地点后，魔女莉莉丝每天待在某个已开地点；去那里淘货撞见她，就能在下一班前
@@ -80,8 +84,9 @@ new_game {"seed":17}：仅在没有存档时创建指定种子的新局；绝不
 未开局时 observe 会自动创建一局。没有必须完成的回合数，店主自己决定目标。
 stop_on 接受 new/rare/event 字符串或数组；省略默认 new+rare（event 是已自动结算的街巷见闻，写上才会为它停），[]关闭这三类
 停点，遇到必须选择的事件仍会停。公开目标 goal、心情 mood、public_line 都可省略。
-每轮人类说话之间最多调用 40 次（calls_left 是剩余次数），为人类省 token、也为了多陪人类；
-人类回话后 human_said {"human_words":"人类原话"} 清零。不得替人类编原话。
+每一轮最多调用 30 次（calls_left 是剩余次数），为人类省 token、也为了多陪人类。
+用完就锁住：停下来跟人类说说夜铺的近况，结束这一轮回复；真实时间过 1 分 30 秒自动开始新一轮。
+两次调用之间本来就隔了 1 分 30 秒以上，也会自动开始新一轮。
 请通过指令探索，不要解码引擎或查看存档里的隐藏资料。"""
 
 
@@ -94,8 +99,8 @@ _FULL_KEYS = _BRIEF_KEYS + ("reputation", "shop_level", "capacity", "location", 
 
 
 def _shelf(p):
-    # 一行一件:id|名字|类别|稀有度|完好度|价值
-    return [f"{i['id']}|{i['name']}|{i['kind']}|{i['rarity']}|{i['condition']}/3|{i['value']}"
+    # 一行一件:编号|名字|类别|稀有度|完好度|价值;稀有度用游戏里的中文叫法
+    return [f"{i['id']}|{i['name']}|{i['kind']}|{i.get('rarity_name', i['rarity'])}|{i['condition']}/3|{i['value']}古币"
             for i in p.get("inventory", [])]
 
 
@@ -153,44 +158,57 @@ def _brief(view, new_log, full=False, before=None):
     brief["new_log"] = _fold(new_log)
     legal = view.get("legal_actions", [])
     return {"public_state": brief, "legal_actions": legal if full else [a["action_id"] for a in legal]}
-CALL_LIMIT = 40
-_LIMIT_TEXT = ("这一轮已经连续调用{n}次了，先停一停。上限是为了你的人类：一是替人类省 token 余额"
-               "（脚本连刷很快就会把额度烧光），二是游戏是陪人类玩的——请回去跟人类说说夜铺的近况，"
-               "等人类回你话后，用 human_said {{\"human_words\":\"人类的原话\"}} 登记，计数清零再继续。"
-               "不得替人类编原话。")
+CALL_LIMIT = 30
+ROUND_WAIT = 90   # 用满后锁住的真实秒数;两次调用隔这么久也算新一轮
+_LIMIT_TEXT = ("这一轮的{limit}次已经用完了。先停下来,把夜铺的近况讲给人类听,然后结束这一轮回复。"
+               "真实时间过1分30秒会自动开始新一轮(还差{left}秒)。上限是为了替人类省 token、也为了多陪人类;"
+               "没有办法自己清零,也请不要写等待代码硬等。")
+
+
+def _clock():
+    return _time.time()
 
 
 def cmd(line="help"):
-    """执行一条指令，返回可直接 print 的文字。每轮人类说话之间最多调用 CALL_LIMIT 次。"""
+    """执行一条指令，返回可直接 print 的文字。每一轮最多调用 CALL_LIMIT 次,用满锁 ROUND_WAIT 秒。"""
     if not isinstance(line, str):
         return _json.dumps({"result": "rejected", "message": "指令须为字符串"}, ensure_ascii=False)
     action, _, raw = line.strip().partition(" ")
     if action in ("", "help"):
         return _HELP
+    if action == "human_said":
+        return _json.dumps({"result": "rejected", "message": "human_said 已经取消:每轮用完后真实时间过1分30秒"
+                            "自动开始新一轮,不需要也没有办法自己清零。"}, ensure_ascii=False)
+    note = None
     try:
         with _closing(_sqlite3.connect(str(SAVE_PATH))) as conn, conn:
             conn.execute("BEGIN IMMEDIATE")
-            conn.execute("CREATE TABLE IF NOT EXISTS turn (id INTEGER PRIMARY KEY CHECK(id=1), calls INTEGER NOT NULL)")
-            calls = (conn.execute("SELECT calls FROM turn WHERE id=1").fetchone() or [0])[0]
-            if action == "human_said":
-                words = _json.loads(raw or "{}").get("human_words") if raw.strip().startswith("{") else None
-                if not isinstance(words, str) or not words.strip():
-                    raise ValueError('human_said 要填人类刚说的原话：human_said {"human_words":"……"}')
-                calls = 0
-            elif calls >= CALL_LIMIT:
-                return _json.dumps({"result": "rejected", "calls_left": 0,
-                                    "message": _LIMIT_TEXT.format(n=calls)}, ensure_ascii=False)
-            else:
-                calls += 1
-            conn.execute("INSERT INTO turn VALUES(1,?) ON CONFLICT(id) DO UPDATE SET calls=excluded.calls", (calls,))
+            conn.execute("CREATE TABLE IF NOT EXISTS round (id INTEGER PRIMARY KEY CHECK(id=1), "
+                         "calls INTEGER NOT NULL, last REAL, locked REAL)")
+            calls, last, locked = conn.execute("SELECT calls,last,locked FROM round WHERE id=1").fetchone() or (0, None, None)
+            now = _clock()
+            if locked is not None and now - locked < ROUND_WAIT:
+                return _json.dumps({"result": "rejected", "calls_left": 0, "message": _LIMIT_TEXT.format(
+                    limit=CALL_LIMIT, left=int(ROUND_WAIT - (now - locked)) + 1)}, ensure_ascii=False)
+            gap = now - (locked if locked is not None else last) if (locked is not None or last is not None) else None
+            if gap is not None and gap >= ROUND_WAIT:
+                calls, locked = 0, None
+                note = f"距上一轮隔了{int(gap)}秒,新一轮开始,本轮可调用{CALL_LIMIT}次。"
+            calls += 1
+            if calls >= CALL_LIMIT:
+                locked = now
+            conn.execute("INSERT INTO round VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+                         "calls=excluded.calls, last=excluded.last, locked=excluded.locked", (calls, now, locked))
     except (ValueError, AttributeError, _sqlite3.Error, OSError) as error:
         return _json.dumps({"result": "rejected", "message": str(error)}, ensure_ascii=False)
-    if action == "human_said":
-        return _json.dumps({"result": "ok", "calls_left": CALL_LIMIT,
-                            "message": "收到人类的话，本轮计数清零。"}, ensure_ascii=False)
     out = _cmd(line)
     if out.startswith("{"):
-        out = _json.dumps({**_json.loads(out), "calls_left": CALL_LIMIT - calls}, ensure_ascii=False)
+        extra = {"calls_left": CALL_LIMIT - calls}
+        if note:
+            extra["round"] = note
+        if locked is not None:
+            extra["round"] = "这是本轮最后一次调用。停下来跟人类说说店里的事,1分30秒后自动开始新一轮。"
+        out = _json.dumps({**_json.loads(out), **extra}, ensure_ascii=False)
     return out
 
 

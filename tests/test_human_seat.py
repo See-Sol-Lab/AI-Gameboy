@@ -119,9 +119,9 @@ class TestHumanSeat(unittest.TestCase):
         self.assertNotIn("rescues_left", after)              # 救完店,平时店况不再挂救店信息
         self.assertNotIn("rescue_ready", after)
 
-    def test_night_shop_calls_capped_until_human_said(self):
+    def test_night_shop_rounds_lock_and_only_real_time_unlocks(self):
         from console import game_host
-        self.assertEqual(game_host.CALL_LIMIT, 30)
+        self.assertEqual((game_host.CALL_LIMIT, game_host.ROUND_WAIT), (20, 90))
         c = self.host.create_session("pocket-night-shop", "solo_ai")
         sid, token = c["session_id"], c["seats"][0]["seat_token"]
         r = self.host.act(sid, token, 0, "introduce", {"display_name": "K", "surface": "T"})
@@ -131,17 +131,19 @@ class TestHumanSeat(unittest.TestCase):
         self.assertEqual(self.host.roll_start_funds(sid)["result"], "ok")
         self.assertEqual(self.host.roll_start_funds(sid)["result"], "rejected")
         r = self.host.observe(sid, token)
-        self.host._calls[sid] = game_host.CALL_LIMIT
-        blocked = self.host.act(sid, token, r["revision"], "work_shift", {"focus": "tidy"})
-        self.assertEqual(blocked["result"], "rejected")
-        self.assertIn("token", blocked["reason"])
-        self.assertEqual(self.host.act(sid, token, r["revision"], "human_said",
-                                       {"human_words": ""})["result"], "rejected")
-        ok = self.host.act(sid, token, r["revision"], "human_said", {"human_words": "继续"})
-        self.assertEqual(ok["result"], "ok")
-        self.assertEqual(ok["revision"], r["revision"])
-        self.assertEqual(self.host.act(sid, token, r["revision"], "work_shift",
-                                       {"focus": "tidy"})["result"], "ok")
+        clock = [1000.0]
+        with patch("console.game_host._clock", lambda: clock[0]):
+            self.host._calls[sid] = {"calls": game_host.CALL_LIMIT, "last": clock[0], "locked": clock[0]}
+            clock[0] += 30
+            blocked = self.host.act(sid, token, r["revision"], "work_shift", {"focus": "tidy"})
+            self.assertEqual(blocked["result"], "rejected")
+            self.assertIn("还差61秒", blocked["reason"])
+            said = self.host.act(sid, token, r["revision"], "human_said", {"human_words": "继续"})
+            self.assertEqual(said["result"], "rejected")                    # 不能自己清零
+            clock[0] += 61
+            self.assertEqual(self.host.act(sid, token, r["revision"], "work_shift",
+                                           {"focus": "tidy"})["result"], "ok")
+            self.assertEqual(self.host._calls[sid]["calls"], 1)
 
     def test_night_shop_string_stop_on_survives_host_and_save(self):
         c = self.host.create_session("pocket-night-shop", "solo_ai")

@@ -324,6 +324,19 @@ class TestNightExpansion(unittest.TestCase):
             rules._witch_tick(s)
         self.assertEqual({x["code"] for x in rules._witch_book(s)["stock"]}, {treasures[-1]})
 
+    def test_unlock_refusal_names_what_is_missing_and_upgrade_cost(self):
+        s = rules.new_game(["seat_a"], 4)
+        s.update(coins=100, reputation=50)
+        s["collection"] = {c: {"rarity": rules.ITEM_RARITY[c]} for c, *_ in rules.ITEMS[:20]}
+        with self.assertRaises(rules.IllegalAction) as caught:
+            rules.apply(s, "seat_a", "unlock_location", {"location": "arcade"})
+        message = str(caught.exception)
+        self.assertIn("店铺要2级(现在1级", message)
+        self.assertIn("扩建到2级要10枚古币", message)
+        self.assertNotIn("声望要", message)
+        s["shop_level"] = rules.MAX_SHOP_LEVEL
+        self.assertEqual(rules._upgrade_hint(s), "")
+
     def test_lighthouse_dreams_one_per_condition(self):
         s = rules.new_game(["seat_a"], 9)
         s["day"] = 180
