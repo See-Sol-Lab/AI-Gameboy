@@ -250,7 +250,7 @@ class TestNightShop(unittest.TestCase):
             rules.apply(s, "seat_a", "run_shifts", {"focus": "scavenge", "count": 6}),
             rules.apply(s, "seat_a", "run_shifts",
                         {"focus": "scavenge", "count": 6,
-                         "stop_on": ["new", "rare", "event"]}))
+                         "stop_on": ["new", "rare"]}))
 
     def test_batch_invalid_stop_on_preserves_state(self):
         s = rules.new_game(SEATS, 13)

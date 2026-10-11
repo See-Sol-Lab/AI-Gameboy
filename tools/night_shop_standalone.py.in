@@ -71,7 +71,7 @@ endings：重读已经解锁的文字过场与纪念奖励。全旧物图鉴有�
 history 0：从头查公开经营记录，每次最多100条；history 100 继续往后查。
 new_game {"seed":17}：仅在没有存档时创建指定种子的新局；绝不覆盖旧档。
 未开局时 observe 会自动创建一局。没有必须完成的回合数，店主自己决定目标。
-stop_on 接受 new/rare/event 字符串或数组；省略默认三项全选，[]关闭这三类
+stop_on 接受 new/rare/event 字符串或数组；省略默认 new+rare（event 是已自动结算的街巷见闻，写上才会为它停），[]关闭这三类
 停点，遇到必须选择的事件仍会停。公开目标 goal、心情 mood、public_line 都可省略。
 每轮人类说话之间最多调用 40 次（calls_left 是剩余次数），为人类省 token、也为了多陪人类；
 人类回话后 human_said {"human_words":"人类原话"} 清零。不得替人类编原话。

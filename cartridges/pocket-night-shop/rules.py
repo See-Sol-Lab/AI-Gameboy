@@ -827,7 +827,8 @@ def _legal_actions(s):
             "item_id": "repair 必填", "location": "scavenge 可选已解锁地点",
             "reserve": "非负整数,含当班维护费的现金保留线",
             "stop_on": '可选字符串或数组:new/rare/event;如 "new" 或 ["new","rare"];'
-                       '省略默认 ["new","rare","event"];[] 不因这些标记停班,待选择事件仍停',
+                       '省略默认 ["new","rare"](event=街巷见闻,已自动结算,写上才会因见闻停);'
+                       '[] 不因这些标记停班,要你选择的事件(decision)一律会停',
             **({"advice": NEWCOMER_ADVICE} if s["shift_count"] < NEWCOMER_SHIFTS else {})}},
         {"action_id": "close_for_now", "params": {}},
     ]
@@ -1058,7 +1059,7 @@ def _run_shifts(s, params):
         raise IllegalAction("连续行动限淘货、修理和整理;出售由店主逐件决定")
     count = params.get("count", 1)
     reserve = params.get("reserve", 0)
-    stops = params.get("stop_on", ["new", "rare", "event"])
+    stops = params.get("stop_on", ["new", "rare"])
     if isinstance(stops, str):
         stops = [stops]
     if type(count) is not int or not 1 <= count <= MAX_BATCH:
@@ -1096,7 +1097,9 @@ def _run_shifts(s, params):
         # 一班都没做成:当面拒绝并说明原因,不再静默返回"成功"
         raise IllegalAction(_block_text(s, params, reason))
     s["last_run"] = {"requested": count, "completed": done, "stop_reason": reason,
-                     "stop_text": (_block_text(s, params, reason) if reason in BLOCK_TEXT else None),
+                     "stop_text": (_block_text(s, params, reason) if reason in BLOCK_TEXT else
+                                   "路上碰到街巷见闻,已经自动结算,不需要处理。" if reason == "event" else
+                                   "碰到要你选择的事件,先 choose_event 再继续。" if reason == "decision" else None),
                      "from_seq": start + 1 if done else None, "to_seq": len(s["history"]),
                      "highlights": [row["text"] for row in s["history"][start:]
                                     if row.get("new") or row.get("rare") or row.get("event")]}
