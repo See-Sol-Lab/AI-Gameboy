@@ -363,6 +363,7 @@ class TestNightExpansion(unittest.TestCase):
             return s
         s = rules.new_game(["seat_a"], 8)
         s = broke_days(s, 2)
+        self.assertNotIn("rescues_left", rules.observe(s, "seat_a")["public_state"])   # 平时不显示
         with self.assertRaisesRegex(rules.IllegalAction, "还不能"):
             rules.apply(s, "seat_a", "call_human", {"human_words": "救"})
         self.assertIn("tidy", s["history"][-1]["text"])

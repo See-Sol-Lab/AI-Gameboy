@@ -115,7 +115,9 @@ class TestHumanSeat(unittest.TestCase):
                                        {"human_words": "救"})["result"], "rejected")
         ok = self.host.rescue_shop(sid)
         self.assertEqual(ok["result"], "ok")
-        self.assertEqual(self.host.observe(sid, token)["public_state"]["rescues_left"], 2)
+        after = self.host.observe(sid, token)["public_state"]
+        self.assertNotIn("rescues_left", after)              # 救完店,平时店况不再挂救店信息
+        self.assertNotIn("rescue_ready", after)
 
     def test_night_shop_calls_capped_until_human_said(self):
         from console import game_host

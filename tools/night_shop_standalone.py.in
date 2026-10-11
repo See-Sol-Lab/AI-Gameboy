@@ -82,7 +82,7 @@ stop_on 接受 new/rare/event 字符串或数组；省略默认 new+rare（event
 
 
 BLIND_HIDDEN = ("customer_book", "customer_collection")
-_BRIEF_KEYS = ("day", "shift", "coins", "reputation", "stardust", "rescues_left", "bankrupt", "shop_level", "capacity", "location", "resting",
+_BRIEF_KEYS = ("day", "shift", "coins", "reputation", "stardust", "rescue_ready", "rescues_left", "bankrupt", "shop_level", "capacity", "location", "resting",
                "start_funds_pending", "current_goal", "customer", "pending_event", "witch", "last_run",
                "journal_total")
 

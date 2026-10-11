@@ -885,8 +885,10 @@ def observe(full_state, seat_id):
         "phase": s["phase"], "day": s["day"], "shift": SHIFTS[s["shift_index"]],
         "coins": s["coins"], "reputation": s["reputation"], "shop_level": s["shop_level"],
         "stardust": s.get("stardust", 0),
-        "rescues_left": RESCUE_LIMIT - s.get("rescues", 0), "bankrupt": bool(s.get("bankrupt")),
-        "rescue_ready": _rescue_ready(s),
+        # 救店信息只在真要救店/已破产时出现,平时不挂在店况里给 AI 添压力
+        **({"rescue_ready": True, "rescues_left": RESCUE_LIMIT - s.get("rescues", 0)}
+           if _rescue_ready(s) else {}),
+        **({"bankrupt": True} if s.get("bankrupt") else {}),
         "capacity": _capacity(s), "inventory": [_public_item(item) for item in s["inventory"]],
         "current_goal": s["current_goal"], "resting": s["resting"],
         "start_funds_pending": bool(s.get("start_funds_pending")),
