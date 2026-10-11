@@ -304,6 +304,43 @@ class TestNightExpansion(unittest.TestCase):
                          {"focus": "sell", "item_id": item["id"], "asking_price": ceiling})
         self.assertIn("满意", ok["history"][-1]["text"])
 
+    def test_bond_lines_cover_every_item_once_and_fit_wants(self):
+        self.assertEqual(len(rules.BOND_LINES), 72)
+        self.assertEqual({code for code, _ in rules.BOND_LINES.values()}, {row[0] for row in rules.ITEMS})
+        wants = {c[0]: c[4] for c in rules.CUSTOMERS}
+        for cid, (code, line) in rules.BOND_LINES.items():
+            self.assertIn(rules.ITEM_KINDS[code], wants[cid], cid)
+            if cid in rules.SPECIAL_CUSTOMERS:
+                self.assertEqual(rules.SPECIAL_CUSTOMERS[cid][1], code)
+            self.assertTrue(line)
+
+    def test_bond_line_only_on_first_fully_repaired_match(self):
+        s = rules.new_game(["seat_a"], 9)
+        while s["customer"]["id"] not in rules.BOND_LINES or s["customer"]["special"]:
+            rules._spawn_customer(s)
+        guest = deepcopy(s["customer"])
+        code, line = rules.BOND_LINES[guest["id"]]
+        s["inventory"][0].update(code=code, kind=rules.ITEM_KINDS[code], condition=3)
+        broken = deepcopy(s)
+        broken["inventory"][0]["condition"] = 2
+
+        def sell(state):
+            return rules.apply(state, "seat_a", "work_shift",
+                               {"focus": "sell", "item_id": state["inventory"][0]["id"], "asking_price": 1})
+
+        plain = sell(broken)
+        self.assertNotIn(line, plain["history"][-1]["text"])
+        s = sell(s)
+        self.assertIn(line, s["history"][-1]["text"])
+        self.assertEqual(s["coins"] - plain["coins"], rules.BOND_COINS)
+        self.assertTrue(s["customer_book"][guest["id"]]["bond"])
+        s = free_event(s)
+        s["customer"] = guest
+        s["inventory"].insert(0, dict(broken["inventory"][0], id="again", condition=3))
+        s = sell(s)
+        self.assertIn("满意", s["history"][-1]["text"])
+        self.assertNotIn(line, s["history"][-1]["text"])
+
     def test_merge_duplicate_repairs_without_shift_or_coins(self):
         s = rules.new_game(["seat_a"], 6)
         s["coins"] = 20

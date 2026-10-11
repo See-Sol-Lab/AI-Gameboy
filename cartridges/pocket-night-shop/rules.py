@@ -388,6 +388,83 @@ for cid, (name, code, clue) in SPECIAL_CUSTOMERS.items():
     CUSTOMERS.append((cid, name, f"专程寻找「{template[1]}」，其他旧物不能替代。",
                       clue, [ITEM_KINDS[code]], template[4] + 18))
 
+# 每件旧物都有一位等它的人:客人第一次买到修满的那一件,会说一句话,再多付一份谢礼。
+BOND_COINS, BOND_REPUTATION = 5, 1
+BOND_LINES = {
+    "calendarreader": ("claycalendar", "我守了这么多年空白，原来那一天不是空的。还有人在点灯。"),
+    "firstrain": ("bronzeear", "这条街每一场雨我都记得，唯独第一场不在记忆里。原来是这个声音。"),
+    "rivernotary": ("riverseal", "改名那年，他们把旧名从地图上刮掉。可我母亲喊我回家时，喊的还是那个名字。"),
+    "nightsewer": ("meteorneedle", "我替两边各补了半辈子夜。原来针脚真能在中间碰见。"),
+    "tidehistorian": ("tideoracle", "这几个字，我小时候听祖父念过。他说照着它们走，第三盏灯就是家。"),
+    "rootarchivist": ("seedtablet", "我只见过它的根。师父说，树冠大得能遮住一整座院子。"),
+    "sunmachinist": ("sungear", "师父说，太阳也有最后一班。原来他真的替那天傍晚留下一枚齿轮。"),
+    "moonmason": ("moonplumb", "我量过一百多座城门。只有这一锤落下时，刻度指向我出生的那间屋。"),
+    "kilnkeeper": ("firstkiln", "我第一只碗捏得很歪。我娘嫌了半天，还是用了二十年。火气还在。"),
+    "lastconductor": ("laststation", "这些票我一直没敢盖戳。原来每一张，都还认得回去的那一站。"),
+    "atlaspostman": ("unmailedatlas", "有两封信，我替他们退了三十年。今晚，路终于比邮戳先到了。"),
+    "nightscribe": ("nightcontract", "原来他们都在。那些天亮前从我桌边走过、从没留下姓名的人。"),
+    "orchardheir": ("lastorchard", "我只吃过祖母晒的果干。可这个味道……原来春天真和她说的一样。"),
+    "crownrenouncer": ("emptycrown", "别替我点主位那盏灯。今晚，我只想坐靠窗那张小桌。"),
+    "travelphotographer": ("camera", "第七张……他真的回头了。幸好那条街的门牌，我一直没忘。"),
+    "sailor": ("tinwhale", "这不是海的声音。是我离港那天，船尾最后拍上来的那一下浪。"),
+    "clockcollector": ("shadowclock", "要是那年也有这一分钟，她就不用一个人过那个路口。"),
+    "courier": ("ticketpunch", "这张票我一直没舍得剪。车开走的时候，她在第三节车厢。"),
+    "nightguard": ("mothlantern", "三年了，她那扇窗一次也没亮。我一直不知道，是不敢，还是没人替她点。"),
+    "bellringer": ("echohorn", "我敲了四十年钟，城里的人都听过。只有这个名字，我从没敢喊响。"),
+    "costumier": ("memoryribbon", "散场后总有人把梦落在后台。我收了九个，今天终于知道该还给谁。"),
+    "locksmith": ("doorknocker", "这把钥匙我带了二十年。原来回去的时候，也得先敲门。"),
+    "nurse": ("dreampillow", "三床那位老先生每次夜班都问我，车还开不开。今晚我可以说，开。"),
+    "astronomer": ("starlace", "我错过的是车，不是那晚的星。原来那片天，还欠我一次晴。"),
+    "tramdriver": ("watch", "四点零一分。表盖这句道歉，我刻了二十年。那天只晚一分钟，后来再没赶上她。"),
+    "bricklayer": ("key", "这房子每块砖我都摸过。搬进去那晚却一直睡不着——原来还差一把肯认它的钥匙。"),
+    "teaowner": ("kettle", "她总嫌我的茶凉得快。以后两只杯子一起冷，我就不催她喝了。"),
+    "birdkeeper": ("bird", "去年少回来三只。我把水留到结冰，坐标也一直没敢擦。"),
+    "typewriter": ("letter", "她让我涂掉那个名字时，手一直在抖。我那时还以为，是她打错了。"),
+    "potter": ("teacup", "裂纹底下这座钟……我在那一站送过一个人。那班车，我也没赶上。"),
+    "beekeeper": ("bell", "我的蜂认不出路时，也会在空中偏这么一下。原来丢失的东西都记得往哪边回。"),
+    "roadkeeper": ("shoe", "我门口常多一只鞋，少一个人。至少这一只，知道该往哪边等。"),
+    "seedkeeper": ("seedbox", "每次没发芽的日期我都记着。这一粒，等下雨那天，我不给它写日期。"),
+    "mother": ("lamp", "它先照到那只旧布兔。孩子不怕黑以后，就再没碰过它……原来房间还记得。"),
+    "violinist": ("musicbox", "空着的半张凳子，今晚终于有拍子落下来了。"),
+    "weaver": ("glove", "我找了三年那根断线。原来它不是掉在地上，是挂到天上去了。"),
+    "accountant": ("notebook", "明天这笔你别省。账本写着——给自己买顿晚饭。"),
+    "father": ("buttonjar", "这一声……她小时候外套上的纽扣，也是这么敲桌沿的。"),
+    "widow": ("umbrella", "他的伞我一直带着，怕哪天真下雨，他没得用。现在……一把就够了。"),
+    "tailor": ("thimble", "原来针扎过的地方，不只会疼。隔这么久，还有人来敲门。"),
+    "umbrellaweaver": ("spool", "那把伞我补了十七年，缝里一直夹着一句‘对不起’。这一圈，终于够长。"),
+    "apprentice": ("lunchbox", "我娘说第一份工钱别乱花。我想买回今天中午那口饭。"),
+    "teacher": ("chalk", "最后一节课停在黑板右下角。孩子们说下次见……我一直没擦。"),
+    "railworker": ("buspass", "路我修得再平，也修不回那趟车。替后来的人，多等一声吧。"),
+    "waterreader": ("measuringtape", "河离堤多远我天天量。家门离我多远，我一次也没敢拉开卷尺。"),
+    "candlemaker": ("candlestick", "我做的灯，都得有人点才亮。这一滴，没人应门也肯亮。"),
+    "bookchild": ("bookmark", "爷爷每到天黑就说‘再一页’。这五分钟，够他把那一页看完。"),
+    "porter": ("marble", "我搬过几百层楼，偏偏忘了小时候那一层。原来楼梯还认得我。"),
+    "calligrapher": ("inkpad", "没人肯签的，我来签。姓就够了。"),
+    "tramp": ("shoelace", "刚才它紧了一下。原来那个人，也还穿着那双鞋。"),
+    "shoemaker": ("apron", "我替别人补了一辈子鞋，没想到最缺的东西，藏在一只旧口袋里。"),
+    "stonecutter": ("magnifier", "碑上的字会掉，手摸亮的地方不会。有人是真的舍不得他。"),
+    "toyrepairer": ("scarf", "我修好的布偶，最后都会被人抱走。原来这条围巾，还记得被抱住是什么温度。"),
+    "geographer": ("compass", "这根针指的不是北。那把椅子，我答应过要回去坐。"),
+    "charcoalartist": ("mirror", "原来不是他们没哭。只是那滴泪，比我的笔先躲进镜子里。"),
+    "storyteller": ("lullabyrecord", "我讲了一辈子结尾。只有小时候那首歌，一直停在半句。"),
+    "midwife": ("breadtin", "我总把孩子交回妈妈怀里，却很少问她们冷不冷。这盒子倒记得。"),
+    "laundry": ("raincoat", "湿衣服我能烫平，信上的字一糊就回不来。借我这一小块晴天。"),
+    "organist": ("handbell", "后半首我一直空着。等他到家，这一声替我接上。"),
+    "meteorwatcher": ("lens", "我一直以为那颗星在倒退。原来它只是赶着，把一封信送回去。"),
+    "archivist": ("foldedmap", "那块门牌我一直没收。不是找不到，是我不敢再走那条街。它知道。"),
+    "sundialkeeper": ("hourglass", "钟停以后，我还每天去上发条。不是给钟，是给等在那里的人。"),
+    "student": ("receiptroll", "奖学金信上没有名字。我一直以为是学校忘了写。原来，是有人不想让我知道。"),
+    "ferryman": ("seashell", "我送他们出去时总说别回头。原来人一到家，先响的是厨房里的碗。"),
+    "mailwoman": ("postcard", "没人收的信我从不丢。原来不是地址错，是他们真正想去的地方还没写出来。"),
+    "florist": ("rootpot", "折断的枝我总说‘等春天’。第一次，有东西肯先把春天借给我。"),
+    "clerk": ("skyabacus", "档案里每件事都有时辰。原来连流星，也有愿意多留的一刻。"),
+    "watchmaker": ("tidebottle", "她说潮汐和钟摆一样，总会回来。我当时笑她。……原来她只说错了一半。"),
+    "fisher": ("fogfan", "我不找船，也不找人。只想知道，那天他最后把桨放在哪儿。"),
+    "roofgardener": ("snowglobe", "花盆上的名字一年少一个。往后回家这段路，至少还有一场雪陪我走。"),
+    "stationcook": ("comb", "我总说昨晚没淋到雨，回家的人也就信了。这把梳子偏偏全记得。"),
+    "gardener": ("seedpendulum", "我把空地留着，不是怕它种不活，是怕它醒来时没地方长。冬天数完，就来吧。"),
+}
+
 AMBIENT += [
     "街角有人收摊，木箱碰出一串轻响。", "楼上晾衣绳垂下来，夹着一只忘记收的手套。",
     "有人隔着雨棚问了句还开着吗，声音很快被脚步带远。", "一阵热汤的气味经过门口，停留得比人更久。",
@@ -1394,6 +1471,13 @@ def _do_focus(s, params, flags):
             row["trust"] = min(5, row["trust"] + 1)
             s["inventory"].remove(item)
             report = f"{c['name']}露出满意的表情,付了{price}枚古币,带走「{item['name']}」。图鉴记录保留。"
+            bond = BOND_LINES.get(c["id"])
+            if bond and bond[0] == item["code"] and item["condition"] >= 3 and not row.get("bond"):
+                row["bond"] = True
+                s["coins"] += BOND_COINS
+                s["reputation"] += BOND_REPUTATION
+                report += (f" {c['name']}把它捧在手里看了很久:「{bond[1]}」"
+                           f"临走又多放下{BOND_COINS}枚古币道谢。")
             _spawn_customer(s)
             return report
         c["patience"] -= 1
