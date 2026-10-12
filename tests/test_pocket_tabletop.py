@@ -1,6 +1,7 @@
 """《口袋跑团》v1.0 冒烟测试:经典危机词库 + 与口袋穿越同源的引擎机制。"""
 
 import importlib.util
+import copy
 import unittest
 from pathlib import Path
 
@@ -14,10 +15,35 @@ rules = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(rules)
 
 
+def story(sid, owner="旅人"):
+    return {"id": sid, "question": f"{owner}的{sid}旧事是什么？",
+            "truth": f"{owner}在渡口刻回了姓名，并保管着第四枚令牌。",
+            "key_facts": ["在渡口刻回了姓名", "保管着第四枚令牌"], "intent": "explore"}
+
+
+def old_story_world():
+    w = copy.deepcopy(FIX_WORLD)
+    w.pop("world_thread", None)
+    w.pop("goal_menu", None)
+    w["side_quests"] = [dict(story(f"npc{i}", "守夜人"), npc={"name": "守夜人", "desc": "守在渡口"}) for i in (1, 2)]
+    return w
+
+
+def old_story_identities():
+    ids = copy.deepcopy(FIX_IDENTITIES)
+    for card in ids:
+        card.pop("secret_drive")
+        card["old_stories"] = [story(f"past{i}", card["name"]) for i in (1, 2)]
+    return ids
+
+
 def feed(s):
     while s.get("narration_request"):
         kind = s["narration_request"]["kind"]
-        data = {"gen_world": FIX_WORLD, "gen_identities": FIX_IDENTITIES,
+        modern = s.get("old_story_mode")
+        data = {"gen_world": old_story_world() if modern else FIX_WORLD,
+                "gen_identities": old_story_identities() if modern else FIX_IDENTITIES,
+                "check_old_stories": {"matches": []},
                 "gen_scene": fix_scene(s["scene_index"] + 1)}.get(
             kind, {"text": "跑团之城照常运转,危机如期解除。" * 2})
         s = rules.apply_system(s, "narration_result", {"kind": kind, "data": data})
@@ -43,7 +69,7 @@ class TestPocketTabletop(unittest.TestCase):
         s = feed(s)
         self.assertEqual(s["stage"], "scene")
         # 支线暗典机制同样在场
-        self.assertEqual(len(s["side_quests"]), 2)
+        self.assertEqual(len(s["side_quests"]), 6)
         self.assertEqual(len(s["hooks"]), 2)
         # 双双停笔可收卷
         s = rules.apply(s, "seat_a", "commit", {"intent": "end", "action": ""})

@@ -20,10 +20,11 @@
 
 一台给AI玩的游戏机，也是一块让人类看得懂的显示屏。AI自己决定怎么经营、探索和行动；你可以看它接待了谁、做了什么，也可以亲自入座，和它一起改写故事。
 
-<p align="center"><img src="docs/media/crossing-opening.png" width="100%" alt="口袋穿越实机画面：本机Claude Code与网页版ChatGPT同桌进入小说世界"></p>
-<p align="center"><sub>《口袋穿越》双人开局示例 · 本机与云端玩家进入同一局 · 画面来自此前测试版本</sub></p>
-
-<!-- 收到并检查公开素材后，以最新版卡带架图作为首屏主图；穿越图移到对应游戏介绍。 -->
+<p align="center">
+  <a href="docs/media/cartridge-shelf.png"><img src="docs/media/cartridge-shelf.png" width="49%" alt="掌机卡带架：三张内置卡带和存档列表"></a>
+  <a href="docs/media/player-seats.png"><img src="docs/media/player-seats.png" width="49%" alt="双人入座：本机或云端AI接入，人类从掌机报名"></a>
+</p>
+<p align="center"><sub>左：挑选卡带与继续存档 · 右：让 AI 和人类坐上同一张牌桌 · 点击图片查看原图</sub></p>
 
 > ## 🤖 AI 必读：[给AI的使用教程](给AI的使用教程.md)
 >
@@ -59,15 +60,20 @@
 
 **《口袋穿越》——一起走进一部小说，改写它的结局。** 荷官先建立世界和既定原结局，两位玩家带着各自身份进入其中，通过探索、人物互动与行动改变故事走向。适合喜欢穿越、角色扮演和共同创作剧情的玩家；既可以人类与AI一起玩，也可以两个AI搭档。
 
-<!-- 展示位：最新版穿越实机图，或将首屏现有穿越图移至这里；不使用虚构演示画面。 -->
-
 **《口袋跑团》——世界出事了，你们得一起想办法。** 荷官展开场景，两位玩家面对持续推进的危机，调查线索、交流各自情报，在行动风险与有限时间里合作解决问题。适合喜欢文字冒险、悬念、临场决策和双人配合的玩家。
 
-<!-- 展示位：跑团进行中的公开场景与一轮行动记录。 -->
+跑团新局将主线和旧事分别记账：NPC和两位玩家各有两条预写旧事，调查成功后逐条揭示。NPC第八幕后离场，第九、十幕仍可推断自己的身份旧事；主线与六条旧事全部完成可提前进入HE，否则按第十幕的成果结算。
+
+<p align="center">
+  <a href="docs/media/crossing-opening.png"><img src="docs/media/crossing-opening.png" width="49%" alt="口袋穿越：本机Claude Code与网页版ChatGPT双人开局"></a>
+  <a href="docs/media/tabletop-playing.png"><img src="docs/media/tabletop-playing.png" width="49%" alt="口袋跑团：人类与云端AI合作，查看场景与危机进度"></a>
+</p>
+<p align="center"><sub>左：《口袋穿越》AI 双人开局 · 右：《口袋跑团》人类与 AI 合作 · 实机画面来自此前测试版本，具体规则以当前版本为准</sub></p>
 
 **《口袋夜铺》——经营一间会慢慢露出秘密的旧物店。** 一位AI当店主，出门淘货、修理旧物、接待客人，积累古币、星沙与声望，扩建铺子并探索新地图。72种旧物各有秘密和等待它的人，收集与修复推进不同的结局。适合喜欢长线经营、图鉴收集和温馨神秘故事的玩家；人类可以在掌机旁观逐轮记录，也可让AI用独立盲玩版自行经营。
 
-<!-- 展示位：夜铺店况、货架与展开的一条逐轮经营记录，说明人类如何旁观。 -->
+<p align="center"><a href="docs/media/night-shop-playing.png"><img src="docs/media/night-shop-playing.png" width="80%" alt="口袋夜铺：实时店况、逐轮经营记录与可暂停的行动回放"></a></p>
+<p align="center"><sub>AI 开店，人类旁观 · 店况、经营记录与回放都留在掌机里 · 临时歇业后可继续存档</sub></p>
 
 ### 只下载自己想玩的卡
 
@@ -108,7 +114,7 @@ Agent 的完整安装、更新和存档保护步骤见 [给AI的使用教程](�
 
 ### 玩家隐私
 
-**荷官**是另一个 AI 模型，负责写世界和剧情，只写不判。用到荷官的卡带需要在 `data/narrator.json` 填 `base_url`、`api_key`、`model`（任何 OpenAI 兼容接口，该文件不进版本库）。游戏存档、席位令牌、荷官Key、运行日志和本机实测截图属于玩家私人数据，**不上传、不随卡带分享，也不放进PR**。`data/` 仅允许空密钥的 `narrator.example.json` 模板；其他运行文件和数据库默认被Git忽略。
+**荷官**是另一个 AI 模型，负责写世界和剧情；跑团第九、十幕还可按合同核对玩家的旧事推断，数值与结局仍由规则引擎结算。用到荷官的卡带需要在 `data/narrator.json` 填 `base_url`、`api_key`、`model`（任何 OpenAI 兼容接口，该文件不进版本库）。游戏存档、席位令牌、荷官Key、运行日志和本机实测截图属于玩家私人数据，**不上传、不随卡带分享，也不放进PR**。`data/` 仅允许空密钥的 `narrator.example.json` 模板；其他运行文件和数据库默认被Git忽略。本文的正式展示截图经人类逐张授权与人工隐私检查后收录，属于明确许可的例外。
 
 
 ---

@@ -3,6 +3,7 @@
 import copy
 import sys
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -13,6 +14,24 @@ from test_pocket_crossing import (FIX_WORLD, FIX_IDENTITIES,
 
 
 class TestValidators(unittest.TestCase):
+    def test_identity_object_is_unwrapped_and_validated(self):
+        ctx = {"world": {"world_name": "测试世界", "premise": "背景", "lore": "传说"}}
+        prompt = narrator.PROMPTS["gen_identities"](ctx)
+        self.assertIn('"identities"', prompt)
+        self.assertIn("禁止翻译、缩写或自创代码", prompt)
+        with patch.object(narrator, "_chat", return_value={"identities": copy.deepcopy(FIX_IDENTITIES)}) as chat:
+            self.assertEqual(narrator.call("gen_identities", ctx), FIX_IDENTITIES)
+            chat.assert_called_once()
+        for data in [copy.deepcopy(FIX_IDENTITIES), {}, {"identities": FIX_IDENTITIES[:5]}]:
+            with patch.object(narrator, "_chat", return_value=data):
+                with self.assertRaises(narrator.NarratorError):
+                    narrator.call("gen_identities", ctx)
+        bad = copy.deepcopy(FIX_IDENTITIES)
+        bad[0]["gift"]["kind"] = "instant_win"
+        with patch.object(narrator, "_chat", return_value={"identities": bad}):
+            with self.assertRaisesRegex(narrator.NarratorError, "instant_win"):
+                narrator.call("gen_identities", ctx)
+
     def test_good_samples_pass(self):
         world = copy.deepcopy(FIX_WORLD)
         world.pop("public_goal")

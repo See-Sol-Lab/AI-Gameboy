@@ -6,7 +6,7 @@ const vm = require("node:vm");
 
 function page() {
   let now = 0;
-  const element = {classList: {add() {}, remove() {}}, addEventListener() {}};
+  const element = {classList: {add() {}, remove() {}}, addEventListener() {}, querySelectorAll: () => []};
   const context = vm.createContext({
     document: {getElementById: () => element, querySelectorAll: () => []},
     window: {addEventListener() {}}, Date: {now: () => now},
@@ -67,6 +67,111 @@ test("current observer panel exposes no gameplay controls", () => {
     {status:"playing",cartridge:{version:"0.3.0"},public_state:{}},
     {legal_actions:[{action_id:"knock"}]})`);
   assert.equal(html, "");
+});
+
+test("old story display shows owned progress and hides unrevealed answers", () => {
+  const p = page();
+  const stories = ["npc", "seat_a", "seat_b"].flatMap((owner) => [1,2].map((n) =>
+    ({id:`${owner}:${n}`,owner,question:`${owner}旧事${n}`,intent:"explore",status:n===1?"resolved":"open",truth:n===1?"已知答案":null})));
+  const html = p.run(`oldStoryPanel({old_stories:${JSON.stringify(stories)},scene_index:9},
+    {seats:[{seat_id:"seat_a",display_name:"甲"},{seat_id:"seat_b",display_name:"乙"}]})`);
+  assert.ok(html.includes("旧事收集 3/6"));
+  assert.ok(html.includes("甲的旧事 1/2"));
+  assert.ok(html.includes("NPC已离场"));
+  assert.ok(html.includes("已知答案"));
+  assert.ok(html.includes("尚未揭示"));
+  assert.ok(!html.includes("null"));
+  p.run('S.human={seatId:"seat_a"}');
+  const controls = p.run(`CART_UI["pocket-tabletop"].myPanel({status:"playing",public_state:{old_stories:${JSON.stringify(stories)},scene_index:8}},
+    {private_state:{old_story_choices:${JSON.stringify(stories)}},legal_actions:[{action_id:"commit"}]})`);
+  assert.ok(controls.includes('value="seat_a:2"'));
+  assert.ok(controls.includes('value="npc:2"'));
+  assert.ok(!controls.includes('value="seat_b:2"'));
+});
+
+test("both seats have escaped table bubbles on opposite sides", () => {
+  const p = page();
+  for (const [seat, side] of [["seat_a", "left"], ["seat_b", "right"]]) {
+    const html = p.run(`eventLine({kind:"table_line",seat_id:${JSON.stringify(seat)},
+      display_name:"<玩家>",text:"<script>留言</script>",t:"2026-01-01T16:00:00"})`);
+    assert.ok(html.includes(`talk-${side}`));
+    assert.ok(html.includes("&lt;玩家&gt;"));
+    assert.ok(html.includes("&lt;script&gt;留言&lt;/script&gt;"));
+  }
+});
+
+test("human adventure submission sends the message to both the card and public table", async () => {
+  const p = page();
+  p.run(`S.pc.intent="confront"; var submitted;
+    document.getElementById=(id)=>({value:({"pc-action":"举起桨","pc-item":"oar","pc-line":"  我来！  "})[id] || "",checked:false});
+    humanAct=async(action,params,line)=>{submitted={action,params,line};return {result:"ok"};};`);
+  await p.run("pcSubmit()");
+  assert.equal(p.run("submitted.line"), "我来！");
+  assert.equal(p.run("submitted.params.line"), "我来！");
+  assert.equal(p.run("submitted.params.intent"), "confront");
+  assert.equal(p.run("submitted.action"), "commit");
+});
+
+test("adventure item uses and intent labels are Chinese while submitted codes stay intact", () => {
+  const p = page();
+  p.run('S.human={seatId:"seat_a"}; S.pc.intent="confront"');
+  for (const id of ["pocket-crossing", "pocket-tabletop"]) {
+    const html = p.run(`CART_UI[${JSON.stringify(id)}].myPanel({status:"playing",public_state:{inventory:{
+      seat_a:[{id:"oar",name:"半刻之桨",use:["confront","recover"]}],
+      shared:[{id:"map",name:"地图",use:["advance","explore","support"]}]}}},
+      {private_state:{},legal_actions:[{action_id:"commit"}]})`);
+    assert.ok(html.includes('value="oar">动用:半刻之桨(利于对抗／休整)'));
+    assert.ok(html.includes("利于推进／探索／支援"));
+    assert.ok(html.includes('data-id="confront">对抗'));
+    assert.ok(!html.includes("confront/recover"));
+    const pending = p.run(`CART_UI[${JSON.stringify(id)}].myPanel({status:"playing"},
+      {private_state:{my_pending:{intent:"recover"}}})`);
+    assert.ok(pending.includes("你已暗投【休整】"));
+    const seat = p.run(`CART_UI[${JSON.stringify(id)}].seatExtra({public_state:{identities:{seat_a:{name:"旅人",specialty:"explore"}}}},"seat_a")`);
+    assert.ok(seat.includes("擅探索"));
+  }
+});
+
+test("narrator failure explains retry and restores the summon button", async () => {
+  const p = page();
+  p.run(`var alerts=[], calls=0;
+    var alert=(text)=>alerts.push(text);
+    var fetch=async()=>{calls++; return {json:async()=>({result:"narrator_error",message:"gift.kind 不在菜单里"})};};
+    var button={disabled:false,textContent:"召荷官"};`);
+  await p.run("pcNarrate(button)");
+  assert.ok(p.run("alerts[0]").includes("已有游戏进度保留"));
+  assert.ok(p.run("alerts[0]").includes("重新点击「召荷官」"));
+  assert.ok(p.run("alerts[0]").includes("gift.kind"));
+  assert.equal(p.run("button.disabled"), false);
+  assert.equal(p.run("button.textContent"), "召荷官");
+  assert.equal(p.run("calls"), 1);
+});
+
+test("night shop offers a permanent close button after its display without changing gameplay controls", () => {
+  const p = page();
+  p.run(`renderGame({cartridge:{id:"pocket-night-shop"},session_id:"synthetic",seats:[{seat_id:"seat_a",display_name:"店主"}],
+    public_state:{day:1,inventory:[],locations:[],collection:{entries:[]},encounters:{entries:[]}}},null,false)`);
+  const html = p.run("app.innerHTML");
+  assert.ok(html.includes('data-act="end">彻底关店'));
+  assert.ok(html.indexOf("彻底关店") > html.indexOf("每次行动自动保存"));
+  assert.ok(html.includes("关店后无法续玩"));
+});
+
+test("permanent close requires confirmation and uses the existing archive endpoint", async () => {
+  const p = page();
+  p.run(`S.currentCartridgeId="pocket-night-shop"; S.sid="synthetic";
+    var promptText="", requests=[];
+    var confirm=(message)=>{promptText=message; return false;};
+    var fetch=async(path,options)=>{requests.push({path,method:options.method}); return {json:async()=>({result:"ok"})};};`);
+  await p.run("endSession()");
+  assert.equal(p.run("requests.length"), 0);
+  assert.ok(p.run("promptText").includes("无法再续玩"));
+  assert.ok(p.run("promptText").includes("图鉴会保留"));
+  p.run("confirm=()=>true");
+  await p.run("endSession()");
+  assert.equal(p.run("requests.length"), 1);
+  assert.equal(p.run("requests[0].path"), "/api/sessions/synthetic/end");
+  assert.equal(p.run("requests[0].method"), "POST");
 });
 
 test("full journal keeps paged history beyond recent entries and resets between shops", () => {
@@ -204,9 +309,15 @@ test("local and cloud seat texts use the same seat but different explicit entrie
     assert.ok(text.includes("seat_token: synthetic-seat-token"));
   }
   assert.ok(cloud.includes("只有你使用人类已配置的私有续席连接时"));
-  assert.ok(p.run(`seatCopyButtons("seat_a")`).includes("给云端AI"));
+  const buttons = p.run(`seatCopyButtons("seat_a")`);
+  assert.ok(buttons.includes('class="seat-copy-actions"'));
+  assert.ok(buttons.includes("给云端AI"));
+  assert.equal((buttons.match(/<button /g) || []).length, 2);
+  assert.ok(!buttons.includes("复制 seat_a"));
   const hint = p.run("playerEntryHint()");
   assert.ok(hint.includes("同一台游戏机"));
+  assert.ok(hint.includes("<br>"));
+  assert.ok(!hint.includes("502"));
   assert.ok(!hint.includes("本地模式"));
   p.run("S.bridge.remote_mcp_url=null");
   assert.equal(p.run(`seatConnectionText({seat_id:"seat_a",seat_token:"synthetic"},"cloud")`), null);

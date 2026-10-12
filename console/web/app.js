@@ -24,6 +24,9 @@ const S = {
 };
 
 const isNightShop = (id) => id === "pocket-night-shop";
+const PC_INTENT_NAMES = {advance: "推进", explore: "探索", support: "支援",
+                         confront: "对抗", recover: "休整", end: "停笔"};
+const pcIntentName = (code) => PC_INTENT_NAMES[code] || code;
 
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
@@ -375,7 +378,7 @@ function renderNightShopSeats(v, tokenLost) {
       ? "店主已经进门 —— 按 START 开灯营业"
       : "等待 AI 店主完成自我介绍"}</div>
     ${playerEntryHint()}
-    <p class="center"><button class="soft warn focusable" data-act="end">收起这间夜铺</button></p>
+    <p class="center"><button class="soft warn focusable" data-act="end">彻底关店</button></p>
     <p class="dim center">存档 ${esc(v.session_id)}</p>`;
   afterRender();
 }
@@ -399,7 +402,9 @@ function renderGame(v, mine, tokenLost) {
     </div>
     ${mine ? ui.myPanel(v, mine) : ""}
     ${solo ? "" : `<div class="table-talk">${talk}</div>`}
-    ${solo ? '<p class="dim center">每次行动自动保存 · 关闭页面不影响店铺存档</p>'
+    ${solo ? `<p class="dim center">每次行动自动保存 · 关闭页面不影响店铺存档</p>
+      <p class="center"><button class="soft warn focusable" data-act="end">彻底关店</button></p>
+      <p class="dim center">结束这间夜铺，保留经营记录与图鉴；关店后无法续玩。</p>`
       : '<p class="center"><button class="soft warn focusable" data-act="end">结束本局</button></p>'}
     <p class="dim center">局号 ${esc(v.session_id)}</p>`;
   afterRender();
@@ -425,7 +430,7 @@ const nameOf = (v, seatId) => {
 
 function eventLine(e) {
   if (e.kind === "table_line")
-    return `<div class="talk-line"><span class="tt">${esc(hhmm(e.t))}</span>
+    return `<div class="talk-line ${e.seat_id === "seat_b" ? "talk-right" : "talk-left"}"><span class="tt">${esc(hhmm(e.t))}</span>
       <span class="who">${esc(e.display_name)}</span>
       <span class="txt">${esc(e.text)}</span></div>`;
   if (e.kind === "introduce")
@@ -445,6 +450,7 @@ function pcGuide(v) {
   const ps = v.public_state;
   const names = (v.waiting_for || []).filter((x) => x !== "narrator").map((x) => nameOf(v, x));
   const NARR = { gen_world: "写世界", gen_episode: "写这一段故事", gen_identities: "写身份卡",
+                 check_old_stories: "核对本幕旧事推断",
                  gen_milestones: "拆里程碑", gen_scene: "写下一幕", render_ending: "写结局" };
   let tip;
   if (ps.narration_pending) tip = `请按「召荷官」——荷官要${NARR[ps.narration_pending] || "动笔"}了`;
@@ -676,7 +682,7 @@ const CART_UI = {
       if (!it) return "";
       const at = it.attrs;
       return `<div class="surf">${esc(it.name)}</div>
-        <div class="surf">擅${esc(it.specialty)}</div>
+        <div class="surf">擅${esc(pcIntentName(it.specialty))}</div>
         ${at ? `<div class="surf">智${at.wisdom} 体${at.stamina} 运${at.luck}${at.luck >= 5 ? " 🍀" : ""}</div>` : ""}`;
     },
     felt(v) {
@@ -684,6 +690,7 @@ const CART_UI = {
       const t = ps.tracks || {};
       const [a, b] = v.seats;
       const NARR_NAMES = { gen_world: "正在织一个新世界", gen_identities: "正在写身份卡",
+                           check_old_stories: "正在核对旧事推断",
                            gen_scene: "正在写下一幕", render_ending: "正在写结局" };
       const axesChips = ps.axes ? Object.values(ps.axes)
         .map((x) => `<span class="chip prop">${esc(x)}</span>`).join("") : "";
@@ -705,7 +712,7 @@ const CART_UI = {
       const hearts = (n) => "❤".repeat(n) + "🖤".repeat(Math.max(0, 3 - n));
       const idents = ps.identities || {};
       const identLine = (sid) => idents[sid]
-        ? `${esc(nameOf(v, sid))}=${esc(idents[sid].name)}(擅${esc(idents[sid].specialty)})`
+        ? `${esc(nameOf(v, sid))}=${esc(idents[sid].name)}(擅${esc(pcIntentName(idents[sid].specialty))})`
         : ps.stage === "identity" ? `${esc(nameOf(v, sid))} 暗选身份中…`
         : `${esc(nameOf(v, sid))} 等荷官写身份卡`;
       const sc = ps.scene;
@@ -741,14 +748,14 @@ const CART_UI = {
           ${esc(nameOf(v, b.seat_id))} ${hearts(t.vitality?.[b.seat_id] ?? 3)}</div>
         <div class="dim center">${identLine(a.seat_id)} · ${identLine(b.seat_id)}</div>
         ${ps.events && ps.events.done ? `<div class="dim center">随机事件 ${ps.events.done} 次 · 化解 ${ps.events.won} 次</div>` : ""}
-        ${sceneHtml}${hooks}${endProposed}${lastLog}${endingHtml}`;
+        ${sceneHtml}${hooks}${oldStoryPanel(ps, v)}${endProposed}${lastLog}${endingHtml}`;
     },
     myPanel(v, mine) {
       if (v.status !== "playing" || !mine) return "";
       const pending = mine.private_state.my_pending;
       if (pending) {
         return `<div class="my-panel"><div class="dim center">
-          你已暗投【${esc(pending.intent)}】—— 等对面</div></div>`;
+          你已暗投【${esc(pcIntentName(pending.intent))}】—— 等对面</div></div>`;
       }
       if (!mine.legal_actions.length) return "";
       const la = mine.legal_actions[0];
@@ -757,7 +764,7 @@ const CART_UI = {
           <div class="item-card focusable" data-act="pc-ident" data-id="${esc(it.id)}">
             <div class="it-name">${esc(it.name)}</div>
             <div class="it-tags">${esc(it.origin)}</div>
-            <div class="redeem">擅长:${esc(it.specialty)} · ${esc(it.gift.text)}<br>
+            <div class="redeem">擅长:${esc(pcIntentName(it.specialty))} · ${esc(it.gift.text)}<br>
               弱点:${esc(it.flaw.text)}<br>
               🤫 私密目标:${esc(it.secret_drive.text)}</div>
           </div>`).join("");
@@ -765,21 +772,24 @@ const CART_UI = {
           <div class="dim center">你抽到两张身份(只有你看得见,连私密目标也是)——暗选其一:</div>
           <div class="hand-row">${cards}</div></div>`;
       }
-      const intents = [["advance", "推进"], ["explore", "探索"], ["support", "支援"],
-                       ["confront", "对抗"], ["recover", "休整"], ["end", "停笔"]];
-      const btns = intents.map(([k, n]) => `
+      const btns = Object.entries(PC_INTENT_NAMES).map(([k, n]) => `
         <button class="soft ${k === "end" ? "warn" : ""} focusable
           ${S.pc.intent === k ? "picked-btn" : ""}"
           data-act="pc-intent" data-id="${k}">${n}</button>`).join(" ");
       const items = [...(v.public_state.inventory?.[S.human.seatId] || []),
                      ...(v.public_state.inventory?.shared || [])];
       const itemOpts = items.map((i) =>
-        `<option value="${esc(i.id)}">动用:${esc(i.name)}(利于${(i.use || []).join("/")})</option>`).join("");
+        `<option value="${esc(i.id)}">动用:${esc(i.name)}(利于${esc((i.use || []).map(pcIntentName).join("／"))})</option>`).join("");
       const ready = S.pc.intent && S.pc.intent !== "end";
       const prophecies = (mine.private_state.prophecies || []).map((p) =>
         `<div class="mem-line">📜 ${esc(p)}</div>`).join("");
       const npcOpt = la.params && la.params.target ? `
         <label class="dim"><input type="checkbox" id="pc-npc"> ${esc(la.params.target)}</label>` : "";
+      const storyOptions = (mine.private_state.old_story_choices || []).filter((q) => q.status === "open"
+        && (q.owner === S.human.seatId || q.owner === "npc") && v.public_state.scene_index <= 8);
+      const storyOpt = storyOptions.length ? `<select id="pc-story" aria-label="追查旧事">
+        <option value="">推进主线或普通行动</option>${storyOptions.map((q) =>
+          `<option value="${esc(q.id)}">追查：${esc(q.question)}（选${esc(pcIntentName(q.intent))}）</option>`).join("")}</select>` : "";
       return `<div class="my-panel">
         <div class="dim center">🤫 你的私密目标:${esc(mine.private_state.secret_drive || "")}</div>
         ${prophecies ? `<div class="report">${prophecies}
@@ -790,7 +800,7 @@ const CART_UI = {
             placeholder="必填:这一步你具体怎么做(自由描述)">
           <select id="pc-item"><option value="">不动用物品</option>${itemOpts}</select>
           <input id="pc-line" maxlength="60" placeholder="桌边留言(可空)">
-          ${npcOpt}
+          ${npcOpt}${storyOpt}
           <button class="soft focusable" data-act="pc-submit"
             ${S.pc.intent ? "" : "disabled"}>确认暗投</button>
         </div>
@@ -882,6 +892,20 @@ ${hint}`, "{}");
 
 // 《口袋跑团》是《口袋穿越》分家出的经典骨架卡:对外状态与动作协议同构,直接共用界面
 CART_UI["pocket-tabletop"] = CART_UI["pocket-crossing"];
+
+function oldStoryPanel(ps, v) {
+  if (!ps.old_stories) return "";
+  const group = (owner) => {
+    const stories = ps.old_stories.filter((q) => q.owner === owner);
+    const label = owner === "npc" ? "NPC旧事" : `${nameOf(v, owner)}的旧事`;
+    return `<details><summary>${esc(label)} ${stories.filter((q) => q.status === "resolved").length}/2</summary>
+      ${stories.map((q) => `<p>${q.status === "resolved" ? "✓" : "◇"} ${esc(q.question)}
+        ${q.status === "resolved" ? `<br>${esc(q.truth)}` : "（尚未揭示）"}</p>`).join("")}</details>`;
+  };
+  return `<div class="info-panel"><div>旧事收集 ${ps.old_stories.filter((q) => q.status === "resolved").length}/6</div>
+    ${["npc", ...v.seats.map((s) => s.seat_id)].map(group).join("")}
+    <p class="dim">${ps.scene_index <= 8 ? "前八幕：选择旧事及对应意图，成功后揭示答案。" : "NPC已离场；在行动中写出有依据的身份旧事推断，召荷官核对。"}</p></div>`;
+}
 
 /* ---------------- 纪念卡 ---------------- */
 
@@ -992,7 +1016,15 @@ async function pcNarrate(btn) {
   btn.textContent = "荷官执笔中……";
   btn.disabled = true;
   const r = await api(`/api/sessions/${S.sid}/narrate`, "POST");
-  if (r.result !== "ok") alert("荷官没接住:" + (r.message || r.reason || r.result));
+  if (r.result !== "ok") {
+    const detail = r.message || r.reason || r.result;
+    const explanation = r.result === "narrator_error"
+      ? "AI荷官有时会写出格式或机制不符合规则的稿件，也可能遇到API连接问题。这次稿件未入档，已有游戏进度保留。关闭弹窗后，请重新点击「召荷官」。"
+      : "本次召荷官未完成，请查看下方原因。";
+    alert(`${explanation}\n\n具体原因：${detail}`);
+  }
+  btn.textContent = "召荷官";
+  btn.disabled = false;
   S.lastSnap = "";
 }
 
@@ -1009,27 +1041,32 @@ async function pcSubmit() {
   const line = (document.getElementById("pc-line")?.value || "").trim();
   if (line) params.line = line;
   if (document.getElementById("pc-npc")?.checked) params.target = "npc";
-  const r = await humanAct("commit", params);
+  const storyId = document.getElementById("pc-story")?.value;
+  if (storyId) params.old_story_id = storyId;
+  const r = await humanAct("commit", params, line);
   if (r && r.result === "ok") S.pc = { intent: null };
 }
 
 
 async function endSession() {
-  if (!confirm("确定收起这局吗?局面会停在这里。")) return;
+  const message = isNightShop(S.currentCartridgeId)
+    ? "确定彻底关店吗？经营记录与图鉴会保留，但这间夜铺将结束，无法再续玩。若只是暂时离开，关闭页面即可，或请店主临时歇业。"
+    : "确定收起这局吗?局面会停在这里。";
+  if (!confirm(message)) return;
   await api(`/api/sessions/${S.sid}/end`, "POST");
   S.lastSnap = "";
 }
 
 function seatCopyButtons(seatId) {
-  return `<button class="soft focusable" data-act="copy" data-seat="${esc(seatId)}" data-target="local">复制 ${esc(seatId)} · 给本机AI</button>
-    ${S.bridge.remote_mcp_url ? `<button class="soft focusable" data-act="copy" data-seat="${esc(seatId)}" data-target="cloud">复制 ${esc(seatId)} · 给云端AI</button>` : ""}`;
+  return `<div class="seat-copy-actions"><button class="soft focusable" data-act="copy" data-seat="${esc(seatId)}" data-target="local">复制给本机AI</button>
+    ${S.bridge.remote_mcp_url ? `<button class="soft focusable" data-act="copy" data-seat="${esc(seatId)}" data-target="cloud">复制给云端AI</button>` : ""}</div>`;
 }
 
 function playerEntryHint() {
-  return `<p class="dim center">同一台游戏机，同一局席位。双人游戏每位玩家使用不同席位；两个复制按钮只是为同一席选择接入位置。本机AI使用本机入口与自己的席位信息。
+  return `<p class="dim center">同一台游戏机，每位玩家各用一席；本机与云端按钮二选一。<br>
     ${S.bridge.remote_mcp_url
-      ? `云端${S.bridge.remote_kind === "fixed" ? "固定" : "临时"}入口已配置：请选择该玩家已安装的远程MCP插件，再发“给云端AI”的连接信息。上游502时请检查隧道连接，不要另建一套云端局。`
-      : "云端入口尚未配置：请本机Agent接通外网通道并指导安装远程MCP，无需另一版本的游戏机。"}</p>`;
+      ? `云端${S.bridge.remote_kind === "fixed" ? "固定" : "临时"}入口已配置，请选择该玩家的远程MCP插件。`
+      : "云端玩家请先让本机Agent配置外网通道与远程MCP。"}</p>`;
 }
 
 function seatConnectionText(t, target) {

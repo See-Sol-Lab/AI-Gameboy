@@ -169,6 +169,14 @@ body {
 .slot .anchor { font-size: .76rem; color: #6d7554; margin-top: .15rem; }
 .slot .empty-hint { color: #7d8663; font-size: .85rem; margin-top: 1.6rem; text-align: center; }
 .conn-box { margin-top: .55rem; }
+.seat-copy-actions {
+  display: flex; flex-direction: column; align-items: center;
+  gap: .75rem; padding: .3rem;
+}
+.seat-copy-actions button.soft {
+  width: 100%; max-width: 18rem; min-width: 0;
+  white-space: normal; overflow-wrap: anywhere;
+}
 .conn-note { font-size: .74rem; color: #7c6f52; margin-top: .5rem; }
 .start-hint { text-align: center; margin: .8rem 0 .2rem; font-size: .88rem; color: #5d6647; }
 .start-hint.ready { color: #3c422b; font-weight: 700; animation: blink-focus 1.2s steps(2) infinite; }
@@ -306,11 +314,13 @@ body {
 .rounds-mini { margin-top: .5rem; font-size: .78rem; color: #5d6647; }
 .table-talk { margin-top: .8rem; }
 .talk-line { display: flex; gap: .5rem; margin: .45rem 0; align-items: baseline; }
+.talk-line.talk-right { flex-direction: row-reverse; }
 .talk-line .who { font-weight: 700; white-space: nowrap; }
 .talk-line .txt {
   background: rgba(243,236,216,.6); padding: .3rem .6rem; border-radius: 2px 10px 10px 10px;
-  font-size: .87rem;
+  font-size: .87rem; max-width: 75%; overflow-wrap: anywhere;
 }
+.talk-right .txt { border-radius: 10px 2px 10px 10px; background: rgba(226,234,196,.75); }
 .talk-line .tt { font-size: .68rem; color: #7d8663; white-space: nowrap; }
 .sys-line { text-align: center; font-size: .74rem; color: #7d8663; margin: .4rem 0; letter-spacing: .15em; }
 
