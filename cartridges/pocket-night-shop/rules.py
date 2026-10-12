@@ -669,6 +669,36 @@ GOLDEN_APPLE = {"code": "golden_apple", "name": "魔女的金苹果", "kind": "�
 # 金苹果不上货架(2026-10-13 莉莉丝定):拿到就二选一。换钱=77枚古币;收藏=店里多一个标记,
 # 不占格子,打烊小结末尾挂[金苹果],此后每次回收都多筛5粒星沙。收藏只能有一个。
 APPLE_SAND = 5
+# 第七面墙(全图鉴)之后可以拿古币换星沙(2026-10-13 莉莉丝定):后期钱溢出、星沙不够,上古遗世修不动。
+SAND_PRICE, SAND_DAILY = 3, 30
+
+
+def _sand_left(s):
+    bought = s.get("sand_bought") or {}
+    return SAND_DAILY - (bought.get("n", 0) if bought.get("day") == s["day"] else 0)
+
+
+def _buy_sand_open(s):
+    return any(e["id"] == "collection" for e in s.get("endings", []))
+
+
+def _buy_sand(s, params):
+    if not _buy_sand_open(s):
+        raise IllegalAction("收齐全部旧物图鉴(第七面墙)以后,才能用古币换星沙")
+    n = params.get("amount")
+    left = _sand_left(s)
+    if type(n) is not int or n < 1:
+        raise IllegalAction(f"amount 填要买几粒星沙(正整数);今天还能买{left}粒,每粒{SAND_PRICE}枚古币")
+    if n > left:
+        raise IllegalAction(f"今天只能再买{left}粒星沙(每天最多{SAND_DAILY}粒)")
+    if s["coins"] < n * SAND_PRICE:
+        raise IllegalAction(f"古币不够:{n}粒要{n * SAND_PRICE}枚,手上{s['coins']}枚")
+    before = (s["coins"], s["reputation"])
+    s["coins"] -= n * SAND_PRICE
+    s["stardust"] = s.get("stardust", 0) + n
+    s["sand_bought"] = {"day": s["day"], "n": SAND_DAILY - left + n}
+    _log(s, s["day"], SHIFTS[s["shift_index"]], "buy_sand",
+         f"花{n * SAND_PRICE}枚古币换了{n}粒星沙(现在{s['stardust']}粒;今天还能换{_sand_left(s)}粒)。", before)
 
 
 def _apple_text(s):
@@ -1171,6 +1201,9 @@ def _legal_actions(s):
     if sandable:
         actions.append({"action_id": "sand_repair", "params": {
             "item_id": "用星沙一次修满(奇珍22/上古33/遗世55粒,不占班)", "可修": sandable[:6]}})
+    if _buy_sand_open(s) and _sand_left(s) > 0:
+        actions.append({"action_id": "buy_sand", "params": {
+            "amount": f"要买几粒星沙;每粒{SAND_PRICE}枚古币,今天还能买{_sand_left(s)}粒,不占班次"}})
     if s.get("apple_pending"):
         actions.append({"action_id": "golden_apple", "params": {"choice": _apple_text(s)}})
     if s.get("scroll"):
@@ -1437,6 +1470,8 @@ def apply(full_state, seat_id, action_id, params):
         _merge(s, params)
     elif action_id == "teleport":
         _teleport(s)
+    elif action_id == "buy_sand":
+        _buy_sand(s, params)
     elif action_id == "golden_apple":
         _golden_apple(s, params)
     elif action_id == "sand_repair":

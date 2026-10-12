@@ -437,6 +437,26 @@ class TestNightExpansion(unittest.TestCase):
         with self.assertRaisesRegex(rules.IllegalAction, "夜铺已经收起"):
             rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"})
 
+    def test_coins_buy_stardust_after_full_collection_with_daily_cap(self):
+        s = rules.new_game(["seat_a"], 4)
+        s["coins"] = 200
+        with self.assertRaisesRegex(rules.IllegalAction, "第七面墙"):
+            rules.apply(s, "seat_a", "buy_sand", {"amount": 1})
+        self.assertNotIn("buy_sand", [a["action_id"] for a in rules._legal_actions(s)])
+        s["endings"] = [{"id": "collection", "title": "第七面墙", "day": 1, "reward": None, "paragraphs": []}]
+        sand = s.get("stardust", 0)
+        s = rules.apply(s, "seat_a", "buy_sand", {"amount": 20})
+        self.assertEqual((s["coins"], s["stardust"]), (140, sand + 20))
+        with self.assertRaisesRegex(rules.IllegalAction, "只能再买10粒"):
+            rules.apply(s, "seat_a", "buy_sand", {"amount": 11})
+        s = rules.apply(s, "seat_a", "buy_sand", {"amount": 10})
+        self.assertNotIn("buy_sand", [a["action_id"] for a in rules._legal_actions(s)])
+        s["day"] += 1                                       # 第二天额度回满
+        self.assertEqual(rules._sand_left(s), 30)
+        s["coins"] = 5
+        with self.assertRaisesRegex(rules.IllegalAction, "古币不够"):
+            rules.apply(s, "seat_a", "buy_sand", {"amount": 2})
+
     def test_lighthouse_dreams_one_per_condition(self):
         s = rules.new_game(["seat_a"], 9)
         s["day"] = 180
