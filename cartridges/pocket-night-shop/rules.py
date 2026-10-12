@@ -262,7 +262,7 @@ for _key, _rep in {"lane": 0, "station": 0, "dock": 10, "arcade": 25,
 # 第七张隐藏地图:条件不公开,满足后才出现在地图里。
 # 上古里最后 3 件、遗世里最后 2 件从原地点挪到这里,让后期有盼头。
 SECRET = "lighthouse"
-SECRET_DAY, SECRET_DISCOVERIES, SECRET_REPUTATION = 100, 60, 120
+SECRET_DAY, SECRET_DISCOVERIES, SECRET_REPUTATION = 88, 60, 120
 MAP_COMPLETE_REPUTATION = 5   # 前六张图各自的旧物全收进图鉴,街坊传开,声望+5
 SECRET_APPLE_DAYS, SECRET_APPLE_GIFT = 7, 50   # 开图后7天魔女必持金苹果,碰面一半机会相赠
 SECRET_ITEMS = ([c for c, *_ in ITEMS if ITEM_RARITY.get(c) == "ancient"][-3:]
