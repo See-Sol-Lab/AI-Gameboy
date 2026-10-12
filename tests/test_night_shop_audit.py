@@ -25,7 +25,7 @@ class TestNightAudit(unittest.TestCase):
         cid = rules.BOND_BY_CODE[code]
         s["customer_book"].setdefault(cid, {})["bond"] = True
 
-    def test_witch_gift_never_overflows_a_full_shelf(self):
+    def test_witch_gift_apple_skips_the_shelf_even_when_full(self):
         s = self.state()
         s["shop_level"] = 3
         s["unlocked_locations"] = list(rules.LOCATIONS)[:4]
@@ -34,9 +34,9 @@ class TestNightAudit(unittest.TestCase):
         rules._witch_book(s)["apple_until"] = s["shift_count"] + 2
         with patch.object(rules, "_number", return_value=0):
             text = rules._witch_meet(s, rules._witch_spot(s))
-        self.assertEqual(len(s["inventory"]), rules._capacity(s))
-        self.assertNotIn("塞进", text)
-        self.assertTrue(rules._apple_held(s))
+        self.assertEqual(len(s["inventory"]), rules._capacity(s))   # 金苹果不上货架,满了也能送
+        self.assertIn("塞进", text)
+        self.assertEqual(s["apple_pending"], 1)
 
     def test_exhausted_pool_does_not_resurrect_lit_items(self):
         s = self.state()

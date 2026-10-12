@@ -666,6 +666,45 @@ WITCH_TREASURE_EVERY, WITCH_APPLE_EVERY, WITCH_APPLE_HOLD = 10, 20, 2
 GOLDEN_APPLE = {"code": "golden_apple", "name": "魔女的金苹果", "kind": "珍宝", "rarity": "heirloom",
                 "value": 77, "condition": 3,
                 "story": "魔女莉莉丝的金苹果,咬一口会听见很远的地方有人在笑。"}
+# 金苹果不上货架(2026-10-13 莉莉丝定):拿到就二选一。换钱=77枚古币;收藏=店里多一个标记,
+# 不占格子,打烊小结末尾挂[金苹果],此后每次回收都多筛5粒星沙。收藏只能有一个。
+APPLE_SAND = 5
+
+
+def _apple_text(s):
+    n = s.get("apple_pending", 0)
+    if not n:
+        return ""
+    keep = "" if s.get("apple_kept") else (
+        ',或 golden_apple {"choice":"keep"} 收藏起来(不占货架,只能收藏一个,收藏后每次回收都多筛5粒星沙)')
+    return (f"手上有{n}个金苹果等你决定:golden_apple {{\"choice\":\"cash\"}} 直接换成"
+            f"{GOLDEN_APPLE['value']}枚古币{keep}。")
+
+
+def _golden_apple(s, params):
+    choice = params.get("choice")
+    if not s.get("apple_pending"):
+        raise IllegalAction("手上没有待处理的金苹果")
+    if choice not in ("cash", "keep") or (choice == "keep" and s.get("apple_kept")):
+        raise IllegalAction("choice 填 cash(换钱)" + ("" if s.get("apple_kept") else " 或 keep(收藏)")
+                            + ("。金苹果已经收藏过一个,这个只能换钱" if s.get("apple_kept") else ""))
+    before = (s["coins"], s["reputation"])
+    s["apple_pending"] -= 1
+    if choice == "cash":
+        s["coins"] += GOLDEN_APPLE["value"]
+        text = f"把金苹果换成了{GOLDEN_APPLE['value']}枚古币。"
+    else:
+        s["apple_kept"] = True
+        text = (f"把金苹果收进柜台深处,当作这间铺子的藏品。从此每次回收旧物,都会多筛出{APPLE_SAND}粒星沙。")
+    _log(s, s["day"], SHIFTS[s["shift_index"]], "golden_apple", text, before)
+
+
+def _migrate_apples(s):
+    """旧存档货架上的金苹果挪出来,等店主决定换钱还是收藏。"""
+    apples = [x for x in s["inventory"] if x.get("code") == "golden_apple"]
+    if apples:
+        s["inventory"] = [x for x in s["inventory"] if x.get("code") != "golden_apple"]
+        s["apple_pending"] = s.get("apple_pending", 0) + len(apples)
 
 
 def _witch_on(s):
@@ -737,14 +776,12 @@ def _witch_meet(s, location):
     apple = _apple_held(s)
     roll = _number(s["seed"], "witch_mood", s["shift_count"]) % 100
     gift = ""
-    if apple and len(s["inventory"]) < _capacity(s) and roll < (SECRET_APPLE_GIFT if _apple_window(s) else 2):
-        s["item_counter"] += 1
-        s["inventory"].append({**GOLDEN_APPLE, "id": f"golden_apple_{s['item_counter']}",
-                               "displayed": False, "origin": "witch", "secret": None})
+    if apple and roll < (SECRET_APPLE_GIFT if _apple_window(s) else 2):
+        s["apple_pending"] = s.get("apple_pending", 0) + 1
         w["apple_until"] = 0
         s["secret_gift_done"] = s.get("secret_opened_day") is not None or s.get("secret_gift_done", False)
         apple = False
-        gift = " 她今天心情好得出奇,把金苹果直接塞进了店主手里!"
+        gift = " 她今天心情好得出奇,把金苹果直接塞进了店主手里! " + _apple_text(s)
     low = SECRET_APPLE_GIFT if _apple_window(s) else 2
     w["visit"] = {"sold": 0, "discount": apple and low <= roll < low + 23}
     return (" 🧙 在" + LOCATIONS[location]["name"] + "撞见了魔女莉莉丝的小摊。" + gift
@@ -806,15 +843,13 @@ def _witch_trade(s, action_id, params):
         price = _witch_price(s, item, False)
         if s["coins"] < price:
             raise IllegalAction(f"古币不够(要{price}枚古币,手上{s['coins']}枚古币)")
-        if len(s["inventory"]) >= _capacity(s):
+        if iid != "golden_apple" and len(s["inventory"]) >= _capacity(s):
             raise IllegalAction(_block_text(s, {"focus": "tidy"}, "inventory_full"))
         before = (s["coins"], s["reputation"])
         s["coins"] -= price
         if iid == "golden_apple":
-            s["item_counter"] += 1
-            item["id"] = f"golden_apple_{s['item_counter']}"
             w["apple_until"] = 0
-            s["inventory"].append(item)
+            s["apple_pending"] = s.get("apple_pending", 0) + 1
         else:
             w["stock"].remove(item)
             _arrive_repaired(s, item)
@@ -823,7 +858,7 @@ def _witch_trade(s, action_id, params):
                 s["inventory"].append(item)
             else:
                 _collect(s, item)          # 首次收录照常 +2
-        text = f"花{price}枚古币从魔女莉莉丝那里买下「{item['name']}」。"
+        text = f"花{price}枚古币从魔女莉莉丝那里买下「{item['name']}」。" + (_apple_text(s) if iid == "golden_apple" else "")
     _log(s, s["day"], SHIFTS[s["shift_index"]], action_id, text, before)
 
 
@@ -1083,6 +1118,8 @@ def _legal_actions(s):
     if sandable:
         actions.append({"action_id": "sand_repair", "params": {
             "item_id": "用星沙一次修满(奇珍22/上古33/遗世55粒,不占班)", "可修": sandable[:6]}})
+    if s.get("apple_pending"):
+        actions.append({"action_id": "golden_apple", "params": {"choice": _apple_text(s)}})
     if s.get("scroll"):
         actions.append({"action_id": "teleport", "params": {
             "_": f"用传送卷轴免费去一张随机的已开地图淘一件货,不占班次;第{s['scroll']['until_day']}天打烊前要用掉"}})
@@ -1112,6 +1149,7 @@ def observe(full_state, seat_id):
         "coins": s["coins"], "reputation": s["reputation"], "shop_level": s["shop_level"],
         "stardust": s.get("stardust", 0),
         **({"door": "下午还没开门,客人傍晚才来;可以整理、修理,出门淘货半价"} if not _is_open(s) else {}),
+        **({"apple": _apple_text(s)} if s.get("apple_pending") else {}),
         **({"scroll": f"手上有传送卷轴,第{s['scroll']['until_day']}天打烊前用 teleport {{}},过时化成灰"}
            if s.get("scroll") else {}),
         # 救店信息只在真要救店/已破产时出现,平时不挂在店况里给 AI 添压力
@@ -1331,6 +1369,7 @@ def apply(full_state, seat_id, action_id, params):
              f"人类发令「{words.strip()[:40]}」救店,两颗骰子落下:十位{tens}、个位{ones}——注资{tens * 10 + ones}枚古币。"
              f"这是第{s['rescues']}次救店,还剩{RESCUE_LIMIT - s['rescues']}次。", before)
         return s
+    _migrate_apples(s)
     if action_id == "choose_event":
         _choose_event(s, params)
     elif s["pending_event"]:
@@ -1343,6 +1382,8 @@ def apply(full_state, seat_id, action_id, params):
         _merge(s, params)
     elif action_id == "teleport":
         _teleport(s)
+    elif action_id == "golden_apple":
+        _golden_apple(s, params)
     elif action_id == "sand_repair":
         _sand_repair(s, params)
     elif action_id == "buy_slot":
@@ -1533,6 +1574,8 @@ def _day_summary(s, day):
             f"店铺{s['shop_level']}级,货架{len(s['inventory'])}/{_capacity(s)}。")
     if s["current_goal"]:
         text += f" 目标:{s['current_goal']}"
+    if s.get("apple_kept"):
+        text += " [金苹果]"
     s["day_open"] = {"coins": s["coins"], "reputation": s["reputation"]}
     return text
 
@@ -1701,7 +1744,7 @@ def _do_focus(s, params, flags):
         price = max(1, item["value"] // 3)
         s["coins"] += price
         s["inventory"].remove(item)
-        sand = SAND_DROP.get(item["rarity"], 0)
+        sand = SAND_DROP.get(item["rarity"], 0) + (APPLE_SAND if s.get("apple_kept") else 0)
         s["stardust"] = s.get("stardust", 0) + sand
         return (f"把「{item['name']}」作为零件回收,得{price}枚古币" + (f",筛出{sand}粒星沙" if sand else "")
                 + "。图鉴记录保留。")

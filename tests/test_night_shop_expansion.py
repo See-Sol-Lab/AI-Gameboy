@@ -196,7 +196,7 @@ class TestNightExpansion(unittest.TestCase):
             t = deepcopy(s)
             t.update(seed=seed, day=181, unlocked_locations=list(rules.LOCATIONS))
             rules._witch_meet(t, rules._witch_spot(t))
-            got = any(x["code"] == "golden_apple" for x in t["inventory"])
+            got = t.get("apple_pending", 0) > 0
             gifts += got
             if got:
                 self.assertFalse(rules._apple_window(t))
@@ -376,6 +376,34 @@ class TestNightExpansion(unittest.TestCase):
         s = free_event(s)
         s = rules.apply(s, "seat_a", "work_shift", {"focus": "scavenge"})
         self.assertNotIn("在发光", s["history"][-1]["text"])
+
+    def test_golden_apple_is_cash_or_one_keepsake_off_the_shelf(self):
+        s = rules.new_game(["seat_a"], 4)
+        s.update(coins=0, apple_pending=2)
+        legal = [a["action_id"] for a in rules.observe(s, "seat_a")["legal_actions"]]
+        self.assertIn("golden_apple", legal)
+        self.assertIn("2个金苹果", rules.observe(s, "seat_a")["public_state"]["apple"])
+        s = rules.apply(s, "seat_a", "golden_apple", {"choice": "keep"})
+        self.assertTrue(s["apple_kept"])
+        with self.assertRaisesRegex(rules.IllegalAction, "只能换钱"):
+            rules.apply(s, "seat_a", "golden_apple", {"choice": "keep"})
+        s = rules.apply(s, "seat_a", "golden_apple", {"choice": "cash"})
+        self.assertEqual((s["coins"], s["apple_pending"]), (77, 0))
+        with self.assertRaisesRegex(rules.IllegalAction, "没有待处理"):
+            rules.apply(s, "seat_a", "golden_apple", {"choice": "cash"})
+        # 收藏后回收多5粒星沙,打烊小结挂[金苹果]
+        item = s["inventory"][0]
+        base = rules.SAND_DROP.get(item["rarity"], 0)
+        s = rules.apply(s, "seat_a", "work_shift", {"focus": "recycle", "item_id": item["id"]})
+        self.assertEqual(s["stardust"], base + rules.APPLE_SAND)
+        self.assertTrue(rules._day_summary(s, s["day"]).endswith("[金苹果]"))
+        # 旧档货架上的金苹果会挪出来等决定
+        t = rules.new_game(["seat_a"], 4)
+        t["inventory"].append({**rules.GOLDEN_APPLE, "id": "golden_apple_99", "displayed": False,
+                               "origin": "witch", "secret": None})
+        t = rules.apply(t, "seat_a", "work_shift", {"focus": "tidy"})
+        self.assertFalse(any(x["code"] == "golden_apple" for x in t["inventory"]))
+        self.assertEqual(t["apple_pending"], 1)
 
     def test_lighthouse_dreams_one_per_condition(self):
         s = rules.new_game(["seat_a"], 9)
