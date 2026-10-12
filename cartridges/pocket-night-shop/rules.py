@@ -721,7 +721,8 @@ def _witch_meet(s, location):
         return ""
     w = _witch_book(s)
     w["met"] += 1
-    w["stock"] = [item for item in w["stock"] if not _lit(s, item["code"])]   # 故事讲完的不再摆
+    # 故事讲完的不再摆;旧版三摊位时进的货(没有摊位号)也撤掉,只留两个摊位的货
+    w["stock"] = [item for item in w["stock"] if not _lit(s, item["code"]) and "_slot" in item]
     for item in w["stock"]:      # 摊上的货也按"揭过秘就是修好的"算,看到的和买到的一致
         _arrive_repaired(s, item)
     apple = _apple_held(s)

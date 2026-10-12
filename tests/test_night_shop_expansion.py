@@ -286,6 +286,16 @@ class TestNightExpansion(unittest.TestCase):
         self.assertAlmostEqual(seen[0]["heirloom"] / 1000, 0.30, delta=0.05)
         self.assertAlmostEqual(seen[1]["ancient"] / 1000, 0.40, delta=0.05)
 
+    def test_old_three_slot_stall_is_cleared_on_next_meeting(self):
+        s = rules.new_game(["seat_a"], 4)
+        s.update(unlocked_locations=list(rules.LOCATIONS)[:4], shop_level=5)
+        old = {"id": "claycalendar_9", "code": "claycalendar", "name": "x", "story": "", "condition": 0,
+               "value": 32, "displayed": False, "kind": "时间", "rarity": "ancient", "origin": "witch",
+               "secret": None, "_secret": ""}
+        rules._witch_book(s)["stock"] = [dict(old, id=f"old{i}") for i in range(3)]
+        rules._witch_meet(s, rules._witch_spot(s))
+        self.assertEqual(rules._witch_book(s)["stock"], [])
+
     def test_witch_stock_of_revealed_species_is_already_repaired(self):
         s = rules.new_game(["seat_a"], 4)
         s.update(unlocked_locations=list(rules.LOCATIONS)[:4], shop_level=3)
