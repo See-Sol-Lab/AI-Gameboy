@@ -50,7 +50,7 @@ class TestNightExpansion(unittest.TestCase):
         self.assertEqual(len({row[0] for row in rules.CUSTOMERS}), 86)
         self.assertEqual(len({row[1] for row in rules.CUSTOMERS}), 86)
         self.assertEqual(len(rules.LOCATIONS), 7)   # 含第七张隐藏地图
-        self.assertEqual(len(rules.EVENTS), 24)
+        self.assertEqual(len(rules.EVENTS), 48)
         self.assertEqual(len(rules.AMBIENT), 24)
         self.assertEqual(Counter(rules.ITEM_RARITY.values()),
                          {"common": 24, "uncommon": 20, "rare": 14, "ancient": 9, "heirloom": 5})
@@ -66,6 +66,41 @@ class TestNightExpansion(unittest.TestCase):
         self.assertEqual((len(normal), min(normal), max(normal)), (62, 10, 28))
         for customer in rules.CUSTOMERS:
             self.assertTrue(set(customer[4]) <= set(rules.ITEM_KINDS.values()))
+
+    def test_event_frequency_falls_as_shop_grows(self):
+        for level, interval in ((1, 4), (2, 6), (3, 8), (5, 8)):
+            count = 0
+            for n in range(96):
+                s = rules.new_game(["seat_a"], 42)
+                s["shop_level"] = level
+                with mock.patch.object(rules, "_number", return_value=n):
+                    count += bool(rules._maybe_event(s))
+            self.assertEqual(count, 96 // interval)
+
+    def test_event_never_repeats_previous_encounter(self):
+        s = rules.new_game(["seat_a"], 42)
+        s["shop_level"] = 5
+        with mock.patch.object(rules, "_number", return_value=0):
+            rules._maybe_event(s)
+            previous = s["last_event"]
+            rules._maybe_event(s)
+        self.assertNotEqual(previous, s["last_event"])
+        self.assertEqual(s["event_count"], 2)
+
+    def test_negative_events_have_small_costs_and_no_negative_balances(self):
+        keys = ["leaking_roof", "broken_sign", "spilled_oil", "damp_paper", "loose_window", "wrong_delivery",
+                "misread_hours", "dusty_step", "empty_footsteps", "cold_bus", "erased_address", "unanswered_knock"]
+        self.assertEqual(len(keys), 12)
+        for key in keys:
+            event = rules.EVENTS[key]
+            self.assertIn(event.get("coins", 0), (-2, -1, 0))
+            self.assertIn(event.get("reputation", 0), (-1, 0))
+            self.assertNotIn("choices", event)
+            s = rules.new_game(["seat_a"], 42)
+            s["coins"] = s["reputation"] = 0
+            with mock.patch.object(rules, "EVENTS", {key: event}), mock.patch.object(rules, "_number", return_value=0):
+                self.assertIn(event["name"], rules._maybe_event(s))
+            self.assertEqual((s["coins"], s["reputation"]), (0, 0))
 
     def test_tier_three_item_gate_applies_to_all_sources(self):
         s = rules.new_game(["seat_a"], 42)

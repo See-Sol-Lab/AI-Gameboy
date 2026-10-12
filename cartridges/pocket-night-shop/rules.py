@@ -584,6 +584,34 @@ EVENTS.update({
 SCROLL_TEXT = ("它在店主手里化成一张传送卷轴:teleport {{}},不花古币、不占班次,"
                "随机传到一张已开的地图带回一件旧物。{when}打烊前必须用掉,过时就化成灰。")
 
+# 新增见闻不占班、不要求选择；一半添故事与经营提示，一半是轻微挫折。
+EVENTS.update({
+    "window_sea": {"name": "橱窗里的海", "text": "玻璃里映出一片不属于这条街的海。浪退去以后，货架还在原处。"},
+    "empty_chair": {"name": "留给迟到者的椅子", "text": "街坊在门口放下一把椅子，说总有人要晚一点才走到亮着灯的地方。"},
+    "particular_guest": {"name": "旧货商的提醒", "text": "旧货商说，有些特别的客人只等一件特定旧物。名字和类别相似，也代替不了他们要找的那一件。"},
+    "finished_gift": {"name": "修理匠的私话", "text": "修理匠轻声说：把旧物彻底修好，再交给真正等它的客人，有时会得到一份普通买卖之外的回馈。"},
+    "market_lights": {"name": "远处的旧货灯", "text": "巷口的淘货灯还亮着。卖不出合适的货时，出去补些库存，也许比守着空货架更有用。"},
+    "margin_moon": {"name": "账页边上的月亮", "text": "账页边多了一道弯月，像是谁画给辛苦了一晚的店主。翻过一页，它又安静地跟了过来。"},
+    "warm_cup": {"name": "柜台上的热茶", "text": "隔壁递来一杯热茶，说不买东西也可以坐坐。杯底有一道像小路的裂纹。"},
+    "old_lullaby": {"name": "走调的摇篮曲", "text": "楼上传来一首走调的摇篮曲。店里的旧物没有出声，却仿佛各自听见了不同的故乡。"},
+    "patient_sand": {"name": "星沙的耐心", "text": "修理匠看着沙漏说：古老的东西要慢慢修，星沙也能帮忙。每一小步都会留下，别急着把它再拆坏。"},
+    "farewell_lamp": {"name": "少一扇窗的灯", "text": "街坊说，一位找回旧物的客人已经动身。那扇常亮的窗今夜暗了，路却像比昨天长了一点。"},
+    "small_tip": {"name": "压住账页的古币", "text": "茶杯下压着一枚古币。便笺上写：今晚辛苦了，不用找零。", "coins": 1},
+    "spare_button": {"name": "缝在门帘上的星", "text": "裁缝替门帘缝上一枚不起眼的纽扣。灯一照，它像颗小星，让路人认出了夜铺。", "reputation": 1},
+    "leaking_roof": {"name": "屋顶漏了一滴", "text": "雨从屋顶漏进来。店主花一枚古币买了补缝材料，旧物都及时挪到了干燥处。", "coins": -1},
+    "broken_sign": {"name": "招牌松了", "text": "风吹松了招牌的挂钩，修篷人收了两枚古币，重新把它钉牢。", "coins": -2},
+    "spilled_oil": {"name": "洒掉的灯油", "text": "一只飞蛾撞翻了灯油。补一小瓶花了一枚古币，灯总算没灭。", "coins": -1},
+    "damp_paper": {"name": "受潮的包装纸", "text": "柜台下的包装纸受潮了，店主花一枚古币换了干纸。货架上的旧物没有受损。", "coins": -1},
+    "loose_window": {"name": "窗框夜响", "text": "窗框整夜咯吱作响，店主请木匠加固，付了两枚古币。风终于留在了窗外。", "coins": -2},
+    "wrong_delivery": {"name": "送错的包裹", "text": "送货人走错了巷子，带来一箱别人的货。退送花了一枚古币，夜铺没有留下它。", "coins": -1},
+    "misread_hours": {"name": "误读的营业牌", "text": "路人把歇业时段看错了，白跑一趟，在街坊间抱怨了几句。店主重新摆正营业牌。", "reputation": -1},
+    "dusty_step": {"name": "台阶上的灰", "text": "隔壁修墙扬起的灰落满台阶，一位客人嫌门口脏。店主扫净台阶，那句抱怨却先传了出去。", "reputation": -1},
+    "empty_footsteps": {"name": "停在门外的脚步", "text": "脚步在门外停了很久，最终没有进来。雨把留下的鞋印慢慢洗平。"},
+    "cold_bus": {"name": "末班车没有停", "text": "末班车从街角驶过，没有停车。街上等候的人把围巾拢紧，又站了一会儿。"},
+    "erased_address": {"name": "被雨擦去的地址", "text": "一张无人认领的信封粘在门上，地址被雨擦去了。店主将它晾在灯下，仍看不清最后一行。"},
+    "unanswered_knock": {"name": "隔墙无人应答", "text": "隔壁传来三声敲门，随后再没有动静。夜铺的灯亮着，街上却比平时安静。"},
+})
+
 
 def _teleport(s):
     if not s.get("scroll"):
@@ -1873,10 +1901,13 @@ def _record_event(s, key, outcome=None, text=None):
 
 def _maybe_event(s):
     n = _number(s["seed"], "event", s["shift_count"])
-    if n % 4:
+    interval = 4 if s["shop_level"] == 1 else 6 if s["shop_level"] == 2 else 8
+    if n % interval:
         return ""
-    pool = [key for key, event in EVENTS.items() if event.get("level", 1) <= s["shop_level"]]
-    key = pool[(n // 4) % len(pool)]
+    pool = [key for key, event in EVENTS.items()
+            if event.get("level", 1) <= s["shop_level"] and key != s.get("last_event")]
+    key = pool[(n // interval) % len(pool)]
+    s["last_event"] = key
     event = EVENTS[key]
     s["event_count"] += 1
     _record_event(s, key)
@@ -1884,8 +1915,8 @@ def _maybe_event(s):
         s["pending_event"] = {"id": f"event_{s['event_count']}", "kind": key,
                               "_location": s["location"]}
         return f"街巷见闻「{event['name']}」:{event['text']} 等待店主选择。"
-    s["coins"] += event.get("coins", 0)
-    s["reputation"] += event.get("reputation", 0)
+    s["coins"] = max(0, s["coins"] + event.get("coins", 0))
+    s["reputation"] = max(0, s["reputation"] + event.get("reputation", 0))
     _record_event(s, key, "happened", event["text"])
     text = f"街巷见闻「{event['name']}」:{event['text']}"
     if event.get("scroll"):
