@@ -308,6 +308,14 @@ def _lighthouse_dream(s):
     return LIGHTHOUSE_DREAMS[previous]
 
 
+def _lighthouse_glow(s):
+    """灯塔已经出现、还没开路:每次出门都提醒一句,免得 AI 惯性只跑老地图。"""
+    if s.get("dreams", 0) < 3 or SECRET in s["unlocked_locations"]:
+        return ""
+    return (" 摊开地图时,边缘有一处在发光:雾尽灯塔。用 map 看看,"
+            "条件够了就 unlock_location 开路(要店铺5级、50枚古币)。")
+
+
 def _visible_locations(s):
     return [k for k, loc in LOCATIONS.items()
             if not loc.get("hidden") or k in s["unlocked_locations"] or s.get("dreams", 0) >= 3]
@@ -594,7 +602,8 @@ def _teleport(s):
     new = _collect(s, found)
     text = (f"展开传送卷轴,一眨眼站在{LOCATIONS[location]['name']},带回「{found['name']}」。"
             + ("新发现,图鉴收录+2枚古币。" if new else "这件见过,图鉴数量+1。")
-            + (" 这种你修过,带回来就是修好的。" if found.get("pre_repaired") else "") + f" {found['story']}")
+            + (" 这种你修过,带回来就是修好的。" if found.get("pre_repaired") else "") + f" {found['story']}"
+            + _lighthouse_glow(s))
     _log(s, s["day"], SHIFTS[s["shift_index"]], "teleport", text, before, ambient="", reaction=None,
          new=new, rare=found["rarity"] in ("rare", "ancient", "heirloom"))
 
@@ -1632,7 +1641,7 @@ def _do_focus(s, params, flags):
         s["coins"] -= _work_cost(s, params)
         if len(s["inventory"]) >= _capacity(s):
             return (f"去{LOCATIONS[location]['name']}转了一圈,货架已满({len(s['inventory'])}/{_capacity(s)}件),"
-                    "空手而归。碰见魔女的话可以把不要的货卖给她腾位置。" + _upgrade_hint(s))
+                    "空手而归。碰见魔女的话可以把不要的货卖给她腾位置。" + _upgrade_hint(s) + _lighthouse_glow(s))
         found = _make_item(s, location, f"find{s['shift_count']}")
         flags["new"] = _collect(s, found)
         flags["rare"] = found["rarity"] in ("rare", "ancient", "heirloom")
@@ -1645,7 +1654,7 @@ def _do_focus(s, params, flags):
             prefix += " 可以拆一件同种的去修另一件(merge,不花钱不占班)。"
         if flags["new"] and len(s["collection"]) == len(ITEMS):
             prefix += " 异物志全部物种已发现！还可继续补完修复秘密。"
-        return f"从{LOCATIONS[location]['name']}带回「{found['name']}」。{prefix} {found['story']}"
+        return f"从{LOCATIONS[location]['name']}带回「{found['name']}」。{prefix} {found['story']}" + _lighthouse_glow(s)
     if focus == "repair":
         s["coins"] -= 1
         return _repair_once(s, item, flags)

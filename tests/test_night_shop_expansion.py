@@ -363,6 +363,20 @@ class TestNightExpansion(unittest.TestCase):
         s["shop_level"] = rules.MAX_SHOP_LEVEL
         self.assertEqual(rules._upgrade_hint(s), "")
 
+    def test_map_glows_on_every_outing_until_lighthouse_opens(self):
+        s = rules.new_game(["seat_a"], 9)
+        s.update(coins=200, inventory=[])
+        s = rules.apply(s, "seat_a", "work_shift", {"focus": "scavenge"})
+        self.assertNotIn("雾尽灯塔", s["history"][-1]["text"])
+        s["dreams"] = 3
+        s = free_event(s)
+        s = rules.apply(s, "seat_a", "work_shift", {"focus": "scavenge"})
+        self.assertIn("边缘有一处在发光:雾尽灯塔", s["history"][-1]["text"])
+        s["unlocked_locations"].append(rules.SECRET)
+        s = free_event(s)
+        s = rules.apply(s, "seat_a", "work_shift", {"focus": "scavenge"})
+        self.assertNotIn("在发光", s["history"][-1]["text"])
+
     def test_lighthouse_dreams_one_per_condition(self):
         s = rules.new_game(["seat_a"], 9)
         s["day"] = 180
