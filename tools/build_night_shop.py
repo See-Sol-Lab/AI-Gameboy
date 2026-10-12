@@ -7,7 +7,7 @@ import textwrap
 import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / "standalone/pocket_night_shop.py"
+OUTPUT = ROOT / "口袋夜铺_单机盲玩版/pocket_night_shop.py"
 
 
 def render():
@@ -28,9 +28,9 @@ if __name__ == "__main__":
     content = render()
     if args.check:
         if not OUTPUT.is_file() or OUTPUT.read_text("utf-8") != content:
-            parser.exit(1, "Standalone file is stale; run python tools/build_night_shop.py\n")
+            parser.exit(1, "Blind edition is stale; run python tools/build_night_shop.py\n")
         print("Standalone file is current.")
     else:
         OUTPUT.parent.mkdir(exist_ok=True)
         OUTPUT.write_text(content, encoding="utf-8", newline="\n")
-        print("Built standalone/pocket_night_shop.py")
+        print("Built pocket_night_shop.py in the blind-edition folder.")

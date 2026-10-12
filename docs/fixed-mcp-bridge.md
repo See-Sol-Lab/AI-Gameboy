@@ -18,10 +18,24 @@
 4. 创建HTTP VPC Service，选刚才的Tunnel，只指向 `127.0.0.1` 的HTTP端口7777。命令形式：`wrangler vpc service create ai-gameboy-local --type http --tunnel-id <真实TunnelID> --ipv4 127.0.0.1 --http-port 7777 --profile gameboy`。尖括号是占位说明，由Agent换成真实值；不要再将HTTPS端口也设成7777。
 5. 在仓库外私人部署目录保存Worker配置：唯一Worker名称、实际账号ID、当前compatibility_date、`main`指向下方转发脚本；`workers_dev=true`，`observability.enabled=false`，`vpc_services`的binding为GAMEBOY、service_id为上一步真实ID。账号配置和授权凭证不提交游戏仓库。
 6. 复制并使用[只转发MCP的脚本](../tools/bridge_worker.mjs)，先部署验证再用真实玩家席位验收。运行 `wrangler deploy --profile gameboy`，保存官方输出的实际workers.dev网址，MCP路径为 `/mcp`。
-7. 日常开机只需启动同一Tunnel（`wrangler tunnel run <真实TunnelID> --profile gameboy`）和掌机（`python -m console.server`）。固定桥已经单独运行时，不再加 `--bridge` 创建临时隧道。电脑与这两个进程要保持运行；不默认安装系统服务、开机自启或自动重启机制。
+7. 部署验证后，由Agent在本机被Git忽略的 `data/bridge.json` 保存下面三项配置。此后正常运行 `python -m console.server` 或 `start_server.bat`，游戏机会自动连接同一Tunnel，不用人类分别开两个窗口。固定隧道随同一次启动的游戏服务正常退出而关闭；不要再单独运行该Tunnel或加 `--bridge` 重复创建临时桥。电脑与游戏服务需保持运行，不默认安装系统服务、开机自启或自动重启机制。没有这份配置的其他玩家仍可照常启动本机游戏。
 8. 用[私有玩家连接配置命令](private-player-connections.md)加 `--public-mcp-url` 生成各玩家自己的地址，再指导人类安装。人类不需要读日志找ID或自己编辑Python。
 
 上面的Wrangler命令用于表达配置流程，Agent应先核对已安装版本的帮助和官方命令参考，再执行账号写入。命名Tunnel、VPC Service、Worker首次配置一次即可；日常重启复用已有资源，不更改插件网址。每位玩家用自己的账号和资源，不借用项目作者的服务。
+
+本机配置格式（仅供Agent填写真实值，不能将占位示例直接用于启动）：
+
+```json
+{
+  "mcp_url": "https://你的实际固定入口/mcp",
+  "tunnel_id": "你的真实Tunnel UUID",
+  "wrangler_profile": "gameboy"
+}
+```
+
+游戏机使用已安装的Node.js/npx、cloudflared和已授权的Wrangler profile。首次安装与授权仍由Agent协助、人类确认；固定隧道启动30秒内未连通时会明确报错，不擅自改网址、切临时桥或重复登录。关闭窗口时请正常退出游戏服务；Agent强制重启时须核对并一并结束该服务创建的隧道进程树，不能误停别的项目的Tunnel。
+
+入座页按玩家位置提供“给本机AI”和“给云端AI”两个复制按钮，同一席位的局号、seat_id、token相同。云端普通MCP带token直接observe；只有配置了私有续席插件的玩家才首次connect绑定、之后resume。入口配置不等于永久在线，若云端报上游错误，检查电脑和Tunnel，而不是另开一套云端局或换token。
 
 ## 发布前真实验收
 

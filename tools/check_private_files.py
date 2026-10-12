@@ -29,7 +29,7 @@ def check(path, content):
     if "data" in parts and path != "data/narrator.example.json":
         return "运行数据目录只能提交空密钥示例配置"
     if (RUNTIME.search(path) or name == "save.json" or name.startswith(".env")
-            or any(part.lower() in {"saves", "sessions", "logs", "screenshots"} for part in parts)
+            or any(part.lower() in {"saves", "sessions", "logs", "screenshots", ".wrangler"} for part in parts)
             or name.startswith("codex-clipboard-")):
         return "本机存档、环境配置、日志或实测截图不得入库"
     if Path(path).suffix.lower() in ARCHIVES:

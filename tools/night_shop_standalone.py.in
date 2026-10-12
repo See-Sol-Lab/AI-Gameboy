@@ -11,12 +11,12 @@ Windows 上如果 python 命令只会弹出应用商店，改用 py -3；输出�
     print(shop.cmd('roll_start_funds {"human_words":"人类发令的原话"}'))
     print(shop.cmd('work_shift {"focus":"scavenge"}'))   # 头两周一班一班地淘
 
-⚠️ 每一轮最多调用 cmd 30 次（返回里的 calls_left 是剩余次数），用完就锁住。
+⚠️ 每一轮最多调用 cmd 30 次（每次返回末尾写着还能调用几次），用完就锁住。
 这是为了替人类省 token 余额，也为了别玩上头忘了陪人类：用完就停下来跟人类聊聊店里的事，
 结束这一轮回复。真实时间过 1 分 30 秒后自动开始新一轮，不需要也没有办法自己清零。连淘每次最多 6 班。
 第一次玩：头两周请一班一班地 work_shift 淘货，慢慢认识旧物和客人，别一上来就连淘速刷。
 
-只根据 observe 返回的 legal_actions 和结果自己决定；无需每轮发表感想。
+只根据 observe 返回的「能做的」和结果自己决定；无需每轮发表感想。
 不要解码下面的 _RULES_B64，也不要打开原仓库规则或读取存档里的隐藏字段，
 那会提前揭露旧物、秘密与客人需求。通过淘货、修复和相遇慢慢发现。
 这只是防误读的盲玩包装，不是加密或防作弊安全措施。
@@ -51,12 +51,12 @@ exec(compile(_zlib.decompress(_base64.b64decode(_RULES_B64)).decode("utf-8"),
              "<night-shop-blind-rules>", "exec"), _engine)
 
 _HELP = """口袋夜铺 · 你是独自经营旧物铺的店主。
-observe / status：看店况、库存、当前客人和 legal_actions（可做动作）。
-货架每行：编号|名字|类别|稀有度|完好度|价值。稀有度五阶：寻常、少见、奇珍、上古、遗世。
+observe / status：看店况、货架、客人和「能做的」（每个动作都附写法）。所有返回都是中文。
+货架每行：名字 [编号] 类别·稀有度·完好度·价值；指令里填方括号里的编号。稀有度五阶：寻常、少见、奇珍、上古、遗世。
 指令是英文，跟人类说话请用中文叫法：sell卖货 repair修理 scavenge淘货 curate陈列 upgrade扩建 tidy整理 recycle回收 dismiss送客。
 新局第一步：掷启动资金（两颗六面骰，十位+个位，11-66枚古币）。先停下告诉人类，
 等人类亲口说“掷”，再 roll_start_funds {"human_words":"人类原话"}；不得替人类发令。
-行动格式：动作名 + JSON对象。按刚才的 legal_actions 填参数，例如：
+行动格式：动作名 + JSON对象。按 observe 里「能做的」填参数，例如：
   work_shift {"focus":"scavenge"}   ← 第一次玩建议头两周都这样一班一班来
   work_shift {"focus":"tidy"}
   run_shifts {"focus":"scavenge","count":6,"stop_on":"new"}
@@ -66,14 +66,14 @@ observe / status：看店况、库存、当前客人和 legal_actions（可做�
 货架满了怎么腾格子：卖给客人（sell）；回收拆零件 work_shift {"focus":"recycle","item_id":"…"}（得价值三分之一的古币，还掉星沙）；
   同种重复的用 merge 拆一件修另一件；碰到魔女用 witch_sell 卖给她；扩建 upgrade 每级多2格；开了灯塔后 buy_slot 用声望换格子。
 开了第四个地点后，魔女莉莉丝每天待在某个已开地点；去那里淘货撞见她，就能在下一班前
-  witch_sell {"item_ids":["库存id","库存id"]}（2折收货，每次最多2件）或 witch_buy {"item_id":"摊上id"}。
+  witch_sell {"item_ids":["库存id","库存id"]}（寻常/少见/奇珍2折、上古/遗世8折，心情好时全部8折；每次最多2件）或 witch_buy {"item_id":"摊上id"}。
 淘到重复的寻常/少见/奇珍旧物，可以拆一件去修同种的另一件：merge {"item_id":"要修的","from_id":"被拆的"}（不花钱不占班）。
 回收寻常/少见/奇珍会掉星沙（1/2/3 粒）；星沙能一次修满奇珍/上古/遗世：sand_repair {"item_id":"…"}（22/33/55 粒，不占班）。
 一天五班：下午两班还没开门（客人傍晚才来，出门淘货半价），傍晚两班、深夜一班接客，深夜打烊结算维护费。
 街巷见闻有时会送传送卷轴：teleport {}，不花钱不占班，随机去一张已开的地图带回一件货；拿到当天打烊前要用掉（深夜拿到的留到第二天），过时化成灰。
 手头紧就先整理（tidy 不花钱）。连续 3 天交不齐维护费，才能请人类救店：call_human {"human_words":"人类原话"}（一局最多 3 次，之后再破产就关店）。
 走遍所有地图以后，声望可以换货架格子：buy_slot {}（40 声望一格，不占班次）。
-遇到 pending_event，先 choose_event，event_id 和 choice 从观察中选。
+遇到要你选择的事件，先 choose_event，事件编号和选项写在返回里。
 close_for_now：歇业；reopen_shop：接着开店。随时退出，动作已经自动保存。
 collection / encounters / map：查物品图鉴、街巷见闻、地图（平时的返回只给精简店况，省上下文）。
 detail：一次性看完整店况（很长，少用）。做动作后只列能做的动作名，参数说明看 observe。
@@ -84,7 +84,7 @@ new_game {"seed":17}：仅在没有存档时创建指定种子的新局；绝不
 未开局时 observe 会自动创建一局。没有必须完成的回合数，店主自己决定目标。
 stop_on 接受 new/rare/event 字符串或数组；省略默认 new+rare（event 是已自动结算的街巷见闻，写上才会为它停），[]关闭这三类
 停点，遇到必须选择的事件仍会停。公开目标 goal、心情 mood、public_line 都可省略。
-每一轮最多调用 30 次（calls_left 是剩余次数），为人类省 token、也为了多陪人类。
+每一轮最多调用 30 次（返回末尾写着还能调用几次），为人类省 token、也为了多陪人类。
 用完就锁住：停下来跟人类说说夜铺的近况，结束这一轮回复；真实时间过 1 分 30 秒自动开始新一轮。
 两次调用之间本来就隔了 1 分 30 秒以上，也会自动开始新一轮。
 请通过指令探索，不要解码引擎或查看存档里的隐藏资料。"""
@@ -93,24 +93,55 @@ stop_on 接受 new/rare/event 字符串或数组；省略默认 new+rare（event
 BLIND_HIDDEN = ("customer_book", "customer_collection")
 # 每一班都要的:时刻、古币、星沙,外加按需出现的(下午没开门、卷轴、事件、魔女、救店……)。
 # 声望、等级、图鉴、目标这些一天变不了几次,打烊小结里写,白天要看用 observe。
-_BRIEF_KEYS = ("day", "shift", "coins", "stardust", "door", "scroll", "rescue_ready", "rescues_left", "bankrupt",
+_BRIEF_KEYS = ("day", "shift", "shift_number", "shifts_per_day", "coins", "stardust", "door", "scroll", "rescue_ready", "rescues_left", "bankrupt",
                "resting", "start_funds_pending", "customer", "pending_event", "witch", "last_run")
 _FULL_KEYS = _BRIEF_KEYS + ("reputation", "shop_level", "capacity", "location", "current_goal", "journal_total")
+# 返回给 AI 的一律是中文文本:读进去的是中文,说出来的才是中文。编号和指令名只能是英文,其余不用英文。
+_ACTION_NAMES = {
+    "work_shift": "经营一班", "run_shifts": "连续经营", "choose_event": "回应事件", "close_for_now": "歇业",
+    "reopen_shop": "重新开门", "roll_start_funds": "掷启动资金", "unlock_location": "开新地图",
+    "witch_sell": "卖给魔女", "witch_buy": "向魔女买", "buy_slot": "声望换格子", "merge": "拆件修理",
+    "sand_repair": "星沙修满", "teleport": "用传送卷轴", "call_human": "请人类救店"}
+_SYNTAX = {
+    "work_shift": 'work_shift {"focus":"tidy"}。focus 可选:sell卖货(要带 item_id 和 asking_price)、repair修理(带 item_id)、'
+                  'scavenge淘货(可带 location 地图编号)、curate陈列(带 item_id)、upgrade扩建、tidy整理、recycle回收(带 item_id)、dismiss送客',
+    "run_shifts": 'run_shifts {"focus":"scavenge","count":6,"stop_on":"new"}:连续淘货/修理/整理,最多6班',
+    "choose_event": 'choose_event {"event_id":"事件编号","choice":"选项"}',
+    "close_for_now": "close_for_now", "reopen_shop": "reopen_shop",
+    "roll_start_funds": 'roll_start_funds {"human_words":"人类发令的原话"}',
+    "unlock_location": 'unlock_location {"location":"地图编号"}(编号用 map 看)',
+    "witch_sell": 'witch_sell {"item_ids":["货架编号","货架编号"]}', "witch_buy": 'witch_buy {"item_id":"摊上编号"}',
+    "buy_slot": "buy_slot {}", "merge": 'merge {"item_id":"要修的","from_id":"被拆的"}',
+    "sand_repair": 'sand_repair {"item_id":"货架编号"}', "teleport": "teleport {}",
+    "call_human": 'call_human {"human_words":"人类发令的原话"}'}
+_STOP_NAMES = {"count": "做满了", "reserve": "再做会低于保留线", "new": "淘到新种", "rare": "淘到稀有货",
+               "event": "碰到街巷见闻", "decision": "有事件要你选", "witch": "碰到魔女", "ending": "解锁了结局过场",
+               "dream": "店主做了梦", "scroll": "拿到传送卷轴"}
+
+
+def _rarity(code):
+    return _engine["RARITIES"].get(code, (code,))[0]
+
+
+def _place(key):
+    return "魔女那里" if key == "witch" else _engine["LOCATIONS"].get(key, {}).get("name", key)
+
+
+def _item_line(i):
+    line = (f"{i['name']} [{i['id']}] {i['kind']}·{i.get('rarity_name') or _rarity(i['rarity'])}"
+            f"·完好{i['condition']}/3·值{i['value']}古币")
+    return line + ("·陈列中" if i.get("displayed") else "")
 
 
 def _shelf(p):
-    # 一行一件:编号|名字|类别|稀有度|完好度|价值;稀有度用游戏里的中文叫法
-    return [f"{i['id']}|{i['name']}|{i['kind']}|{i.get('rarity_name', i['rarity'])}|{i['condition']}/3|{i['value']}古币"
-            for i in p.get("inventory", [])]
+    return {i["id"]: _item_line(i) for i in p.get("inventory", [])}
 
 
 def _shelf_change(old, new):
     """只列货架上变了的:+ 新到的,~ 修过/变了的,- 卖掉或拆掉的。"""
-    o = {line.split("|", 1)[0]: line for line in old}
-    n = {line.split("|", 1)[0]: line for line in new}
-    return ([f"+ {line}" for key, line in n.items() if key not in o]
-            + [f"~ {line}" for key, line in n.items() if key in o and o[key] != line]
-            + [f"- {'|'.join(line.split('|')[:2])}" for key, line in o.items() if key not in n])
+    return ([f"+ {line}" for key, line in new.items() if key not in old]
+            + [f"~ {line}" for key, line in new.items() if key in old and old[key] != line]
+            + [f"- {line.split(' [')[0]} [{key}]" for key, line in old.items() if key not in new])
 
 
 def _customer(p, full):
@@ -142,12 +173,12 @@ def _brief(view, new_log, full=False, before=None):
     shelf = _shelf(p)
     brief["shelf"] = f"{len(shelf)}/{p.get('capacity', len(shelf))}件"
     if full or before is None:
-        brief["inventory"] = shelf
+        brief["inventory"] = list(shelf.values())
     elif before["shelf"] != shelf:
         brief["shelf_change"] = _shelf_change(before["shelf"], shelf)
     customer = _customer(p, full)
     if not full and before is not None and customer and before["customer"] == customer:
-        customer = f"还是{customer['name']}(没变)"
+        customer = f"还是{customer['name']}"
     if customer or full:
         brief["customer"] = customer
     if brief.get("last_run") and not full:
@@ -158,6 +189,182 @@ def _brief(view, new_log, full=False, before=None):
     brief["new_log"] = _fold(new_log)
     legal = view.get("legal_actions", [])
     return {"public_state": brief, "legal_actions": legal if full else [a["action_id"] for a in legal]}
+
+
+def _customer_text(c):
+    if isinstance(c, str):
+        return f"客人:{c}"
+    if not c:
+        return "客人:眼下没有客人"
+    text = f"客人:{c['name']}(第{c['visits']}次来,报价还能错{c['patience']}次{',特殊客人' if c.get('special') else ''})"
+    text += f"——{c['request']}" if c.get("request") else "——没直说要什么"
+    text += f" 线索:{c['clue']}"
+    if c.get("hint"):
+        text += f"\n  {c['hint']}"
+    return text
+
+
+def _event_text(e):
+    lines = [f"要你选择的事件「{e['name']}」[{e['id']}]:{e['text']}"]
+    for c in e["choices"]:
+        lines.append(f"  · {c['id']}:{c['label']}" + ("" if c.get("available", True) else "(现在选不了)"))
+    lines.append(f'  回应:choose_event {{"event_id":"{e["id"]}","choice":"选项"}}')
+    return "\n".join(lines)
+
+
+def _witch_text(w):
+    rate = "全部8折" if w.get("discount") else "寻常/少见/奇珍2折、上古/遗世8折"
+    lines = [f"魔女莉莉丝在这里摆摊:收你的货按价值{rate},"
+             f"这次还能卖她{w['can_sell']}件;下一班开始她就走了。"]
+    for i in w.get("stock", []):
+        name = i.get("rarity_name") or _rarity(i.get("rarity", ""))
+        lines.append(f"  · {i['name']} [{i['id']}] {name}" +
+                     (f"·完好{i['condition']}/3" if "condition" in i else "") + f"·售价{i['price']}古币")
+    return "\n".join(lines)
+
+
+def _state_text(p, legal, full):
+    head = f"【第{p['day']}天 {p['shift']}·第{p['shift_number']}/{p['shifts_per_day']}班】古币 {p['coins']} ｜ 星沙 {p.get('stardust', 0)} ｜ 货架 {p['shelf']}"
+    if full:
+        head += f" ｜ 声望 {p.get('reputation', 0)} ｜ 店铺{p.get('shop_level', 1)}级"
+    lines = [head]
+    if p.get("start_funds_pending"):
+        lines.append('还没掷启动资金:先告诉人类,等人类亲口说「掷」,再 roll_start_funds {"human_words":"人类原话"}。')
+    if p.get("resting"):
+        lines.append("歇业中:reopen_shop 重新开门。")
+    if p.get("bankrupt"):
+        lines.append("夜铺已经破产关门。")
+    for key in ("door", "scroll"):
+        if p.get(key):
+            lines.append(p[key])
+    if p.get("rescue_ready"):
+        lines.append(f"可以请人类救店(还剩{p.get('rescues_left')}次):先停下告诉人类,等人类亲口发令再 call_human。")
+    if full:
+        col = p.get("collection", {})
+        lines.append(f"图鉴 {col.get('found', 0)}/{col.get('total', 72)} 种,揭秘 {col.get('revealed', 0)} 种 ｜ "
+                     f"上次淘货在{_place(p.get('location', ''))}")
+        if p.get("current_goal"):
+            lines.append(f"目标:{p['current_goal']}")
+    if "customer" in p:
+        lines.append(_customer_text(p["customer"]))
+    if p.get("pending_event"):
+        lines.append(_event_text(p["pending_event"]))
+    if p.get("witch"):
+        lines.append(_witch_text(p["witch"]))
+    run = p.get("last_run")
+    if run and not full:
+        lines.append(f"连续经营:做了{run['completed']}/{run['requested']}班,停下原因:"
+                     + (run.get("stop_text") or _STOP_NAMES.get(run["stop_reason"], run["stop_reason"])))
+    if "inventory" in p:
+        lines.append("货架:" + ("空的" if not p["inventory"] else ""))
+        lines += [f"  · {line}" for line in p["inventory"]]
+    if p.get("shelf_change"):
+        lines.append("货架变化:")
+        lines += [f"  {line}" for line in p["shelf_change"]]
+    if p.get("new_log"):
+        lines.append("发生了:")
+        lines += [f"  · {line}" for line in p["new_log"]]
+    if full:
+        lines.append("能做的:")
+        for a in legal:
+            aid = a["action_id"]
+            lines.append(f"  · {_ACTION_NAMES.get(aid, aid)}:{_SYNTAX.get(aid, aid)}")
+            params = a.get("params", {})
+            if params.get("advice"):
+                lines.append(f"    {params['advice']}")
+            for key, label in (("pairs", "能拆件修理的"), ("可修", "星沙能修满的")):
+                if params.get(key):
+                    lines.append(f"    {label}:{params[key]}")
+    elif legal:
+        lines.append("能做:" + "、".join(f"{_ACTION_NAMES.get(a, a)} {a}" for a in legal) + "(写法看 observe)")
+    return "\n".join(lines)
+
+
+def _map_text(locations):
+    lines = ["地图:"]
+    for loc in locations:
+        line = f"  · {loc['name']} [{loc['id']}]:{loc['description']} 车马费{loc['cost']}古币(下午减半)。"
+        if loc.get("unlocked"):
+            line += "已关闭,这里的旧物都讲完了。" if loc.get("closed") else f"已开,还有{loc['undiscovered']}种没见过。"
+        else:
+            line += (f"未开:开路要{loc['unlock_cost']}古币、图鉴{loc['required_discoveries']}种、"
+                     f"店铺{loc['required_level']}级、声望{loc['required_reputation']}。")
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _collection_text(col):
+    lines = [f"图鉴:发现 {col['found']}/{col['total']} 种,揭秘 {col['revealed']} 种。"]
+    for e in col.get("entries", []):
+        lines.append(f"  · {e['name']} [{e['code']}] {e['kind']}·{_rarity(e['rarity'])}·第{e['first_day']}天在"
+                     f"{_place(e['first_location'])}初见·收过{e['count']}次")
+        lines.append(f"    {e['story']} 秘密:{e['revealed'] or '还没揭开'}")
+    return "\n".join(lines)
+
+
+def _encounters_text(enc):
+    lines = [f"街巷见闻:遇到过 {enc['found']}/{enc['total']} 种。"]
+    for e in enc.get("entries", []):
+        lines.append(f"  · {e['name']}(第{e['first_day']}天初遇,共{e['count']}次):{e['text']}")
+        lines += [f"    {text}" for text in e.get("outcomes", {}).values() if text and text != e["text"]]
+    return "\n".join(lines)
+
+
+def _endings_text(endings):
+    if not endings:
+        return "还没有解锁的过场。"
+    blocks = []
+    for e in endings:
+        block = [f"【{e['title']}】第{e['day']}天"] + list(e.get("paragraphs", []))
+        if e.get("reward"):
+            block.append(f"纪念:{e['reward']}")
+        blocks.append("\n".join(block))
+    return "\n\n".join(blocks)
+
+
+def _history_text(data):
+    entries = data["entries"]
+    if not entries:
+        return f"经营记录共{data['total']}条,这一页没有内容。"
+    lines = [f"经营记录(共{data['total']}条,这里是第{entries[0]['seq']}到{entries[-1]['seq']}条):"]
+    for e in entries:
+        line = f"  #{e['seq']} 第{e['day']}天{e['shift']}:{e['text']}"
+        reaction = e.get("reaction") or {}
+        if reaction.get("text"):
+            line += f"(店主说:「{reaction['text']}」)"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _render(action, data):
+    """把数据渲染成中文文本。"""
+    tail = []
+    if "calls_left" in data:
+        tail.append(f"本轮还能调用{data['calls_left']}次。" + (data.get("round") or ""))
+    if data.get("result") != "ok":
+        return "\n".join([f"没办成:{data.get('message', '')}"] + tail)
+    if action == "history":
+        body = _history_text(data)
+    elif action == "collection":
+        body = _collection_text(data["collection"])
+    elif action == "encounters":
+        body = _encounters_text(data["encounters"])
+    elif action == "endings":
+        body = _endings_text(data["endings"])
+    elif action == "map":
+        body = _map_text(data["locations"])
+    elif action == "detail":
+        p = data["public_state"]
+        shown = _brief({"public_state": p, "legal_actions": data["legal_actions"]}, [], full=True)
+        rar = "、".join(f"{r['label']} {r['found']}/{r['total']}" for r in p.get("rarities", []))
+        body = "\n".join([_state_text(shown["public_state"], shown["legal_actions"], True),
+                          _map_text(p.get("locations", [])), f"各阶图鉴:{rar}",
+                          "最近记录:"] + [f"  · {h['text']}" for h in p.get("recent_history", [])])
+    else:
+        body = _state_text(data["public_state"], data["legal_actions"], action in ("observe", "status", "new_game"))
+    return "\n".join([body] + tail)
+
+
 CALL_LIMIT = 30
 ROUND_WAIT = 90   # 用满后锁住的真实秒数;两次调用隔这么久也算新一轮
 _LIMIT_TEXT = ("这一轮的{limit}次已经用完了。先停下来,把夜铺的近况讲给人类听,然后结束这一轮回复。"
@@ -170,15 +377,21 @@ def _clock():
 
 
 def cmd(line="help"):
-    """执行一条指令，返回可直接 print 的文字。每一轮最多调用 CALL_LIMIT 次,用满锁 ROUND_WAIT 秒。"""
+    """执行一条指令，返回中文文本，可直接 print。每一轮最多调用 CALL_LIMIT 次,用满锁 ROUND_WAIT 秒。"""
     if not isinstance(line, str):
-        return _json.dumps({"result": "rejected", "message": "指令须为字符串"}, ensure_ascii=False)
-    action, _, raw = line.strip().partition(" ")
+        return "没办成:指令须为字符串"
+    action = line.strip().partition(" ")[0]
     if action in ("", "help"):
         return _HELP
+    return _render(action, _call(line))
+
+
+def _call(line):
+    """轮次计数 + 执行,返回数据字典(cmd 把它渲染成中文;测试也直接用它)。"""
+    action = line.strip().partition(" ")[0]
     if action == "human_said":
-        return _json.dumps({"result": "rejected", "message": "human_said 已经取消:每轮用完后真实时间过1分30秒"
-                            "自动开始新一轮,不需要也没有办法自己清零。"}, ensure_ascii=False)
+        return {"result": "rejected", "message": "human_said 已经取消:每轮用完后真实时间过1分30秒"
+                "自动开始新一轮,不需要也没有办法自己清零。"}
     note = None
     try:
         with _closing(_sqlite3.connect(str(SAVE_PATH))) as conn, conn:
@@ -188,36 +401,30 @@ def cmd(line="help"):
             calls, last, locked = conn.execute("SELECT calls,last,locked FROM round WHERE id=1").fetchone() or (0, None, None)
             now = _clock()
             if locked is not None and now - locked < ROUND_WAIT:
-                return _json.dumps({"result": "rejected", "calls_left": 0, "message": _LIMIT_TEXT.format(
-                    limit=CALL_LIMIT, left=int(ROUND_WAIT - (now - locked)) + 1)}, ensure_ascii=False)
+                return {"result": "rejected", "calls_left": 0, "message": _LIMIT_TEXT.format(
+                    limit=CALL_LIMIT, left=int(ROUND_WAIT - (now - locked)) + 1)}
             gap = now - (locked if locked is not None else last) if (locked is not None or last is not None) else None
             if gap is not None and gap >= ROUND_WAIT:
                 calls, locked = 0, None
-                note = f"距上一轮隔了{int(gap)}秒,新一轮开始,本轮可调用{CALL_LIMIT}次。"
+                note = f"距上一轮隔了{int(gap)}秒,新一轮开始。"
             calls += 1
             if calls >= CALL_LIMIT:
                 locked = now
             conn.execute("INSERT INTO round VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET "
                          "calls=excluded.calls, last=excluded.last, locked=excluded.locked", (calls, now, locked))
     except (ValueError, AttributeError, _sqlite3.Error, OSError) as error:
-        return _json.dumps({"result": "rejected", "message": str(error)}, ensure_ascii=False)
-    out = _cmd(line)
-    if out.startswith("{"):
-        extra = {"calls_left": CALL_LIMIT - calls}
-        if note:
-            extra["round"] = note
-        if locked is not None:
-            extra["round"] = "这是本轮最后一次调用。停下来跟人类说说店里的事,1分30秒后自动开始新一轮。"
-        out = _json.dumps({**_json.loads(out), **extra}, ensure_ascii=False)
-    return out
+        return {"result": "rejected", "message": str(error)}
+    data = _data(line)
+    data["calls_left"] = CALL_LIMIT - calls
+    if locked is not None:
+        data["round"] = "这是本轮最后一次调用。停下来跟人类说说店里的事,1分30秒后自动开始新一轮。"
+    elif note:
+        data["round"] = note
+    return data
 
 
-def _cmd(line="help"):
-    if not isinstance(line, str):
-        return _json.dumps({"result": "rejected", "message": "指令须为字符串"}, ensure_ascii=False)
+def _data(line):
     action, _, raw = (line.strip() or "help").partition(" ")
-    if action == "help":
-        return _HELP
     try:
         if action == "history":
             after = int(raw or "0")
@@ -274,13 +481,12 @@ def _cmd(line="help"):
                           **_brief(view, new_log, full=full, before=None if full else before)}
             conn.execute("INSERT INTO shop VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state",
                          (VERSION, _json.dumps(state, ensure_ascii=False)))
-        return _json.dumps(result, ensure_ascii=False)
+        return result
     except (ValueError, _engine["IllegalAction"], _sqlite3.Error, OSError) as error:
-        return _json.dumps({"result": "rejected", "message": str(error)}, ensure_ascii=False)
+        return {"result": "rejected", "message": str(error)}
     except (KeyError, TypeError, AttributeError) as error:   # 参数类型不对等意外:事务已回滚,存档不变
-        return _json.dumps({"result": "rejected",
-                            "message": f"参数格式不对({type(error).__name__}),请按 legal_actions 填写"},
-                           ensure_ascii=False)
+        return {"result": "rejected",
+                "message": f"参数格式不对({type(error).__name__}),请按 observe 里「能做的」写法填写"}
 
 
 _LICENSE = """@@LICENSE@@"""

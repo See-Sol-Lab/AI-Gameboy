@@ -308,7 +308,7 @@ class TestNightShop(unittest.TestCase):
             if s["customer"]:
                 break
             s = work(resolve(s))
-        self.assertIn("kind", rules.observe(s, "seat_a")["public_state"]["customer"]["hint"])
+        self.assertIn("类别", rules.observe(s, "seat_a")["public_state"]["customer"]["hint"])
 
     def test_zero_cash_can_use_known_tidy_income_for_upkeep(self):
         s = rules.new_game(SEATS, 3)

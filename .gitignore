@@ -1,4 +1,5 @@
 __pycache__/
+.wrangler/
 *.pyc
 data/*
 !data/narrator.example.json
@@ -12,4 +13,3 @@ data/*
 **/.env
 **/.env.*
 latest-game.txt
-standalone/*.sqlite3*

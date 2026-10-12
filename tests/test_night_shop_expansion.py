@@ -270,10 +270,26 @@ class TestNightExpansion(unittest.TestCase):
         s = rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"})
         self.assertIn("全部收进图鉴", s["history"][-1]["text"])
 
+    def test_witch_stall_has_two_slots_with_set_odds(self):
+        s = rules.new_game(["seat_a"], 4)
+        s.update(unlocked_locations=list(rules.LOCATIONS)[:4], shop_level=5)
+        seen = {0: Counter(), 1: Counter()}
+        for k in range(1, 2001):
+            s["shift_count"] = rules.WITCH_TREASURE_EVERY * k
+            rules._witch_tick(s)
+            stock = rules._witch_book(s)["stock"]
+            self.assertLessEqual(len(stock), 2)
+            fresh = stock[-1]
+            seen[fresh["_slot"]][fresh["rarity"]] += 1
+        self.assertEqual(set(seen[0]), {"heirloom", "rare"})        # 一号位:遗世30%、奇珍70%
+        self.assertEqual(set(seen[1]), {"ancient", "rare"})         # 二号位:上古40%、奇珍60%
+        self.assertAlmostEqual(seen[0]["heirloom"] / 1000, 0.30, delta=0.05)
+        self.assertAlmostEqual(seen[1]["ancient"] / 1000, 0.40, delta=0.05)
+
     def test_witch_stock_of_revealed_species_is_already_repaired(self):
         s = rules.new_game(["seat_a"], 4)
         s.update(unlocked_locations=list(rules.LOCATIONS)[:4], shop_level=3)
-        codes = [c for c, *_ in rules.ITEMS if rules.ITEM_RARITY[c] in ("ancient", "heirloom")]
+        codes = [c for c, *_ in rules.ITEMS if rules.ITEM_RARITY[c] in ("rare", "ancient", "heirloom")]
         s["collection"] = {c: {"code": c, "count": 1, "revealed": "x"} for c in codes}
         s["shift_count"] = rules.WITCH_TREASURE_EVERY
         rules._witch_tick(s)
@@ -316,7 +332,7 @@ class TestNightExpansion(unittest.TestCase):
         # 魔女也不再进点亮的宝物
         treasures = [c for c, *_ in rules.ITEMS if rules.ITEM_RARITY[c] in ("ancient", "heirloom")
                      and c not in rules.SECRET_ITEMS]
-        for code in treasures[:-1]:
+        for code in treasures[:-1] + [c for c, *_ in rules.ITEMS if rules.ITEM_RARITY[c] == "rare"]:
             light(code)
         s.update(unlocked_locations=list(rules.LOCATIONS)[:4], shop_level=5)
         for k in range(1, 6):
@@ -690,14 +706,14 @@ class TestNightExpansion(unittest.TestCase):
         s = rules.apply(s, "seat_a", "witch_sell", {"item_ids": [b]})
         with self.assertRaises(rules.IllegalAction):
             rules.apply(s, "seat_a", "witch_sell", {"item_ids": [c]})
-        # 每10班进一件3级以上宝物,买下后进库存
+        # 每10班轮流刷新一个摊位(遗世/上古或奇珍),买下后进库存
         while not s["witch"]["stock"]:
             s = rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"})
             while s["pending_event"]:
                 s = rules.apply(s, "seat_a", "choose_event", {"event_id": s["pending_event"]["id"], "choice": next(
                     k for k, o in rules.EVENTS[s["pending_event"]["kind"]]["choices"].items() if o["cost"] == 0)})
         treasure = s["witch"]["stock"][0]
-        self.assertIn(treasure["rarity"], ("ancient", "heirloom"))
+        self.assertIn(treasure["rarity"], ("rare", "ancient", "heirloom"))
         self.assertIsNone(rules.observe(s, "seat_a")["public_state"]["witch"])    # 下一班她就走了
         s["day"] += 0
         spot = rules._witch_spot(s)
@@ -730,7 +746,7 @@ class TestNightExpansion(unittest.TestCase):
         self.assertFalse(s["customer_book"][next(k for k, v in seen.items() if len(v) >= 6)]["neighbor"])
         fresh = rules.new_game(["seat_a"], 7)                # 下一局清零重来
         self.assertEqual(len(fresh["customer_book"]), 1)
-        self.assertIn("clue", rules.observe(s, "seat_a")["public_state"]["customer"]["hint"])
+        self.assertIn("线索", rules.observe(s, "seat_a")["public_state"]["customer"]["hint"])
 
     def test_all_event_choices_have_a_free_exit_and_public_outcome(self):
         for kind, event in rules.EVENTS.items():

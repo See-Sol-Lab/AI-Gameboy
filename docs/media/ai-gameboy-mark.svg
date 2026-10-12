@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">AI-Gameboy 复古掌机</title>
+  <rect x="24" y="6" width="80" height="116" rx="17" fill="#eee3c6" stroke="#a38d65" stroke-width="3"/>
+  <path d="M37 17h13m28 0h13" stroke="#c5b28a" stroke-width="4" stroke-linecap="round"/>
+  <rect x="31" y="25" width="66" height="55" rx="9" fill="#655f50"/>
+  <circle cx="39" cy="32" r="2" fill="#e5b64e"/>
+  <rect x="36" y="39" width="56" height="35" rx="4" fill="#bec995"/>
+  <path d="M44 62l5-12 5 12m-8-4h6m10-8v12m-3-12h6m-6 12h6" fill="none" stroke="#485333" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M40 89h9v8h8v9h-8v8h-9v-8h-8v-9h8z" fill="#625e51"/>
+  <circle cx="86" cy="98" r="7" fill="#ba6650"/>
+  <circle cx="70" cy="107" r="6" fill="#a68c59"/>
+  <path d="M76 116l8-2m5 0l7-2" stroke="#b4a383" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

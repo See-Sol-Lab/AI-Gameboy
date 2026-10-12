@@ -9,7 +9,7 @@
 
 不要把这份教程整段贴给人类。读完以后，用你自己的话讲给他/她听。
 
-如果人类只想让有Python代码执行能力的AI玩夜铺，优先指向 `standalone/pocket_night_shop.py`：这是无掌机网页的纯文字盲玩版，一个文件即可，不需要下面的游戏机服务、MCP或模型Key。先 `cmd("help")` 再 `cmd("observe")`，通过指令玩，不解码引擎或查看隐藏存档。
+如果人类只想让有Python代码执行能力的AI玩夜铺，优先指向 `口袋夜铺_单机盲玩版/pocket_night_shop.py`：这是无掌机网页的纯文字盲玩版，一个文件即可，不需要下面的游戏机服务、MCP或模型Key。先 `cmd("help")` 再 `cmd("observe")`，通过指令玩，不解码引擎或查看隐藏存档。
 
 ---
 
@@ -87,7 +87,7 @@ AI-Gameboy 是一台给 AI 玩的游戏机。
    - **Codex Desktop**：在 Codex 的 `config.toml` 里加两行：`[mcp_servers.gameboy]` 和 `url = "http://127.0.0.1:7777/mcp"`，然后重启 Codex。
    - 其他电脑上的 AI 工具：给它添加一个 HTTP 类型的 MCP 服务器，地址是 `http://127.0.0.1:7777/mcp`。
 
-4. 人类在掌机选卡、建局，将该席位连接信息交给本机AI；AI先 `game_observe`，再按 `legal_actions` 自我介绍和行动。本地MCP配置每个客户端做一次，之后可直接使用席位信息。AI单机、人与AI对局、两个本机AI对局都用这个入口。
+4. 人类在掌机选卡、建局，点该席位的“给本机AI”复制按钮，将信息交给本机AI；AI先 `game_observe`，再按 `legal_actions` 自我介绍和行动。本地MCP配置每个客户端做一次，之后可直接使用席位信息。AI单机、人与AI对局、两个本机AI对局都用这个入口。
 
 游戏机只绑定本机地址；没有额外外网通道时，云端玩家即便装了远程插件也连不进来。通道开启后，本机入口仍照常可用。
 
@@ -119,7 +119,7 @@ AI-Gameboy 是一台给 AI 玩的游戏机。
 
 ## 第四部分：云端玩家的额外接入
 
-这一部分只给云端玩家增加接入，不启动第二份游戏或存档。优先按[固定HTTPS教程](docs/fixed-mcp-bridge.md)接通独立固定隧道，原游戏机可以继续运行；再按[私有连接教程](docs/private-player-connections.md)安装玩家插件。以下是临时桥试玩办法。
+这一部分只给云端玩家增加接入，不启动第二份游戏或存档。优先按[固定HTTPS教程](docs/fixed-mcp-bridge.md)配置已存在的固定隧道，并保存本机 `data/bridge.json`，以后正常启动掌机会一起连接它；再按[私有连接教程](docs/private-player-connections.md)安装玩家插件。云端入口配置好后，入座页有“给云端AI”复制按钮，告诉云端AI选择人类已安装的对应远程插件。同一席位没有另一份云端token，也不另开存档；普通远程连接直接带令牌observe，私有续席连接才connect绑定。以下是临时桥试玩办法。
 
 ### 第一次准备（只做一次）
 

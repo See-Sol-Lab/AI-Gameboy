@@ -1,9 +1,31 @@
-# AI-Gameboy
+<p align="center"><img src="docs/media/ai-gameboy-mark.svg" width="128" height="128" alt="AI-Gameboy 复古掌机标识"></p>
 
-一台给 AI 玩的游戏机。AI 通过 MCP 坐上牌桌、自己做决定；人类在网页上的掌机里旁观，也可以亲自坐一席和 AI 对局。
+<h1 align="center">AI-Gameboy</h1>
 
+<p align="center"><b>让 AI 上桌，把故事留在掌机里。</b></p>
+<p align="center">AI 自己经营 · 你和 AI 一起冒险 · 两个 AI 同桌玩</p>
 
-> ## 🤖 AI 必读：[AGENT_GUIDE.md](AGENT_GUIDE.md)
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/许可-非商用-a68c59?style=flat-square" alt="非商用许可"></a>
+  <img src="https://img.shields.io/badge/Python-3.11%2B-64754a?style=flat-square" alt="Python 3.11及以上">
+  <img src="https://img.shields.io/badge/内置卡带-3张-8b765b?style=flat-square" alt="三张内置游戏卡带">
+  <img src="https://img.shields.io/badge/界面-中文-ba6650?style=flat-square" alt="中文界面">
+</p>
+
+<p align="center">
+  <a href="#内置游戏卡带">先看看玩什么</a> ·
+  <a href="给AI的使用教程.md">交给 Agent 安装</a> ·
+  <a href="口袋夜铺_单机盲玩版/">只下载盲玩夜铺</a>
+</p>
+
+一台给AI玩的游戏机，也是一块让人类看得懂的显示屏。AI自己决定怎么经营、探索和行动；你可以看它接待了谁、做了什么，也可以亲自入座，和它一起改写故事。
+
+<p align="center"><img src="docs/media/crossing-opening.png" width="100%" alt="口袋穿越实机画面：本机Claude Code与网页版ChatGPT同桌进入小说世界"></p>
+<p align="center"><sub>《口袋穿越》双人开局示例 · 本机与云端玩家进入同一局 · 画面来自此前测试版本</sub></p>
+
+<!-- 收到并检查公开素材后，以最新版卡带架图作为首屏主图；穿越图移到对应游戏介绍。 -->
+
+> ## 🤖 AI 必读：[给AI的使用教程](给AI的使用教程.md)
 >
 > **如果你是 AI，你的人类把这个仓库交给了你，请先完整读这份教程再动手。** 里面用大白话讲清楚了：怎么启动游戏机、本机AI怎么按席位信息上桌、云端AI需要额外配置哪些接入、玩家隐私与安全须知，以及怎么和人类一起做一张新卡带并提交回来。读完后，请根据你的人类要玩的方式，用他/她听得懂的话解释给他/她听。
 
@@ -15,10 +37,11 @@
 
 | 入口 | 放什么 |
 |---|---|
-| [console/](console/) | 掌机本体：网页、MCP、存档宿主和荷官适配器 |
-| [cartridges/](cartridges/) | 默认附带的三张正式卡带，每张一个独立文件夹；社区卡带也安装到这里 |
-| [examples/](examples/) | 开发样例《口袋电路》，不出现在玩家卡带架 |
-| [standalone/](standalone/) | 无掌机显示的单文件盲玩游戏 |
+| [给AI的使用教程.md](给AI的使用教程.md) | 把仓库交给Agent时先读：安装、入座、云端接入与卡带开发 |
+| [口袋夜铺_单机盲玩版/](口袋夜铺_单机盲玩版/) | 只想让AI自己玩夜铺：独立Python游戏文件和盲玩说明，无掌机显示器 |
+| [游戏机本体 · console/](console/) | 掌机网页、MCP、存档宿主和荷官适配器 |
+| [游戏卡带 · cartridges/](cartridges/) | 默认附带的三张正式卡带，每张独立文件夹；社区卡也安装到这里 |
+| [开发样例 · examples/](examples/) | 《口袋电路》只供开发参考，不出现在玩家卡带架 |
 
 完整下载默认带《口袋穿越》《口袋跑团》《口袋夜铺》。玩家不必阅读本体源码，把本仓库和玩法要求交给有本机操作能力的 Agent 即可。
 
@@ -32,6 +55,20 @@
 
 「口袋」系列是原作者随首发附带的内置卡带，下载即玩。
 
+穿越与跑团需由Agent先配置荷官模型（见下方「玩家隐私」）；夜铺无需荷官或模型API Key。
+
+**《口袋穿越》——一起走进一部小说，改写它的结局。** 荷官先建立世界和既定原结局，两位玩家带着各自身份进入其中，通过探索、人物互动与行动改变故事走向。适合喜欢穿越、角色扮演和共同创作剧情的玩家；既可以人类与AI一起玩，也可以两个AI搭档。
+
+<!-- 展示位：最新版穿越实机图，或将首屏现有穿越图移至这里；不使用虚构演示画面。 -->
+
+**《口袋跑团》——世界出事了，你们得一起想办法。** 荷官展开场景，两位玩家面对持续推进的危机，调查线索、交流各自情报，在行动风险与有限时间里合作解决问题。适合喜欢文字冒险、悬念、临场决策和双人配合的玩家。
+
+<!-- 展示位：跑团进行中的公开场景与一轮行动记录。 -->
+
+**《口袋夜铺》——经营一间会慢慢露出秘密的旧物店。** 一位AI当店主，出门淘货、修理旧物、接待客人，积累古币、星沙与声望，扩建铺子并探索新地图。72种旧物各有秘密和等待它的人，收集与修复推进不同的结局。适合喜欢长线经营、图鉴收集和温馨神秘故事的玩家；人类可以在掌机旁观逐轮记录，也可让AI用独立盲玩版自行经营。
+
+<!-- 展示位：夜铺店况、货架与展开的一条逐轮经营记录，说明人类如何旁观。 -->
+
 ### 只下载自己想玩的卡
 
 不需要下载全仓库。让 Agent 在**新的安装目录**执行，例如只装有显示器的夜铺：
@@ -42,7 +79,7 @@ cd AI-Gameboy
 git sparse-checkout set console data cartridges/pocket-night-shop
 ```
 
-Agent 的完整安装、更新和存档保护步骤见 [给AI的使用教程](AGENT_GUIDE.md#cartridge-management)。
+Agent 的完整安装、更新和存档保护步骤见 [给AI的使用教程](给AI的使用教程.md#cartridge-management)。
 
 ### 启动游戏机，然后让AI/人类玩家入座
 
@@ -63,7 +100,7 @@ Agent 的完整安装、更新和存档保护步骤见 [给AI的使用教程](AG
 
 也可先用临时桥试玩：`python -m console.server --bridge` 或 `start_bridge.bat` 会启动同一游戏机并附带临时隧道。若游戏机已经开着，先由Agent确认可重启再执行，不要另开一台占用7777。临时网址每次重开会变，需要更新远程连接；“上传插件ZIP”不等于更换App的MCP地址。
 
-逐步点击、Agent分工和连接排查见[云端玩家额外接入教程](AGENT_GUIDE.md#第四部分云端玩家的额外接入)。技术准备交给Agent，人类完成账号登录、安装与风险确认。本机玩家仍使用本地入口，不自动改走云端插件。
+逐步点击、Agent分工和连接排查见[云端玩家额外接入教程](给AI的使用教程.md#第四部分云端玩家的额外接入)。技术准备交给Agent，人类完成账号登录、安装与风险确认。本机玩家仍使用本地入口，不自动改走云端插件。
 
 ### 收藏通关剧情
 
@@ -82,7 +119,17 @@ Agent 的完整安装、更新和存档保护步骤见 [给AI的使用教程](AG
 
 **给想旁观的人类：** 如果你的AI客户端不展示思考过程（常说的“思维链”），又把工具调用输出折叠起来，盲玩版的经营细节通常不会直接显示在聊天里。你主要看到AI停下来后的分享，难以实时了解每班来了谁、做了什么，参与感会比较弱；这不影响AI自己探索、经营和续档。如果你想“偷看”它开店，只要有条件，建议让本机Agent拉起[完整游戏机](#一游戏机)：通过掌机网页查看每轮行动、来客互动、经营历史和图鉴，不必依赖AI逐轮解说，也不会打断它游玩。显示的是公开游戏记录，不是AI的内部思维链。
 
-下载 [口袋夜铺单文件盲玩版](https://raw.githubusercontent.com/See-Sol-Lab/AI-Gameboy/main/standalone/pocket_night_shop.py)，保存为 `pocket_night_shop.py`，放在可写目录，再把文件交给有代码执行能力的 AI：
+打开 [口袋夜铺单文件盲玩版](口袋夜铺_单机盲玩版/pocket_night_shop.py) 文件页，点下载按钮，保存为 `pocket_night_shop.py`，放在可写目录，再把文件交给有代码执行能力的AI。单文件即可运行，无需其他游戏机文件；仓库若仍为私有，需先登录有访问权限的GitHub账号。
+
+如果想把盲玩说明一起下载，让Agent在**新的目录**只拉这个文件夹：
+
+```sh
+git clone --depth 1 --filter=blob:none --sparse https://github.com/See-Sol-Lab/AI-Gameboy.git
+cd AI-Gameboy
+git sparse-checkout set "口袋夜铺_单机盲玩版"
+```
+
+稀疏下载会保留根目录说明文件，但不下载掌机本体和其他卡带。只取这个目录时不要运行掌机启动脚本，直接把其中的Python文件交给AI：
 
 ```python
 import pocket_night_shop as shop
@@ -114,7 +161,7 @@ print(shop.cmd('run_shifts {"focus":"scavenge","count":6,"stop_on":"new"}'))
 5. **起自己的名字**：「口袋」是首发内置卡带的系列名，新卡带请用自己的名字。
 6. **暂不支持荷官**：社区卡带先从不需要荷官的玩法做起。
 
-完整的开发教程（卡带结构、规则函数、界面、测试、提交步骤）在 [AGENT_GUIDE.md 第六部分](AGENT_GUIDE.md#第六部分帮人类做一张新卡带)。最快的做法是照着开发样例《口袋电路》（`examples/pocket-circuit/`）改；样例不会出现在玩家卡带架。
+完整的开发教程（卡带结构、规则函数、界面、测试、提交步骤）在 [给AI的使用教程.md 第六部分](给AI的使用教程.md#第六部分帮人类做一张新卡带)。最快的做法是照着开发样例《口袋电路》（`examples/pocket-circuit/`）改；样例不会出现在玩家卡带架。
 
 ### 提交前检查
 
@@ -125,14 +172,21 @@ print(shop.cmd('run_shifts {"focus":"scavenge","count":6,"stop_on":"new"}'))
 ## 项目结构
 
 ```text
-console/         # 掌机本体，网页在 console/web/
-cartridges/      # 三张首发卡 + 安装的社区卡，每张一个文件夹
-examples/        # 开发样例，不上玩家卡带架
-standalone/      # 单文件纯文字盲玩版，无掌机网页
-data/            # 本机存档、隐藏清单和荷官配置；私人文件不提交
-tools/           # 卡带检查与单文件生成工具
-tests/           # 测试:python -m unittest discover -s tests
-AGENT_GUIDE.md   # 给 AI 的使用与开发教程
+给AI的使用教程.md               # Agent先读：安装、入座、云端接入与卡带开发
+口袋夜铺_单机盲玩版/             # 只玩盲玩夜铺时，下载这一目录即可
+  README.md                    # 盲玩玩法、人类旁观限制与存档说明
+  pocket_night_shop.py          # 独立游戏文件，Python 3.11+，无需掌机/MCP/模型Key
+console/                       # 游戏机本体：网页、MCP、存档宿主与荷官适配器
+  web/                         # 人类的掌机显示器
+cartridges/                    # 游戏卡带，每张独立目录
+  pocket-crossing/              # 《口袋穿越》：双人改写小说结局
+  pocket-tabletop/              # 《口袋跑团》：双人合作解决世界危机
+  pocket-night-shop/            # 《口袋夜铺》：带掌机显示器的AI经营卡
+examples/                      # 开发样例，不上玩家卡带架
+data/                          # 本机存档和荷官配置；私人数据不提交
+tools/                         # 开发检查、剧情导出与盲玩文件生成工具
+tests/                         # 自动化测试
+docs/                          # 进阶接入、维护与机制说明
 ```
 
 ## 协议

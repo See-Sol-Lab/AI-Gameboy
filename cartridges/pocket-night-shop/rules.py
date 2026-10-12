@@ -303,8 +303,9 @@ def _lighthouse_dream(s):
            + (s["reputation"] >= SECRET_REPUTATION))
     if met <= s.get("dreams", 0):
         return None
-    s["dreams"] = met
-    return LIGHTHOUSE_DREAMS[met - 1]
+    previous = s.get("dreams", 0)
+    s["dreams"] = previous + 1
+    return LIGHTHOUSE_DREAMS[previous]
 
 
 def _visible_locations(s):
@@ -504,6 +505,11 @@ def _open_locations(s):
     return [key for key in s["unlocked_locations"] if not _closed(s, key)]
 
 
+def _available_items(s, location):
+    return [code for code in LOCATIONS[location]["pool"]
+            if RARITIES[ITEM_RARITY[code]][2] <= s["shop_level"] and not _lit(s, code)]
+
+
 CLOSED_TEXT = "{name}的旧物都讲完了自己的故事,这里的旧货市场不再开放。"
 
 AMBIENT += [
@@ -578,9 +584,9 @@ def _teleport(s):
         raise IllegalAction(f"货架满了({len(s['inventory'])}/{_capacity(s)}件),先腾一格再用:"
                             '回收 work_shift {"focus":"recycle","item_id":"…"}、同种重复的 merge、卖给客人或魔女;'
                             "卷轴还在手上,别忘了打烊前用掉。" + _upgrade_hint(s))
-    opened = _open_locations(s)
+    opened = [key for key in _open_locations(s) if _available_items(s, key)]
     if not opened:
-        raise IllegalAction("所有旧货市场都讲完了自己的故事,卷轴没有地方可去。")
+        raise IllegalAction("已开的地图当前没有还能带回的旧物,卷轴暂时无处可去;可以扩建或开新地图。")
     location = opened[_number(s["seed"], "teleport", s["item_counter"]) % len(opened)]
     s["scroll"] = None
     before = (s["coins"], s["reputation"])
@@ -606,9 +612,9 @@ def _capacity(s):
 
 
 def _make_item(s, location, salt):
-    pool = [code for code in LOCATIONS[location]["pool"]
-            if RARITIES[ITEM_RARITY[code]][2] <= s["shop_level"]]
-    pool = [code for code in pool if not _lit(s, code)] or pool
+    pool = _available_items(s, location)
+    if not pool:
+        raise IllegalAction(f"{LOCATIONS[location]['name']}在当前等级已没有还能带回的旧物。" + _upgrade_hint(s))
     # 后期别被重复货淹没:开了第五张图后没见过的货权重×2,第六张图后×3,灯塔开通后×5
     opened = len(s["unlocked_locations"])
     fresh = 5 if SECRET in s["unlocked_locations"] else 3 if opened >= 6 else 2 if opened >= 5 else 1
@@ -675,23 +681,37 @@ def _apple_held(s):
     return s["shift_count"] < _witch_book(s)["apple_until"] or _apple_window(s)
 
 
+# 魔女摊只有两个位置,轮流刷新(2026-10-12 莉莉丝定):别让宝物在前期全被她放出来,后期地图才有神秘感。
+# 一号位:遗世30%、奇珍70%;二号位:上古40%、奇珍60%。
+WITCH_SLOTS = (("heirloom", 30), ("ancient", 40))
+
+
 def _witch_tick(s):
-    """每过一班:每10班进一件3级以上的宝物;每20班有一半机会拿出金苹果,只拿2班。"""
+    """每过一班:每10班轮流刷新一个摊位;每20班有一半机会拿出金苹果,只拿2班。"""
     if not _witch_on(s):
         return
     w, n = _witch_book(s), s["shift_count"]
-    pool = [row for row in ITEMS if ITEM_RARITY.get(row[0]) in ("ancient", "heirloom")
-            and (row[0] not in SECRET_ITEMS or SECRET in s["unlocked_locations"])
-            and not _lit(s, row[0])] if n % WITCH_TREASURE_EVERY == 0 else []
-    if pool:
-        code, name, story, condition, value, secret = pool[_number(s["seed"], "witch_stock", n) % len(pool)]
-        s["item_counter"] += 1
-        w["stock"] = (w["stock"] + [{
-            "id": f"{code}_{s['item_counter']}", "code": code, "name": name, "story": story,
-            "condition": _start_condition(ITEM_RARITY[code]), "value": value, "displayed": False,
-            "kind": ITEM_KINDS[code], "rarity": ITEM_RARITY[code], "origin": "witch", "secret": None,
-            "_secret": secret}])[-3:]
-        _arrive_repaired(s, w["stock"][-1])
+    if n % WITCH_TREASURE_EVERY == 0:
+        slot = n // WITCH_TREASURE_EVERY % len(WITCH_SLOTS)
+        treasure, chance = WITCH_SLOTS[slot]
+        roll = _number(s["seed"], "witch_tier", n) % 100
+        tiers = (treasure, "rare") if roll < chance else ("rare", treasure)
+
+        def pool(tier):
+            return [row for row in ITEMS if ITEM_RARITY.get(row[0]) == tier
+                    and (row[0] not in SECRET_ITEMS or SECRET in s["unlocked_locations"])
+                    and not _lit(s, row[0])]
+        rows = pool(tiers[0]) or pool(tiers[1])
+        w["stock"] = [x for x in w["stock"] if x.get("_slot") not in (slot, None)]
+        if rows:
+            code, name, story, condition, value, secret = rows[_number(s["seed"], "witch_stock", n) % len(rows)]
+            s["item_counter"] += 1
+            w["stock"].append({
+                "id": f"{code}_{s['item_counter']}", "code": code, "name": name, "story": story,
+                "condition": _start_condition(ITEM_RARITY[code]), "value": value, "displayed": False,
+                "kind": ITEM_KINDS[code], "rarity": ITEM_RARITY[code], "origin": "witch", "secret": None,
+                "_secret": secret, "_slot": slot})
+            _arrive_repaired(s, w["stock"][-1])
     if n % WITCH_APPLE_EVERY == 0 and _number(s["seed"], "witch_apple", n) % 2 == 0:
         w["apple_until"] = n + WITCH_APPLE_HOLD
 
@@ -707,7 +727,7 @@ def _witch_meet(s, location):
     apple = _apple_held(s)
     roll = _number(s["seed"], "witch_mood", s["shift_count"]) % 100
     gift = ""
-    if apple and roll < (SECRET_APPLE_GIFT if _apple_window(s) else 2):
+    if apple and len(s["inventory"]) < _capacity(s) and roll < (SECRET_APPLE_GIFT if _apple_window(s) else 2):
         s["item_counter"] += 1
         s["inventory"].append({**GOLDEN_APPLE, "id": f"golden_apple_{s['item_counter']}",
                                "displayed": False, "origin": "witch", "secret": None})
@@ -740,7 +760,7 @@ def _witch_view(s):
         stock.append({**GOLDEN_APPLE, "id": "golden_apple", "price": _witch_price(s, GOLDEN_APPLE, False)})
     return {"discount": v["discount"], "can_sell": WITCH_SELL_LIMIT - v["sold"], "stock": stock,
             "sell_prices": {x["id"]: _witch_price(s, x, True) for x in s["inventory"]},
-            "hint": "魔女收你不想要的货(平时按价值2折,心情好时8折),每次碰面最多卖2件;"
+            "hint": "魔女收你不想要的货(寻常、少见、奇珍平时2折,上古、遗世8折;心情好时全部8折),每次碰面最多卖2件;"
                     "也可以从她那里买宝物。下一班开始她就走了。"}
 
 
@@ -852,6 +872,7 @@ CLOSED_SCENE = [
 
 def _close_scene(s):
     """三次救店之后再陷入破产:萧瑟的闭店过场,只给一次。"""
+    s["phase"] = "finished"
     endings = s.setdefault("endings", [])
     if any(row["id"] == "closed" for row in endings):
         return
@@ -965,10 +986,9 @@ def _public_item(item):
     return view
 
 
-CUSTOMER_HINT = ("新手提示:客人只认旧物的「类别」——就是库存里每件旧物的 kind 字段,"
-                 "不看名字和故事像不像。从需求描述 request 猜他要哪一两类;远方来的生客 request 为空,"
-                 "只能从线索 clue 猜(来过四次成了熟客才会直说);customer_book 里 neighbor=true 的是本局老街坊。类别对上才会买;"
-                 "手上没有对的类别,就用 work_shift 的 dismiss 送客(不另收费),等下一位客人。")
+CUSTOMER_HINT = ("新手提示:客人只认旧物的「类别」(每件旧物都标着,比如陪伴、照明),不看名字和故事像不像。"
+                 "从客人说的要求猜他要哪一两类;远方来的生客不直说要什么,只能从线索猜,来过四次成了熟客才会直说;"
+                 "本局开头就来过的老街坊一直直说。类别对上才会买;手上没有对的类别,就送客(dismiss,不另收费),等下一位客人。")
 
 
 def _is_open(s):
@@ -1006,9 +1026,11 @@ def _event_view(s):
     event = EVENTS[pending["kind"]]
     choices = []
     for key, choice in event["choices"].items():
-        has_room = not (choice.get("find_item") or key in ("accept", "open")) or len(s["inventory"]) < _capacity(s)
+        finds_item = choice.get("find_item") or key in ("accept", "open")
+        has_room = not finds_item or len(s["inventory"]) < _capacity(s)
+        has_item = not finds_item or bool(_available_items(s, pending["_location"]))
         choices.append({"id": key, **choice,
-                        "available": s["coins"] >= choice["cost"] and has_room})
+                        "available": s["coins"] >= choice["cost"] and has_room and has_item})
     return {"id": pending["id"], "name": event["name"], "text": event["text"], "choices": choices}
 
 
@@ -1076,6 +1098,7 @@ def observe(full_state, seat_id):
         raise ValueError("未知席位")
     public = {
         "phase": s["phase"], "day": s["day"], "shift": SHIFTS[s["shift_index"]],
+        "shift_number": s["shift_index"] + 1, "shifts_per_day": len(SHIFTS),
         "coins": s["coins"], "reputation": s["reputation"], "shop_level": s["shop_level"],
         "stardust": s.get("stardust", 0),
         **({"door": "下午还没开门,客人傍晚才来;可以整理、修理,出门淘货半价"} if not _is_open(s) else {}),
@@ -1102,7 +1125,7 @@ def observe(full_state, seat_id):
         "recent_history": deepcopy(s["history"][-6:]), "journal_total": len(s["history"]),
         "collection": {"found": len(s["collection"]), "total": len(ITEMS),
                        "revealed": sum(bool(row["revealed"]) for row in s["collection"].values()),
-                       "entries": deepcopy(list(s["collection"].values()))},
+                       "entries": [{**deepcopy(row), "lit": _lit(s, code)} for code, row in s["collection"].items()]},
         "endings": deepcopy(s.get("endings", [])),
         "completion": {"discoveries": len(s["collection"]), "items_total": len(ITEMS),
                        "secrets": sum(bool(row["revealed"]) for row in s["collection"].values()),
@@ -1121,7 +1144,7 @@ def observe(full_state, seat_id):
                 "pending_event": _event_view(s),
                 "last_events": [entry["text"] for entry in s["history"][-3:]]}},
             "legal_actions": [] if s["phase"] == "finished" else _legal_actions(s),
-            "waiting_for": [] if s["resting"] or s["phase"] == "finished" else [s["shopkeeper"]]}
+            "waiting_for": [] if s["resting"] or s.get("bankrupt") or s["phase"] == "finished" else [s["shopkeeper"]]}
 
 
 def history_since(s, after_seq):
@@ -1179,6 +1202,8 @@ def _validate_work(s, params):
             raise IllegalAction("请先解锁淘货地点")
         if _closed(s, location):
             raise IllegalAction(CLOSED_TEXT.format(name=LOCATIONS[location]["name"]) + "换一张图吧。")
+        if not _available_items(s, location):
+            raise IllegalAction(f"{LOCATIONS[location]['name']}在当前等级已没有还能带回的旧物。" + _upgrade_hint(s))
 
 
 def _work_cost(s, params):
@@ -1242,12 +1267,12 @@ def apply(full_state, seat_id, action_id, params):
     s = deepcopy(full_state)
     if seat_id != s["shopkeeper"] or seat_id not in s["seats"]:
         raise IllegalAction("只有 AI 店主可以操作;网页仅供观看")
+    if s.get("bankrupt"):
+        raise IllegalAction(BANKRUPT_TEXT)
     if s["phase"] != "playing":
         raise IllegalAction("本局已结束")
     if not isinstance(params, dict):
         raise IllegalAction("params 须是对象")
-    if s.get("bankrupt"):
-        raise IllegalAction(BANKRUPT_TEXT)
     if action_id == "close_for_now":
         if s["resting"]:
             raise IllegalAction("已经歇业")
@@ -1476,11 +1501,13 @@ def _work_shift(s, params):
         reaction = {"mood": params.get("mood"), "text": _text_param(params, "public_line", 80)}
     _log(s, day, shift, params["focus"], report, before, ambient=ambient, reaction=reaction,
          customer=customer, offer=offer,
-         customer_arrived=deepcopy(_public_customer(s)) if s["customer_count"] != customer_count else None,
+         customer_arrived=deepcopy(_public_customer(s)) if s["customer_count"] != customer_count or customer is None else None,
          **flags)
     if _check_endings(s):
         flags["ending"] = True
         flags["event"] = True
+    if s.get("bankrupt"):
+        flags["ending"] = True
     return flags
 
 

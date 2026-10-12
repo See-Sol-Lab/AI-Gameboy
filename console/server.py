@@ -5,24 +5,25 @@
 - 人类侧极简页面:建局、复制席位连接信息、开局、旁观、手动结束;
 - 卡带架从 cartridges/* 动态读取,当前包含对抗、合作与 AI 单机经营卡。
 
-两种模式:
-  本地模式  python -m console.server           (或双击 start_server.bat)
-            只有这台电脑能连。AI 也在这台电脑上(Claude Code、Codex 等)时用它。
-  开桥模式  python -m console.server --bridge  (或双击 start_bridge.bat)
-            另开一条 cloudflared 临时隧道,给出一个公网 MCP 网址,让不在这台电脑上的 AI
-            (手机或网页上的 GPT、Claude 等)也能入座。公网只开放 /mcp;
-            人类页面和管理接口仍只有本机能打开。关掉窗口,隧道和网址一起失效。
+同一台游戏机的启动与接入:
+  python -m console.server (或start_server.bat):启动本机入口。
+  已配置 data/bridge.json 时,同一次启动自动连接已有固定隧道,让云端玩家也能入座。
+  --bridge (或start_bridge.bat)是尚未配置固定入口时的临时试玩通道,不是另一个游戏版本。
+  公网只开放 /mcp;人类页面和管理接口仍只有本机能打开。
 MCP 入口:http://127.0.0.1:7777/mcp
 人类页面:http://127.0.0.1:7777/
 """
 
 import re
+import json
+import os
+import signal
 import shutil
 import subprocess
 import sys
 import threading
 from pathlib import Path
-from urllib.parse import parse_qs, urlencode
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
@@ -33,7 +34,7 @@ from starlette.responses import FileResponse, JSONResponse
 from .game_host import GameHost
 from .cartridges import locate
 
-HOST = "127.0.0.1"  # 只绑回环地址;公网只能经开桥模式的隧道进来,且只到 /mcp
+HOST = "127.0.0.1"  # 只绑回环地址;公网通过配置的外网通道进来,且只到 /mcp
 PORT = 7777  # 固定接入约定：本地/开桥共用；占用时退出，不自动改端口
 BASE = Path(__file__).resolve().parent.parent
 WEB = Path(__file__).parent / "web"
@@ -51,10 +52,11 @@ mcp = MCPServer(
         "轮到你 play_card 时先调用 game_act,提交前不要在聊天里说出牌号或具体策略。"
         "口袋夜铺0.3只有一位AI玩家;每一轮最多行动20次，用满后停下来跟人类分享店况、结束这一轮回复，真实时间过1分30秒自动开始新一轮(没有办法自己清零);头两周建议一班一班 work_shift,别急着连淘;介绍后启动资金(两颗六面骰,11-66)由人类在网页按「🎲 掷启动资金」按钮来掷——请告诉人类去按,按完再 observe 开店;此外人类网页仅供观看。"
         "72种旧物分寻常/少见/奇珍/上古/遗世五阶,店铺最高5级；"
-        "上古、遗世与14位专属来客从3级开放,86位来客各至多到访8次；"
+        "上古、遗世与24位专属来客从3级开放,86位来客各至多到访8次；"
+        "一天五班：下午两班不接客且淘货半价，傍晚两班和深夜接客；可拆重复货merge、用星沙sand_repair、用限时卷轴teleport；"
         "work_shift经营一班,run_shifts连续淘货/修理/整理最多6班,"
         "可设reserve；stop_on接受new/rare/event字符串或数组,"
-        "省略默认三项全选,[]关闭这三类停点,待选择事件仍停；"
+        "省略默认new+rare，[]关闭这三类停点，待选择事件、梦、卷轴、魔女和结局仍停；"
         "遇到pending_event用choose_event自行决定。"
         "图鉴永久保留,卖货也不会丢发现；探索不同地点补齐图鉴。"
         "close_for_now歇业、reopen_shop续档,不必等待人类。"
@@ -94,7 +96,7 @@ def game_act(session_id: str = "", seat_token: str = "", expected_revision: int 
       mood、public_line 完全可选,真想公开表达时才写;
       run_shifts支持count(1-6)、reserve(现金保留线)、stop_on(字符串或数组);
       stop_on可填"new"或["new","rare"],仅支持new/rare/event;
-      省略默认["new","rare","event"],填[]关闭这三类停点,待选择事件仍停;
+      省略默认["new","rare"],填[]关闭这三类停点,待选择事件、梦、卷轴、魔女和结局仍停;
       choose_event回应当前event_id与choice;unlock_location用location解锁路线;
     - table_line:可选,一句公开桌边话(≤120 字),只随本次动作出现。
     动作是你自己的选择:牌桌不替你决定,也不把你的私牌给别人看。
@@ -276,7 +278,7 @@ async def session_narrate(request: Request):
     return JSONResponse(host.narrate(request.path_params["sid"]))
 
 
-# ---------------- 开桥模式 ----------------
+# ---------------- 同一游戏机的本机与云端入口 ----------------
 
 BRIDGE = {"mcp_url": None}
 
@@ -284,7 +286,69 @@ BRIDGE = {"mcp_url": None}
 @mcp.custom_route("/api/bridge", methods=["GET"])
 async def bridge_info(request: Request):
     return JSONResponse({"mode": "bridge" if BRIDGE["mcp_url"] else "local",
-                         "mcp_url": BRIDGE["mcp_url"] or f"http://{HOST}:{PORT}/mcp"})
+                         "mcp_url": BRIDGE["mcp_url"] or f"http://{HOST}:{PORT}/mcp",
+                         "local_mcp_url": f"http://{HOST}:{PORT}/mcp",
+                         "remote_mcp_url": BRIDGE["mcp_url"],
+                         "remote_kind": BRIDGE.get("kind")})
+
+
+def load_fixed_bridge():
+    path = BASE / "data" / "bridge.json"
+    if not path.exists():
+        return None
+    config = json.loads(path.read_text("utf-8"))
+    if not isinstance(config, dict) or set(config) != {"mcp_url", "tunnel_id", "wrangler_profile"}:
+        raise ValueError("data/bridge.json须包含mcp_url、tunnel_id、wrangler_profile")
+    if not all(isinstance(value, str) for value in config.values()):
+        raise ValueError("固定桥配置字段须为字符串")
+    url = urlsplit(config["mcp_url"])
+    if (url.scheme != "https" or not url.hostname or url.path != "/mcp" or url.query or url.fragment
+            or url.username or url.password):
+        raise ValueError("固定入口须为不含私有玩家凭证的HTTPS /mcp地址")
+    if not re.fullmatch(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", config["tunnel_id"]):
+        raise ValueError("固定Tunnel ID须为UUID")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", config["wrangler_profile"]):
+        raise ValueError("Wrangler profile名称只能使用字母、数字、下划线和连字符")
+    return config
+
+
+def stop_fixed_tunnel(proc):
+    if proc.poll() is not None:
+        return
+    if sys.platform == "win32":
+        subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    else:
+        os.killpg(proc.pid, signal.SIGTERM)
+
+
+def open_fixed_tunnel(config):
+    npx = shutil.which("npx")
+    if not npx or not find_cloudflared():
+        raise RuntimeError("固定桥需要已安装的Node.js/npx与cloudflared，请让本机Agent完成安装")
+    command = [npx, "--yes", "wrangler@4.149.0", "tunnel", "run", config["tunnel_id"],
+               "--profile", config["wrangler_profile"], "--log-level", "info"]
+    options = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {"start_new_session": True}
+    if sys.platform == "win32":
+        command = ["cmd.exe", "/d", "/c", *command]
+    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, encoding="utf-8", errors="replace", **options)
+    ready = threading.Event()
+    connected = {"ok": False}
+
+    def read():
+        # Drain vendor output, but never publish authentication URLs or credentials into game logs.
+        for line in proc.stdout:
+            if "Registered tunnel connection" in line:
+                connected["ok"] = True
+                ready.set()
+        ready.set()
+
+    threading.Thread(target=read, daemon=True).start()
+    if not ready.wait(30) or not connected["ok"] or proc.poll() is not None:
+        stop_fixed_tunnel(proc)
+        raise RuntimeError("固定隧道30秒内未连通。请检查网络及该Wrangler profile授权；不会改用临时地址")
+    return proc
 
 
 class Guard:
@@ -305,7 +369,7 @@ class Guard:
             path = scope["path"]
             reason = None
             if b"cf-connecting-ip" in headers and path != "/mcp" and not path.startswith("/mcp/"):
-                reason = "开桥模式下公网只开放 /mcp"
+                reason = "公网只开放 /mcp，管理接口仅限本机"
             elif (path.startswith("/api/") and scope["method"] != "GET"
                   and b"origin" in headers and headers[b"origin"] not in self.LOCAL_ORIGINS):
                 reason = "只接受掌机本机页面发来的操作"
@@ -367,27 +431,41 @@ def serve(bridge: bool) -> None:
     hosts = [f"{HOST}:{PORT}", f"localhost:{PORT}"]
     origins = [f"http://{HOST}:{PORT}", f"http://localhost:{PORT}"]
     tunnel = None
+    fixed = load_fixed_bridge()
+    if fixed and bridge:
+        raise ValueError("已有固定桥配置，直接启动游戏机即可；请勿同时再创建临时桥")
+    BRIDGE.update(mcp_url=None, kind=None)
     print("AI-Gameboy")
-    if bridge:
+    if fixed:
+        tunnel = open_fixed_tunnel(fixed)
+        BRIDGE.update(mcp_url=fixed["mcp_url"], kind="fixed")
+        public = urlsplit(fixed["mcp_url"]).netloc
+        hosts.append(public)
+        origins.append(f"https://{public}")
+    elif bridge:
         tunnel, public = open_tunnel()
-        BRIDGE["mcp_url"] = f"https://{public}/mcp"
+        BRIDGE.update(mcp_url=f"https://{public}/mcp", kind="temporary")
         hosts.append(public)
         origins.append(f"https://{public}")
     security = TransportSecuritySettings(enable_dns_rebinding_protection=True,
                                          allowed_hosts=hosts, allowed_origins=origins)
     app = Guard(mcp.streamable_http_app(transport_security=security, host=HOST))
     print(f"人类页面(只有本机能打开):http://{HOST}:{PORT}/")
-    if bridge:
-        print("【开桥模式】给不在这台电脑上的 AI 用的 MCP 网址:")
+    print(f"本机AI入口:http://{HOST}:{PORT}/mcp")
+    if BRIDGE["mcp_url"]:
+        print("云端AI入口（同一台游戏机）:")
         print(f"    {BRIDGE['mcp_url']}")
         print("把它加进那个 AI 的连接器/开发者应用里,再把席位连接信息发给它。")
-        print("这个网址只在本窗口开着时有效;关掉窗口,隧道立即失效,下次开桥会换新网址。")
+        print("固定入口可在下次启动时复用；隧道随游戏机关闭。" if fixed else
+              "临时入口只在本窗口开着时有效，下次启动会换网址。")
     else:
-        print(f"【本地模式】MCP 入口(只有本机能连):http://{HOST}:{PORT}/mcp")
+        print("云端入口尚未配置；本机AI照常用自己的席位入座。")
     try:
         uvicorn.run(app, host=HOST, port=PORT, access_log=False)
     finally:
-        if tunnel:
+        if tunnel and fixed:
+            stop_fixed_tunnel(tunnel)
+        elif tunnel:
             tunnel.terminate()
 
 

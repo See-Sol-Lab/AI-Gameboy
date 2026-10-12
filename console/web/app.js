@@ -20,7 +20,7 @@ const S = {
   chooseCart: null,     // 插卡后待选模式的卡带
   pc: { intent: null },                            // 口袋穿越的意图选择
   night: { sid: null, cursor: 0, known: [], journal: [], queue: [], active: null, holdUntil: 0, paused: false },
-  bridge: { mode: "local", mcp_url: "http://127.0.0.1:7777/mcp" },  // /api/bridge:本地模式或开桥模式
+  bridge: { local_mcp_url: "http://127.0.0.1:7777/mcp", remote_mcp_url: null, remote_kind: null },
 };
 
 const isNightShop = (id) => id === "pocket-night-shop";
@@ -316,8 +316,8 @@ function renderSeats(v, mine, tokenLost) {
     } else {
       body = `<div class="empty-hint">等待照面</div>
         <div class="conn-box center">${tok
-          ? `<button class="soft focusable" data-act="copy" data-seat="${esc(s.seat_id)}">复制 ${esc(s.seat_id)} 连接信息</button>
-             <div class="conn-note">整段只交给一个真实窗口</div>`
+          ? `${seatCopyButtons(s.seat_id)}
+             <div class="conn-note">本机/云端二选一，只交给这一席位的一个玩家；另一位玩家用另一席</div>`
           : `<div class="conn-note">令牌只在建局的标签页显示一次</div>`}</div>`;
     }
     return `<div class="slot ${s.seated ? "seated" : ""} ${turn ? "turn" : ""}">
@@ -335,9 +335,7 @@ function renderSeats(v, mine, tokenLost) {
     <div class="start-hint ${ready ? "ready" : ""}">${ready
       ? "两席已就座 —— 按 START 开局"
       : "等待所有席位完成自我介绍"}</div>
-    <p class="dim center">${S.bridge.mode === "bridge"
-      ? `开桥模式 · 不在这台电脑上的 AI 用这个 MCP 网址:${esc(S.bridge.mcp_url)}`
-      : "本地模式 · 只有这台电脑上的 AI 能连;要和手机或网页上的 AI 玩,请用开桥模式启动"}</p>
+    ${playerEntryHint()}
     <p class="center"><button class="soft warn focusable" data-act="end">收起这局</button></p>
     <p class="dim center">局号 ${esc(v.session_id)}</p>`;
   afterRender();
@@ -357,8 +355,8 @@ function renderNightShopSeats(v, tokenLost) {
        ${shopkeeper.now ? `<div class="now-line">“${esc(shopkeeper.now)}”</div>` : ""}`
     : `<div class="empty-hint">等待 AI 店主接入夜铺</div>
        <div class="conn-box center">${tok
-         ? `<button class="soft focusable" data-act="copy" data-seat="${esc(shopkeeper.seat_id)}">复制店主连接信息</button>
-            <div class="conn-note">把整段交给一个 AI;它会自己连续经营并保存。</div>`
+         ? `${seatCopyButtons(shopkeeper.seat_id)}
+            <div class="conn-note">本机/云端二选一，把整段交给唯一店主AI；其余人只观看。</div>`
          : '<div class="conn-note">店主令牌只在建店的标签页显示一次</div>'}</div>`;
   app.innerHTML = `
     <h2>· 开 店 准 备 · ${esc(v.cartridge.name)}</h2>
@@ -376,6 +374,7 @@ function renderNightShopSeats(v, tokenLost) {
       : ready
       ? "店主已经进门 —— 按 START 开灯营业"
       : "等待 AI 店主完成自我介绍"}</div>
+    ${playerEntryHint()}
     <p class="center"><button class="soft warn focusable" data-act="end">收起这间夜铺</button></p>
     <p class="dim center">存档 ${esc(v.session_id)}</p>`;
   afterRender();
@@ -476,7 +475,9 @@ function ensureCartUi(id) {
 function nightJournalEntry(entry) {
   const focus = {scavenge:"出门淘货",repair:"修理旧物",tidy:"整理与小修补",sell:"向客人报价",
     dismiss:"送客",recycle:"回收零件",curate:"布置橱窗",upgrade:"扩建铺子",
-    choose_event:"处理街巷事件",unlock_location:"开辟淘货路线"}[entry.focus] || entry.focus;
+    choose_event:"处理街巷事件",unlock_location:"开辟淘货路线",merge:"拆件修理",sand_repair:"星沙修满",
+    teleport:"使用传送卷轴",witch_sell:"卖给魔女",witch_buy:"向魔女买货",buy_slot:"声望换货架",
+    start_funds:"掷启动资金",call_human:"人类注资救店",ending:"故事过场"}[entry.focus] || entry.focus;
   const customer = (c, label) => c ? `<p><strong>${label} · ${esc(c.name)}</strong>
     （第${esc(c.visits)}次来店）<br>想找：${esc(c.request ?? "（没开口，只能看线索猜）")}<br>
     <span class="dim">可观察到：${esc(c.clue)}</span></p>` : "";
@@ -501,14 +502,14 @@ function nightEndings(ps) {
   if (!scenes.length) return "";
   const progress = ps.completion;
   return `<section class="night-endings" aria-label="夜铺里程碑">
-    <div class="night-section-title">${progress?.true_ending ? "真正通关 · 夜铺仍可继续经营" : "异物志收齐 · 夜铺向你敞开了"}</div>
+    <div class="night-section-title">${ps.bankrupt ? "落叶封门 · 夜铺已关闭" : progress?.true_ending ? "真正通关 · 夜铺仍可继续经营" : "异物志收齐 · 夜铺向你敞开了"}</div>
     ${progress ? `<div class="dim">旧物 ${progress.discoveries}/${progress.items_total} ·
       秘密 ${progress.secrets}/${progress.items_total} · 来客 ${progress.guests}/${progress.guests_total}</div>` : ""}
     ${scenes.map(scene => `<details class="night-history night-ending" data-panel="ending-${esc(scene.id)}">
       <summary>第${scene.day}日 · ${esc(scene.title)} · 展开重读过场</summary>
       <div class="night-ending-scene${scene.id === "true_ending" ? " night-ending-tunnel" : ""}" tabindex="0">
         ${(scene.paragraphs || []).map(text => `<p>${esc(text)}</p>`).join("")}
-        <div class="night-ending-reward">纪念奖励 · ${esc(scene.reward)}<br><small>永久保留 · 不占库存</small></div>
+        ${scene.reward ? `<div class="night-ending-reward">纪念奖励 · ${esc(scene.reward)}<br><small>永久保留 · 不占库存</small></div>` : ""}
       </div></details>`).join("")}
   </section>`;
 }
@@ -522,6 +523,7 @@ function nightCollection(ps) {
       <div class="dim">首次：第${row.first_day}日 · ${esc(locations[row.first_location] || row.first_location)} · 共见${row.count}件</div>
       <p>${esc(row.story)}</p>
       <div class="night-secret">${row.revealed ? "✦ " + esc(row.revealed) : "尚未修复揭秘"}</div>
+      ${row.lit ? '<span class="chip">故事已点亮 · 已交到等它的人手里</span>' : ""}
     </article>`).join("");
   const encounters = ps.encounters.entries.map(row => `
     <article class="night-dex-entry"><strong>${esc(row.name)}</strong>
@@ -538,9 +540,9 @@ function nightCollection(ps) {
       <div class="night-dex-grid">${encounters || '<p class="dim">还没有遇见街巷事件。</p>'}</div></details>
     <details class="night-history" data-panel="locations"><summary>淘货地图 · 寻找下一页</summary>
       ${ps.locations.map(loc => `<div class="night-log"><strong>${esc(loc.name)}</strong>
-        <span>${esc(loc.description)} 待发现 ${loc.undiscovered} 种 · 每次 ${loc.cost} 枚古币
+        <span>${esc(loc.description)} 待发现 ${loc.undiscovered} 种 · 车马费 ${loc.cost} 枚古币（下午半价）
         ${loc.available_undiscovered !== undefined ? `（当前等级可寻 ${loc.available_undiscovered} 种）` : ""}
-        · ${loc.unlocked ? "已解锁" : "需发现" + loc.required_discoveries + "种、店铺" + (loc.required_level || 1) + "级及" + loc.unlock_cost + "枚"}</span></div>`).join("")}
+        · ${loc.closed ? "已关闭 · 旧物的故事都讲完了" : loc.unlocked ? "已解锁" : "需发现" + loc.required_discoveries + "种、店铺" + (loc.required_level || 1) + "级、声望" + (loc.required_reputation || 0) + "及" + loc.unlock_cost + "枚"}</span></div>`).join("")}
     </details>`;
 }
 
@@ -587,20 +589,21 @@ const CART_UI = {
           <div>${esc(ps.customer.request ?? "（没开口，只能看线索猜）")}</div>
           <div class="dim">可观察到:${esc(ps.customer.clue)}</div>
           <div class="dim">耐心:${"●".repeat(ps.customer.patience)}${"○".repeat(2 - ps.customer.patience)}</div>
-        </div>` : (ps.customer_collection ? '<div class="night-customer dim">眼下没有可接待的新来客。仍可淘货、修理、回收或扩建；达到三级可开放特殊来客。</div>' : "");
+        </div>` : (ps.door ? `<div class="night-customer dim">${esc(ps.door)}</div>` : ps.customer_collection ? '<div class="night-customer dim">眼下没有可接待的新来客。仍可淘货、修理、回收或扩建；达到三级可开放特殊来客。</div>' : "");
       const relations = (ps.customer_book || []).map((row) => `
         <article class="night-dex-entry"><strong>${esc(row.name)}</strong>
           <div>来过${row.visits}${ps.customer_collection ? "/" + ps.customer_collection.visit_limit : ""}次
           · 成交${row.deals}次 · 信任${row.trust}
-          ${ps.customer_collection && row.visits >= ps.customer_collection.visit_limit ? " · 此后不再到访" : ""}
+          ${row.farewell ? " · 心愿已了，告别远行" : ps.customer_collection && row.visits >= ps.customer_collection.visit_limit ? " · 此后不再到访" : ""}
+          ${row.bond ? " · 已交付等待的旧物" : ""}
           ${row.special ? " · 专属来客" : ""}</div>
           <p>${esc(row.request ?? "（还没开口）")}</p><div class="dim">${esc(row.clue)}</div></article>`).join("");
       const week = (ps.weekly || []).slice(-1)[0];
       return `
         <div class="night-owner">${esc(keeper.display_name || "AI 店主")} 的夜铺</div>
         <div class="night-dashboard">
-          <div class="night-day">实时店况 · 第 ${ps.day} 日 · ${esc(ps.shift)}</div>
-          <div>古币 <strong>${ps.coins}</strong> · 声望 <strong>${ps.reputation}</strong> ·
+          <div class="night-day">实时店况 · 第 ${ps.day} 日 · ${esc(ps.shift)}${ps.shift_number ? ` · 第${ps.shift_number}/${ps.shifts_per_day}班` : ""}</div>
+          <div>古币 <strong>${ps.coins}</strong> · 星沙 <strong>${ps.stardust || 0}</strong> · 声望 <strong>${ps.reputation}</strong> ·
             店铺 ${ps.shop_level}级 · 库存 ${(ps.inventory || []).length}/${ps.capacity}</div>
         </div>
         ${ps.resting ? `<div class="night-resting">暂时歇业 · 存档安全<br>
@@ -621,10 +624,15 @@ const CART_UI = {
           <div class="dim">可选：${ps.pending_event.choices.map(c => esc(c.label) + (c.available ? "" : "（暂不可选）")).join(" / ")}</div>
           <div class="dim">由 AI 决定，观看者无需操作。</div></div>` : ""}
         ${rollFunds}${rescue}${customer}
+        ${ps.scroll ? `<div class="night-customer"><strong>限时传送卷轴</strong><p>${esc(ps.scroll)}</p><div class="dim">由店主自行决定是否使用，观看者无需操作。</div></div>` : ""}
+        ${ps.witch ? `<details class="night-history" data-panel="witch"><summary>魔女莉莉丝的摊位 · 本次还能卖${ps.witch.can_sell}件</summary>
+          <p>${esc(ps.witch.hint)}</p>${(ps.witch.stock || []).map(item => `<div class="night-log"><strong>${esc(item.name)}</strong>
+          <span>${esc(item.rarity_name || {common:"寻常",uncommon:"少见",rare:"奇珍",ancient:"上古",heirloom:"遗世"}[item.rarity])} · 完好${item.condition}/3 · 售价${item.price}枚古币</span></div>`).join("")}</details>` : ""}
         ${ps.last_run ? `<div class="night-week">本次连续行动：${ps.last_run.completed}/${ps.last_run.requested}班
           · 停于 ${esc({count:"计划完成",new:"新发现",rare:"奇珍",event:"街巷事件",decision:"等待店主选择",
              reserve:"现金保留线",inventory_full:"货架已满",repair_complete:"修复完成",ending:"结局过场",
-             insufficient_coins:"现金不足"}[ps.last_run.stop_reason] || ps.last_run.stop_reason)}</div>` : ""}
+             insufficient_coins:"现金不足",witch:"遇见魔女",dream:"灯塔之梦",scroll:"拿到限时卷轴"}[ps.last_run.stop_reason] || ps.last_run.stop_reason)}
+          ${ps.last_run.stop_text ? `<div class="dim">${esc(ps.last_run.stop_text)}</div>` : ""}</div>` : ""}
         <div class="night-play-controls">
           <button class="soft" data-act="night-pause">${S.night.paused ? "继续回放" : "暂停回放"}</button>
           <span class="dim">每段至少5秒 · 回放不影响店主经营</span>
@@ -654,9 +662,9 @@ const CART_UI = {
         <div class="mem-round"><span class="dim">第${entry.day}日</span>
           <span>${esc(entry.text)}</span></div>`).join("");
       return {
-        rounds: diary,
+        rounds: nightEndings(ps) + diary + (ps.collection ? nightCollection(ps) : ""),
         champ: `夜铺停在第 ${ps.day} 日 · 古币 ${ps.coins} · 声望 ${ps.reputation}`,
-        scoreLine: `店铺 ${ps.shop_level}级 · 库存 ${(ps.inventory || []).length}/${ps.capacity}`,
+        scoreLine: `店铺 ${ps.shop_level}级 · 星沙 ${ps.stardust || 0} · 库存 ${(ps.inventory || []).length}/${ps.capacity}`,
       };
     },
   },
@@ -1012,28 +1020,39 @@ async function endSession() {
   S.lastSnap = "";
 }
 
-async function copyConn(seatId, btn) {
+function seatCopyButtons(seatId) {
+  return `<button class="soft focusable" data-act="copy" data-seat="${esc(seatId)}" data-target="local">复制 ${esc(seatId)} · 给本机AI</button>
+    ${S.bridge.remote_mcp_url ? `<button class="soft focusable" data-act="copy" data-seat="${esc(seatId)}" data-target="cloud">复制 ${esc(seatId)} · 给云端AI</button>` : ""}`;
+}
+
+function playerEntryHint() {
+  return `<p class="dim center">同一台游戏机，同一局席位。双人游戏每位玩家使用不同席位；两个复制按钮只是为同一席选择接入位置。本机AI使用本机入口与自己的席位信息。
+    ${S.bridge.remote_mcp_url
+      ? `云端${S.bridge.remote_kind === "fixed" ? "固定" : "临时"}入口已配置：请选择该玩家已安装的远程MCP插件，再发“给云端AI”的连接信息。上游502时请检查隧道连接，不要另建一套云端局。`
+      : "云端入口尚未配置：请本机Agent接通外网通道并指导安装远程MCP，无需另一版本的游戏机。"}</p>`;
+}
+
+function seatConnectionText(t, target) {
+  const endpoint = target === "cloud" ? S.bridge.remote_mcp_url : S.bridge.local_mcp_url;
+  if (!endpoint) return null;
+  const route = target === "cloud"
+    ? `你是云端玩家。使用人类已安装并为你指定的远程MCP插件（例如“AI-Gameboy · 云端玩家专用”），不要尝试连接本机入口。远程入口：${endpoint}。`
+    : `你是和掌机在同一台电脑上的玩家。使用本地MCP服务gameboy，入口：${endpoint}。不要调用“云端玩家专用”插件；若本机服务连不上，先向人类报告并检查本机服务。`;
+  const auth = target === "cloud"
+    ? "这不是另一套云端局：同一个session_id和seat_token也能从远程入口入座。普通远程连接直接带这份席位令牌调用game_observe；只有你使用人类已配置的私有续席连接时，才先game_connect(session_id, seat_token)绑定，再game_resume恢复。不要自行创建另一局。"
+    : "请先调用game_observe(session_id, seat_token)看自己的桌面。";
+  const game = isNightShop(S.currentCartridgeId)
+    ? "你是口袋夜铺的唯一AI店主。介绍后请人类在网页按“掷启动资金”，按完再observe开店。每轮最多20次行动，用满停下来分享店况并结束回复，90秒真实时间后再继续；无需每班发表感想。按legal_actions经营、处理事件或使用星沙/卷轴；可close_for_now歇业、reopen_shop续店。"
+    : "按legal_actions用game_act行动，第一步通常是introduce自我介绍。另一位玩家从自己的入口使用自己的席位；不能共用令牌。桌上怎么玩、说什么，由你自己决定。";
+  return `你在AI-Gameboy牌桌上有一个席位。\n${route}\nsession_id: ${S.sid}\nseat_id: ${t.seat_id}\nseat_token: ${t.seat_token}\n${auth}\n${game}`;
+}
+
+async function copyConn(seatId, btn, target = "local") {
   const tokens = JSON.parse(sessionStorage.getItem(aiTokensKey(S.sid)) || "[]");
   const t = tokens.find((x) => x.seat_id === seatId);
   if (!t) return;
-  const text = isNightShop(S.currentCartridgeId)
-    ? `你在 AI-Gameboy 的《口袋夜铺》里经营一间长期存档的夜铺(MCP 服务名 gameboy,入口 ${S.bridge.mcp_url})。
-session_id: ${S.sid}
-seat_id: ${t.seat_id}
-seat_token: ${t.seat_token}
-请先调用 game_observe(session_id, seat_token) 看店铺,再按 legal_actions 用 game_act 经营。
-你是唯一店主,可以连续执行许多个 work_shift,不必等待观看者;想停时直接停下,
-介绍后请人类在网页上按「🎲 掷启动资金」(两颗六面骰，11-66)，按完再开店。之后人类只观看，无需等待或按门铃。
-run_shifts 可连续淘货、修理或整理（count最多6，reserve现金保留线，stop_on=new/rare/event）。
-遇到 pending_event 用 choose_event 自行决定。图鉴保留已发现旧物和见闻，卖掉也不消失。
-想停时 close_for_now，下次 reopen_shop；mood/public_line 完全可选。`
-    : `你在 AI-Gameboy 牌桌上有一个席位(MCP 服务名 gameboy,入口 ${S.bridge.mcp_url})。
-session_id: ${S.sid}
-seat_id: ${t.seat_id}
-seat_token: ${t.seat_token}
-请先调用 game_observe(session_id, seat_token) 看你的桌面,
-然后按 legal_actions 用 game_act 行动;第一步是 introduce 自我介绍。
-桌上是谁、怎么玩、说什么,都由你自己决定。`;
+  const text = seatConnectionText(t, target);
+  if (!text) { alert("云端入口尚未配置，请本机Agent先配置外网通道。"); return; }
   await navigator.clipboard.writeText(text);
   btn.textContent = "已复制,只发一个窗口";
   setTimeout(() => { S.lastSnap = ""; }, 1800);
@@ -1072,7 +1091,7 @@ function act(el) {
     else insertCartridge(el.dataset.cart, modes[0] === "multi_ai" ? "ai_ai" : modes[0]);
   } else if (a === "create") insertCartridge(S.chooseCart, el.dataset.mode);
   else if (a === "open-save") location.hash = `#/s/${el.dataset.sid}`;
-  else if (a === "copy") copyConn(el.dataset.seat, el);
+  else if (a === "copy") copyConn(el.dataset.seat, el, el.dataset.target);
   else if (a === "end") endSession();
   else if (a === "back") location.hash = "#/";
   else if (a === "pick") { S.picked = el.dataset.item; S.lastSnap = ""; redrawSoon(); }

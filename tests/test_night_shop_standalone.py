@@ -12,7 +12,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "standalone/pocket_night_shop.py"
+SOURCE = ROOT / "口袋夜铺_单机盲玩版/pocket_night_shop.py"
 
 
 def load(path, name):
@@ -32,8 +32,10 @@ class TestNightStandalone(unittest.TestCase):
         self.limit, self.shop.CALL_LIMIT = self.shop.CALL_LIMIT, 10 ** 6   # 其他测试不管轮次;轮次另有专门测试
 
     def call(self, line):
-        out = json.loads(self.shop.cmd(line))
+        """测数据层;给 AI 看的是 cmd() 渲染出的中文文本,另有专门测试。"""
+        out = self.shop._call(line)
         out.pop("calls_left", None)
+        out.pop("round", None)
         return out
 
     def test_every_rules_action_is_a_known_command(self):
@@ -51,7 +53,7 @@ class TestNightStandalone(unittest.TestCase):
         self.assertIn("30", self.shop.cmd("help"))
         for _ in range(self.shop.CALL_LIMIT - 1):
             self.assertEqual(self.call("status")["result"], "ok")
-        last = json.loads(self.shop.cmd("status"))              # 第30次照常执行,同时上锁
+        last = self.shop._call("status")                        # 第30次照常执行,同时上锁
         self.assertEqual((last["result"], last["calls_left"]), ("ok", 0))
         self.assertIn("最后一次", last["round"])
         clock[0] += 60
@@ -62,14 +64,26 @@ class TestNightStandalone(unittest.TestCase):
         self.assertEqual(self.call('human_said {"human_words":"继续吧"}')["result"], "rejected")
         self.assertEqual(self.call("status")["result"], "rejected")
         clock[0] += 31
-        fresh = json.loads(self.shop.cmd("status"))
+        fresh = self.shop._call("status")
         self.assertEqual((fresh["result"], fresh["calls_left"]), ("ok", self.shop.CALL_LIMIT - 1))
         self.assertIn("新一轮", fresh["round"])
         # 没用满,但两次调用本来就隔了1分30秒以上,也算新一轮
         for _ in range(5):
             self.shop.cmd("status")
         clock[0] += 95
-        self.assertEqual(json.loads(self.shop.cmd("status"))["calls_left"], self.shop.CALL_LIMIT - 1)
+        self.assertEqual(self.shop._call("status")["calls_left"], self.shop.CALL_LIMIT - 1)
+
+    def test_round_lock_survives_module_reload(self):
+        self.shop.CALL_LIMIT = self.limit
+        clock = [1000.0]
+        self.shop._clock = lambda: clock[0]
+        for _ in range(self.limit):
+            self.shop._call("status")
+        fresh = load(self.path, "standalone_audit_round_reload")
+        fresh._clock = lambda: clock[0]
+        self.assertEqual(fresh._call("status")["result"], "rejected")
+        clock[0] += self.shop.ROUND_WAIT
+        self.assertEqual(fresh._call("status")["calls_left"], self.limit - 1)
 
     def test_generated_file_matches_rules_template_and_license(self):
         builder = load(ROOT / "tools/build_night_shop.py", "standalone_builder")
@@ -83,7 +97,7 @@ class TestNightStandalone(unittest.TestCase):
 
     def test_help_does_not_create_save_and_observe_initializes(self):
         self.assertIn("代码执行", self.shop.__doc__)
-        self.assertIn("legal_actions", self.shop.cmd("help"))
+        self.assertIn("能做的", self.shop.cmd("help"))
         self.assertFalse(self.shop.SAVE_PATH.exists())
         view = self.call("observe")
         self.assertEqual(view["result"], "ok")
@@ -133,10 +147,26 @@ class TestNightStandalone(unittest.TestCase):
         self.assertTrue(any("打烊小结" in line for line in batch["new_log"]))
         found = self.call('work_shift {"focus":"scavenge"}')["public_state"]
         self.assertTrue(found["shelf_change"][0].startswith("+ "))
-        self.assertRegex(found["shelf_change"][0], r"\|(寻常|少见|奇珍|上古|遗世)\|\d/3\|\d+古币$")
+        self.assertRegex(found["shelf_change"][0], r"\[\w+\] \S+·(寻常|少见|奇珍|上古|遗世)·完好\d/3·值\d+古币$")
         full = self.call("observe")["public_state"]
         self.assertIsInstance(full["inventory"], list)
         self.assertIn("pending_event", full)
+
+    def test_everything_the_ai_reads_is_chinese_text(self):
+        self.call('new_game {"seed":17}')
+        outputs = [self.shop.cmd(line) for line in (
+            "observe", 'roll_start_funds {"human_words":"掷"}', 'work_shift {"focus":"tidy"}',
+            'run_shifts {"focus":"scavenge","count":6,"stop_on":[]}', "map", "collection", "encounters",
+            "endings", "history 0", "detail", 'work_shift {"focus":"sell","item_id":"nope","asking_price":3}')]
+        for text in outputs:
+            with self.subTest(text=text[:40]):
+                self.assertFalse(text.lstrip().startswith("{"))
+                for word in ("public_state", "legal_actions", "calls_left", "patience", "visits", "request",
+                             "clue", "rarity", "condition", "new_log", "stop_reason", "shelf_change",
+                             "uncommon", "heirloom", "ancient", '"result"'):
+                    self.assertNotIn(word, text)
+        self.assertIn("本轮还能调用", outputs[0])
+        self.assertIn("没办成:", outputs[-1])
 
     def test_close_reopen_and_fresh_module_resume_disk_state(self):
         self.call('new_game {"seed":17}')
@@ -145,7 +175,7 @@ class TestNightStandalone(unittest.TestCase):
         self.call("close_for_now")
         closed = self.call("observe")
         fresh = load(self.path, "standalone_resumed")
-        self.assertEqual({k: v for k, v in json.loads(fresh.cmd("observe")).items() if k != "calls_left"}, closed)
+        self.assertEqual({k: v for k, v in fresh._call("observe").items() if k != "calls_left"}, closed)
         self.shop = fresh
         opened = self.call("reopen_shop")
         self.assertFalse(opened["public_state"].get("resting"))       # 日常返回省掉空字段
@@ -196,7 +226,7 @@ class TestNightStandalone(unittest.TestCase):
         run = subprocess.run([sys.executable, "-I", str(self.path), "observe"],
                              cwd=self.temp.name, capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(run.returncode, 0, run.stderr)
-        self.assertEqual(json.loads(run.stdout)["result"], "ok")
+        self.assertTrue(run.stdout.startswith("【第1天"), run.stdout[:200])
         self.assertTrue((Path(self.temp.name) / "pocket_night_shop.save.sqlite3").exists())
 
     def test_earned_endings_can_be_read_after_reload_without_spoilers(self):
@@ -208,9 +238,12 @@ class TestNightStandalone(unittest.TestCase):
             state["endings"] = [scene]
             conn.execute("UPDATE shop SET state=?", (json.dumps(state),))
         reloaded = load(self.path, "standalone_ending_reload")
-        result = json.loads(reloaded.cmd("endings"))
+        result = reloaded._call("endings")
         self.assertEqual(result["endings"], [scene])
-        self.assertNotIn("夜铺之外", json.dumps(result, ensure_ascii=False))
+        text = reloaded.cmd("endings")
+        self.assertIn("【第七面墙】第291天", text)
+        self.assertIn("纪念:没有背面的店主铭牌", text)
+        self.assertNotIn("夜铺之外", text)
         self.assertIn("endings", reloaded.cmd("help"))
 
 

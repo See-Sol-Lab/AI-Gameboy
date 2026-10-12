@@ -155,3 +155,60 @@ test("story collection hint is limited to completed adventures with a written en
   assert.equal(p.run(`storyCollectionHint({cartridge:{id:"pocket-crossing"},status:"finished",public_state:{ending:null}})`), "");
   assert.equal(p.run(`storyCollectionHint({cartridge:{id:"pocket-crossing"},status:"playing",public_state:{ending:{text:"结束"}}})`), "");
 });
+
+test("updated spectator screen shows five shifts, sand, scroll, witch and closed maps", () => {
+  const p = page();
+  const html = p.run(`CART_UI["pocket-night-shop"].felt({seats:[{seat_id:"seat_a",display_name:"店主"}],
+    public_state:{day:20,shift:"下午",shift_number:2,shifts_per_day:5,coins:30,stardust:22,reputation:10,
+      shop_level:3,capacity:12,current_goal:"补货",journal_total:0,inventory:[],
+      door:"下午还没开门，客人傍晚才来",scroll:"第20天打烊前使用",customer:null,
+      last_run:{completed:1,requested:6,stop_reason:"scroll",stop_text:"拿到卷轴"},
+      witch:{can_sell:2,hint:"上古八折",stock:[{name:"<旧物>",rarity:"ancient",condition:0,price:12}]},
+      locations:[{id:"lane",name:"旧货巷",description:"故事已讲完",cost:2,undiscovered:0,closed:true,unlocked:true}],
+      collection:{found:10,total:72,revealed:5,entries:[]},encounters:{found:2,total:24,entries:[]}}})`);
+  for (const text of ["第2/5班", "星沙", "22", "下午还没开门", "限时传送卷轴", "魔女莉莉丝的摊位",
+                      "上古八折", "&lt;旧物&gt;", "已关闭", "下午半价", "拿到限时卷轴"]) assert.ok(html.includes(text), text);
+  assert.ok(!html.includes("<旧物>"));
+  assert.ok(!html.includes("眼下没有可接待的新来客"));
+  assert.ok(!html.includes("data-act=\"teleport\""));
+});
+
+test("bankrupt ending does not claim collection success or a null reward", () => {
+  const p = page();
+  const html = p.run(`nightEndings({bankrupt:true,endings:[{id:"closed",title:"落叶封门",day:10,
+    reward:null,paragraphs:["灯熄了"]}],completion:{true_ending:false}})`);
+  assert.ok(html.includes("夜铺已关闭"));
+  assert.ok(!html.includes("异物志收齐"));
+  assert.ok(!html.includes("纪念奖励"));
+  assert.ok(!html.includes("null"));
+  const memorial = p.run(`CART_UI["pocket-night-shop"].memorial({public_state:{bankrupt:true,day:10,coins:0,
+    reputation:0,shop_level:2,capacity:10,inventory:[],locations:[],diary:[],
+    collection:{found:3,total:72,revealed:1,entries:[]},encounters:{found:2,total:24,entries:[]},
+    endings:[{id:"closed",title:"落叶封门",day:10,reward:null,paragraphs:["灯熄了"]}]}})`);
+  assert.ok(memorial.rounds.includes("灯熄了"));
+  assert.ok(memorial.rounds.includes("异物志"));
+});
+
+test("local and cloud seat texts use the same seat but different explicit entries", () => {
+  const p = page();
+  p.run(`S.sid="synthetic-session"; S.currentCartridgeId="pocket-tabletop";
+    S.bridge={local_mcp_url:"http://127.0.0.1:7777/mcp",remote_mcp_url:"https://example.invalid/mcp",remote_kind:"fixed"}`);
+  const local = p.run(`seatConnectionText({seat_id:"seat_a",seat_token:"synthetic-seat-token"},"local")`);
+  const cloud = p.run(`seatConnectionText({seat_id:"seat_a",seat_token:"synthetic-seat-token"},"cloud")`);
+  assert.ok(local.includes("http://127.0.0.1:7777/mcp"));
+  assert.ok(!local.includes("https://example.invalid"));
+  assert.ok(cloud.includes("https://example.invalid/mcp"));
+  assert.ok(!cloud.includes("http://127.0.0.1"));
+  for (const text of [local,cloud]) {
+    assert.ok(text.includes("session_id: synthetic-session"));
+    assert.ok(text.includes("seat_token: synthetic-seat-token"));
+  }
+  assert.ok(cloud.includes("只有你使用人类已配置的私有续席连接时"));
+  assert.ok(p.run(`seatCopyButtons("seat_a")`).includes("给云端AI"));
+  const hint = p.run("playerEntryHint()");
+  assert.ok(hint.includes("同一台游戏机"));
+  assert.ok(!hint.includes("本地模式"));
+  p.run("S.bridge.remote_mcp_url=null");
+  assert.equal(p.run(`seatConnectionText({seat_id:"seat_a",seat_token:"synthetic"},"cloud")`), null);
+  assert.ok(!p.run(`seatCopyButtons("seat_a")`).includes("给云端AI"));
+});
