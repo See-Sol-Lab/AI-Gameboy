@@ -508,7 +508,7 @@ function nightEndings(ps) {
   if (!scenes.length) return "";
   const progress = ps.completion;
   return `<section class="night-endings" aria-label="夜铺里程碑">
-    <div class="night-section-title">${ps.bankrupt ? "落叶封门 · 夜铺已关闭" : progress?.true_ending ? "真正通关 · 夜铺仍可继续经营" : "异物志收齐 · 夜铺向你敞开了"}</div>
+    <div class="night-section-title">${ps.closing_record ? "万灯送行 · 夜铺已收起" : ps.bankrupt ? "落叶封门 · 夜铺已关闭" : progress?.true_ending ? "真正通关 · 夜铺仍可继续经营" : "异物志收齐 · 夜铺向你敞开了"}</div>
     ${progress ? `<div class="dim">旧物 ${progress.discoveries}/${progress.items_total} ·
       秘密 ${progress.secrets}/${progress.items_total} · 来客 ${progress.guests}/${progress.guests_total}</div>` : ""}
     ${scenes.map(scene => `<details class="night-history night-ending" data-panel="ending-${esc(scene.id)}">
@@ -518,6 +518,31 @@ function nightEndings(ps) {
         ${scene.reward ? `<div class="night-ending-reward">纪念奖励 · ${esc(scene.reward)}<br><small>永久保留 · 不占库存</small></div>` : ""}
       </div></details>`).join("")}
   </section>`;
+}
+
+// 大满贯结档卡:三座奖杯、送行文案、店主手记、最后一句话、闭店时的货架。不留流水账。
+function nightClosingCard(ps) {
+  const r = ps.closing_record;
+  const scene = (ps.endings || []).find(e => e.id === "grand_slam");
+  const trophies = r.trophies.map(t => `<div class="night-trophy"><div class="cup">🏆</div>
+    <strong>${esc(t.title)}</strong><div class="dim">第${t.day}日</div>
+    ${t.reward ? `<small>${esc(t.reward)}</small>` : ""}</div>`).join("");
+  const n = r.notes;
+  const keep = r.keepsakes.map(k => `<span class="chip">${esc(k.name)} · ${esc(k.rarity)}</span>`).join("");
+  const last = r.last_words ? `<div class="mem-sec"><div class="sec-t">最 后 一 句 话</div>
+    <p>第${r.last_words.day}日,${esc(r.last_words.name)}捧着「${esc(r.last_words.item)}」说:</p>
+    <p class="night-last-words">「${esc(r.last_words.line)}」</p></div>` : "";
+  return `<div class="night-trophies">${trophies}</div>
+    ${scene ? `<div class="mem-sec"><div class="sec-t">万 灯 送 行</div><div class="night-ending-scene night-ending-tunnel">
+      ${scene.paragraphs.map(text => `<p>${esc(text).replace(/\n/g, "<br>")}</p>`).join("")}</div></div>` : ""}
+    <div class="mem-sec"><div class="sec-t">店 主 手 记</div>
+      <p>开店 ${n.days} 日 · 遇见 ${n.guests} 位客人 · 修好 ${n.revealed} 种旧物</p>
+      <p>送走 ${n.farewells} 位远行的特殊客人 · 说出口的话 ${n.lines} 句</p></div>
+    ${last}
+    <div class="mem-sec"><div class="sec-t">闭 店 时 的 货 架</div>
+      <div class="night-keepsakes">${keep || '<span class="dim">货架是空的,东西都送到了该去的地方</span>'}</div></div>
+    <div class="mem-sec night-epilogue"><p>${esc(r.epilogue)}</p><p><strong>今夜照常营业。</strong></p>
+      <p class="dim">店铺已收起 · 游戏结束</p></div>`;
 }
 
 function nightCollection(ps) {
@@ -664,6 +689,10 @@ const CART_UI = {
     myPanel() { return ""; },
     memorial(v) {
       const ps = v.public_state;
+      if (ps.closing_record) {
+        return { rounds: nightClosingCard(ps), scoreLine: "🏆🏆🏆 大满贯",
+                 champ: `万灯送行 · 第 ${ps.closing_record.day} 日 · 夜铺已收起` };
+      }
       const diary = (ps.diary || []).map((entry) => `
         <div class="mem-round"><span class="dim">第${entry.day}日</span>
           <span>${esc(entry.text)}</span></div>`).join("");

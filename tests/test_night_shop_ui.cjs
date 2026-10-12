@@ -323,3 +323,23 @@ test("local and cloud seat texts use the same seat but different explicit entrie
   assert.equal(p.run(`seatConnectionText({seat_id:"seat_a",seat_token:"synthetic"},"cloud")`), null);
   assert.ok(!p.run(`seatCopyButtons("seat_a")`).includes("给云端AI"));
 });
+
+test("grand slam memorial is a closing card with three trophies and the last words", () => {
+  const p = page();
+  const html = p.run(`CART_UI["pocket-night-shop"].memorial({public_state: {
+    endings: [{id: "grand_slam", title: "万灯送行", day: 300, paragraphs: ["风铃最后响了一次。", "此间夜铺已经结业。\\n店主带着所有故事"]}],
+    closing_record: {title: "万灯送行", day: 300,
+      trophies: [{title: "第七面墙", day: 200, reward: "铭牌"}, {title: "夜铺之外", day: 280, reward: "钥匙"},
+                 {title: "万灯送行", day: 300, reward: "装着整间夜铺的一盏小灯"}],
+      keepsakes: [{name: "停在四点的怀表", rarity: "寻常"}],
+      notes: {days: 300, guests: 86, revealed: 72, farewells: 24, lines: 72},
+      last_words: {name: "钟表匠", line: "都是一种钟。", item: "扁瓶", day: 300},
+      epilogue: "此间夜铺已经结业。"}}})`);
+  assert.equal(html.scoreLine, "🏆🏆🏆 大满贯");
+  assert.equal((html.rounds.match(/class="night-trophy"/g) || []).length, 3);
+  for (const piece of ["装着整间夜铺的一盏小灯", "说出口的话 72 句", "「都是一种钟。」", "停在四点的怀表", "今夜照常营业。", "店铺已收起"]) {
+    assert.ok(html.rounds.includes(piece), piece);
+  }
+  assert.ok(html.rounds.includes("此间夜铺已经结业。<br>"));
+  assert.ok(!html.rounds.includes("mem-round"));     // 不留流水账
+});

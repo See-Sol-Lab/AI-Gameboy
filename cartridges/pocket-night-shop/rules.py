@@ -905,6 +905,53 @@ TRUE_ENDING_SCENE = [
 ]
 
 
+# 大圆满结局三《万灯送行》:七十二位等它的人都收到了修满的那一件,三座奖杯集齐。文案出自 Sol。
+GRAND_SLAM_SCENE = [
+    "最后一位客人告别后，夜铺很久没有响起门铃。",
+    "货架上的七十二块铭牌依次亮起，六张地图同时展开。旧货巷的雨、废弃车站的风、码头的潮声与灯塔的星光，从纸面升起，在铺子上方汇成一片缓慢旋转的夜空。",
+    "门外，所有来过夜铺的人都回来了。",
+    "退休的老师带着写满新字的笔记，赶末班车的邮差不再攥着旧车票。曾经沉默离开的人、隔了许多夜才回来的人，都举起从这里带走的旧物。修好的钟、补齐姓名的相片、重新点亮的灯，在街上连成一条温暖的光路。",
+    "他们不是来寻找最后一件东西。",
+    "他们是来送店主远行。",
+    "有人把一枚古币放在柜台上，有人在门框背面留下一道小小的刻痕。更多的人只是隔着灯光点头。每一个点头，都像一句已经说完的故事。",
+    "店主取下招牌，合拢地图，将货架、橱窗与风铃收进一盏巴掌大的灯里。灯中仍有客人推门时的风声，也有旧物修好时轻轻咬合的声音。",
+    "随后，他拿出那把通往亚空间的钥匙，亲手打开了门。",
+    "门外是漂在星海里的集市、倒悬在云下的车站，以及无数尚未点亮招牌的长街。那些地方，也有人守着一件不知道该交给谁的旧物。",
+    "店主把小灯挂在腰间，沿着众人为他点亮的路走进门里。",
+    "风铃最后响了一次。",
+    "旧街上只留下一行小字：",
+    "此间夜铺已经结业。\n店主带着所有故事，去往下一盏灯下。",
+    "很久以后，在某个没有名字的世界，一块熟悉的招牌重新亮起。",
+    "店主推开窗，翻开新的账簿，在第一页写道：",
+    "今夜照常营业。",
+]
+GRAND_SLAM_REWARD = "装着整间夜铺的一盏小灯"
+CLOSING_EPILOGUE = "此间夜铺已经结业。店主带着所有故事，去往下一盏灯下。"
+
+
+def _all_bonds(s):
+    return all(s["customer_book"].get(cid, {}).get("bond") for cid in BOND_LINES)
+
+
+def _closing_record(s):
+    """大满贯后店铺收起:只留结档记录,不留流水账。"""
+    revealed = sum(1 for row in s["collection"].values() if row.get("revealed"))
+    return {
+        "title": "万灯送行", "day": s["day"], "coins": s["coins"], "reputation": s["reputation"],
+        "trophies": [{"title": e["title"], "day": e["day"], "reward": e["reward"]}
+                     for e in s["endings"] if e["id"] in ("collection", "true_ending", "grand_slam")],
+        "keepsakes": [{"name": x["name"], "kind": x["kind"], "rarity": RARITIES[x["rarity"]][0],
+                       "condition": x["condition"]} for x in s["inventory"]]
+                     + ([{"name": "魔女的金苹果", "kind": "藏品", "rarity": "遗世", "condition": 3}]
+                        if s.get("apple_kept") else []),
+        "notes": {"days": s["day"], "guests": len(s["customer_book"]), "revealed": revealed,
+                  "farewells": sum(1 for cid in SPECIAL_CUSTOMERS if s["customer_book"].get(cid, {}).get("farewell")),
+                  "lines": sum(1 for cid in BOND_LINES if s["customer_book"].get(cid, {}).get("bond"))},
+        "last_words": s.get("last_bond"),
+        "epilogue": CLOSING_EPILOGUE,
+    }
+
+
 CLOSED_SCENE = [
     "最后一班打烊时，你没有再把门口的灯拧亮。账本摊在柜台上，最后一行停在一个付不出的数字。",
     "风从门缝挤进来，带进几片落叶。它们落在货架上，落在那些还没等到主人的旧物上，像替你盖了一层薄薄的布。",
@@ -939,7 +986,10 @@ def _check_endings(s):
     for key, ready, title, reward, pages in (
         ("collection", discovered, "第七面墙", "没有背面的店主铭牌", COLLECTION_SCENE),
         ("true_ending", revealed and guests, "夜铺之外", "通往亚空间的钥匙", TRUE_ENDING_SCENE),
+        ("grand_slam", None, "万灯送行", GRAND_SLAM_REWARD, GRAND_SLAM_SCENE),
     ):
+        if key == "grand_slam":   # 前两座奖杯都到手(可能就在这一步),七十二句话都说出口
+            ready = {"collection", "true_ending"} <= {row["id"] for row in endings} and _all_bonds(s)
         if not ready or key in earned:
             continue
         paragraphs = list(pages)
@@ -954,6 +1004,9 @@ def _check_endings(s):
              title + " · " + "\n\n".join(paragraphs), (s["coins"], s["reputation"]),
              event=True, ending=key)
         unlocked = True
+        if key == "grand_slam":
+            s["closing_record"] = _closing_record(s)
+            s["phase"] = "finished"
     return unlocked
 
 START_FUNDS_HINT = ("开店前要掷启动资金:两颗六面骰,第一颗当十位、第二颗当个位(11-66枚古币)。"
@@ -1175,6 +1228,7 @@ def observe(full_state, seat_id):
                        "revealed": sum(bool(row["revealed"]) for row in s["collection"].values()),
                        "entries": [{**deepcopy(row), "lit": _lit(s, code)} for code, row in s["collection"].items()]},
         "endings": deepcopy(s.get("endings", [])),
+        **({"closing_record": deepcopy(s["closing_record"])} if s.get("closing_record") else {}),
         "completion": {"discoveries": len(s["collection"]), "items_total": len(ITEMS),
                        "secrets": sum(bool(row["revealed"]) for row in s["collection"].values()),
                        "guests": len(s["customer_book"]), "guests_total": len(CUSTOMERS),
@@ -1318,7 +1372,8 @@ def apply(full_state, seat_id, action_id, params):
     if s.get("bankrupt"):
         raise IllegalAction(BANKRUPT_TEXT)
     if s["phase"] != "playing":
-        raise IllegalAction("本局已结束")
+        raise IllegalAction("夜铺已经收起,这一局到此结束。可以用 endings 重读三个结局。"
+                            if s.get("closing_record") else "本局已结束")
     if not isinstance(params, dict):
         raise IllegalAction("params 须是对象")
     if action_id == "close_for_now":
@@ -1718,6 +1773,7 @@ def _do_focus(s, params, flags):
             bond = BOND_LINES.get(c["id"])
             if bond and bond[0] == item["code"] and item["condition"] >= 3 and not row.get("bond"):
                 row["bond"] = True
+                s["last_bond"] = {"name": c["name"], "line": bond[1], "item": item["name"], "day": s["day"]}
                 s["coins"] += BOND_COINS
                 s["reputation"] += BOND_REPUTATION
                 report += (f" {c['name']}把它捧在手里看了很久:「{bond[1]}」"

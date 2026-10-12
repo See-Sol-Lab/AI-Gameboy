@@ -255,6 +255,13 @@ body {
 .night-ending-scene { max-height: 38vh; overflow-y: auto; padding: .7rem 1rem; background: #e5e6cb; line-height: 1.9; }
 .night-ending-scene p { margin: 0 0 1.1rem; }
 .night-ending-tunnel { background: #cbdad4; box-shadow: inset 0 0 30px #8aaba266; }
+.night-trophies { display: flex; gap: .6rem; justify-content: center; flex-wrap: wrap; margin: .6rem 0; }
+.night-trophy { flex: 1 1 8rem; max-width: 11rem; padding: .6rem; text-align: center; border: 2px solid #777b51; border-radius: 12px; }
+.night-trophy .cup { font-size: 1.6rem; }
+.night-trophy small { display: block; margin-top: .3rem; }
+.night-keepsakes { display: flex; flex-wrap: wrap; gap: .4rem; }
+.night-last-words { font-style: italic; }
+.night-epilogue { text-align: center; line-height: 1.9; }
 .night-ending-reward { padding: .8rem; text-align: center; border-top: 1px solid #777b51; }
 .night-ending[open] .night-ending-scene { animation: night-ending-light .7s ease-out; }
 @keyframes night-ending-light { from { opacity: .25; } to { opacity: 1; } }

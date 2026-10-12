@@ -184,6 +184,21 @@ class TestNightStandalone(unittest.TestCase):
         self.assertEqual(refused["result"], "rejected")
         self.assertIn("还开不了废弃车站", refused["message"])
 
+    def test_grand_slam_reads_as_a_closed_shop(self):
+        record = {"title": "万灯送行", "day": 300, "coins": 1, "reputation": 2,
+                  "trophies": [{"title": "第七面墙", "day": 200, "reward": "没有背面的店主铭牌"},
+                               {"title": "夜铺之外", "day": 280, "reward": "通往亚空间的钥匙"},
+                               {"title": "万灯送行", "day": 300, "reward": "装着整间夜铺的一盏小灯"}],
+                  "keepsakes": [{"name": "停在四点的怀表", "kind": "时间", "rarity": "寻常", "condition": 3}],
+                  "notes": {"days": 300, "guests": 86, "revealed": 72, "farewells": 24, "lines": 72},
+                  "last_words": {"name": "钟表匠", "line": "都是一种钟。", "item": "扁瓶", "day": 300},
+                  "epilogue": "此间夜铺已经结业。店主带着所有故事，去往下一盏灯下。"}
+        text = self.shop._state_text({"closing_record": record, "new_log": []}, [], True)
+        for piece in ("【店铺已收起 · 游戏结束】", "🏆 万灯送行(第300天,纪念:装着整间夜铺的一盏小灯)",
+                      "说出口的话72句", "钟表匠捧着「扁瓶」说:「都是一种钟。」", "停在四点的怀表(寻常)",
+                      "今夜照常营业。"):
+            self.assertIn(piece, text)
+
     def test_close_reopen_and_fresh_module_resume_disk_state(self):
         self.call('new_game {"seed":17}')
         self.call('roll_start_funds {"human_words":"掷"}')

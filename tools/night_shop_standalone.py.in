@@ -96,7 +96,7 @@ BLIND_HIDDEN = ("customer_book", "customer_collection")
 # 每一班都要的:时刻、古币、星沙,外加按需出现的(下午没开门、卷轴、事件、魔女、救店……)。
 # 声望、等级、图鉴、目标这些一天变不了几次,打烊小结里写,白天要看用 observe。
 _BRIEF_KEYS = ("day", "shift", "shift_number", "shifts_per_day", "coins", "stardust", "door", "apple", "scroll", "rescue_ready", "rescues_left", "bankrupt",
-               "resting", "start_funds_pending", "customer", "pending_event", "witch", "last_run")
+               "resting", "start_funds_pending", "customer", "pending_event", "witch", "last_run", "closing_record")
 _FULL_KEYS = _BRIEF_KEYS + ("reputation", "shop_level", "capacity", "location", "current_goal", "journal_total")
 # 返回给 AI 的一律是中文文本:读进去的是中文,说出来的才是中文。编号和指令名只能是英文,其余不用英文。
 _ACTION_NAMES = {
@@ -258,7 +258,26 @@ def _witch_text(w):
     return "\n".join(lines)
 
 
+def _closing_text(r):
+    """大满贯之后:店铺收起,只给结档记录。"""
+    n = r["notes"]
+    lines = ["【店铺已收起 · 游戏结束】", f"万灯送行 · 第{r['day']}天", "三座奖杯:"]
+    lines += [f"  🏆 {t['title']}(第{t['day']}天" + (f",纪念:{t['reward']})" if t.get("reward") else ")")
+              for t in r["trophies"]]
+    lines.append(f"店主手记:开店{n['days']}天,遇见{n['guests']}位客人,修好{n['revealed']}种旧物,"
+                 f"送走{n['farewells']}位远行的特殊客人,说出口的话{n['lines']}句。")
+    if r.get("last_words"):
+        w = r["last_words"]
+        lines.append(f"最后一句话:第{w['day']}天,{w['name']}捧着「{w['item']}」说:「{w['line']}」")
+    keep = "、".join(f"{k['name']}({k['rarity']})" for k in r["keepsakes"])
+    lines.append("闭店时的货架:" + (keep or "空的,东西都送到了该去的地方"))
+    lines += [r["epilogue"], "今夜照常营业。", "(用 endings 可以重读三个结局的完整过场。)"]
+    return "\n".join(lines)
+
+
 def _state_text(p, legal, full):
+    if p.get("closing_record"):
+        return "\n".join(f"  · {line}" for line in p.get("new_log", [])) + ("\n" if p.get("new_log") else "") + _closing_text(p["closing_record"])
     head = f"【第{p['day']}天 {p['shift']}·第{p['shift_number']}/{p['shifts_per_day']}班】古币 {p['coins']} ｜ 星沙 {p.get('stardust', 0)} ｜ 货架 {p['shelf']}"
     if full:
         head += f" ｜ 声望 {p.get('reputation', 0)} ｜ 店铺{p.get('shop_level', 1)}级"

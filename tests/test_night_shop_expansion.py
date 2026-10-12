@@ -405,6 +405,38 @@ class TestNightExpansion(unittest.TestCase):
         self.assertFalse(any(x["code"] == "golden_apple" for x in t["inventory"]))
         self.assertEqual(t["apple_pending"], 1)
 
+    def test_grand_slam_closes_the_shop_with_a_keepsake_record(self):
+        s = rules.new_game(["seat_a"], 4)
+        for code, name, story, *_ in rules.ITEMS:
+            s["collection"][code] = {"code": code, "name": name, "story": story, "kind": rules.ITEM_KINDS[code],
+                                     "rarity": rules.ITEM_RARITY[code], "first_day": 1, "first_location": "lane",
+                                     "count": 1, "revealed": "x"}
+        for c in rules.CUSTOMERS:
+            s["customer_book"][c[0]] = {"id": c[0], "name": c[1], "request": None, "clue": c[3],
+                                        "special": c[0] in rules.SPECIAL_CUSTOMERS, "first_day": 1, "visits": 1,
+                                        "deals": 1, "trust": 0, "neighbor": True}
+        bonded = list(rules.BOND_LINES)
+        for cid in bonded[:-1]:
+            s["customer_book"][cid]["bond"] = True
+        self.assertTrue(rules._check_endings(s))
+        self.assertEqual([e["id"] for e in s["endings"]], ["collection", "true_ending"])   # 还差一句话
+        self.assertEqual(s["phase"], "playing")
+        s["customer_book"][bonded[-1]]["bond"] = True
+        s["last_bond"] = {"name": "最后的客人", "line": "最后一句。", "item": "某件旧物", "day": s["day"]}
+        s["apple_kept"] = True
+        rules._check_endings(s)
+        self.assertEqual(s["phase"], "finished")
+        record = rules.observe(s, "seat_a")["public_state"]["closing_record"]
+        self.assertEqual([t["title"] for t in record["trophies"]], ["第七面墙", "夜铺之外", "万灯送行"])
+        self.assertEqual(record["trophies"][-1]["reward"], rules.GRAND_SLAM_REWARD)
+        self.assertEqual(record["notes"]["lines"], 72)
+        self.assertEqual(record["last_words"]["line"], "最后一句。")
+        names = [k["name"] for k in record["keepsakes"]]
+        self.assertEqual(names, [x["name"] for x in s["inventory"]] + ["魔女的金苹果"])
+        self.assertIn("今夜照常营业。", s["history"][-1]["text"])
+        with self.assertRaisesRegex(rules.IllegalAction, "夜铺已经收起"):
+            rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"})
+
     def test_lighthouse_dreams_one_per_condition(self):
         s = rules.new_game(["seat_a"], 9)
         s["day"] = 180
