@@ -1482,7 +1482,6 @@ def _work_shift(s, params):
             report += " 没用上的传送卷轴在打烊时化成了灰。"
         dream = _lighthouse_dream(s)
         if dream:
-            report += " " + dream
             flags["dream"] = flags["event"] = True
         s["day"] += 1
         s["shift_index"] = 0
@@ -1495,6 +1494,8 @@ def _work_shift(s, params):
             report += f" {c['name']}等了三天,没等到合适的东西,走了。"
             _spawn_customer(s)
         report += " " + _day_summary(s, day)
+        if dream:   # 梦单独起一行放在最后,别埋在打烊流水里
+            report += "\n【夜里的梦】" + dream + (" (用 map 看看新出现的地方。)" if s["dreams"] >= 3 else "")
     else:
         s["shift_index"] += 1
     reaction = None
