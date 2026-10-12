@@ -619,6 +619,7 @@ const CART_UI = {
           ${ps.customer.max_visits ? `<div class="dim">累计到访上限 ${ps.customer.max_visits} 次${ps.customer.special ? " · 专属来客" : ""}</div>` : ""}
           <div>${esc(ps.customer.request ?? "（没开口，只能看线索猜）")}</div>
           <div class="dim">可观察到:${esc(ps.customer.clue)}</div>
+          ${ps.customer.waiting_item ? `<p>🔑 等待的旧物：${esc(ps.customer.waiting_item.name)} · 修满后交付可完成这位客人的故事</p>` : ""}
           <div class="dim">耐心:${"●".repeat(ps.customer.patience)}${"○".repeat(2 - ps.customer.patience)}</div>
         </div>` : (ps.door ? `<div class="night-customer dim">${esc(ps.door)}</div>` : ps.customer_collection ? '<div class="night-customer dim">眼下没有可接待的新来客。仍可淘货、修理、回收或扩建；达到三级可开放特殊来客。</div>' : "");
       const relations = (ps.customer_book || []).map((row) => `
@@ -628,7 +629,8 @@ const CART_UI = {
           ${row.farewell ? " · 心愿已了，告别远行" : ps.customer_collection && row.visits >= ps.customer_collection.visit_limit ? " · 此后不再到访" : ""}
           ${row.bond ? " · 已交付等待的旧物" : ""}
           ${row.special ? " · 专属来客" : ""}</div>
-          <p>${esc(row.request ?? "（还没开口）")}</p><div class="dim">${esc(row.clue)}</div></article>`).join("");
+          <p>${esc(row.request ?? "（还没开口）")}</p><div class="dim">${esc(row.clue)}</div>
+          ${row.waiting_item ? `<p>🔑 等待的旧物：${esc(row.waiting_item.name)} · 修满后交付${row.bond ? "（已完成）" : ""}</p>` : ""}</article>`).join("");
       const week = (ps.weekly || []).slice(-1)[0];
       return `
         <div class="night-owner">${esc(keeper.display_name || "AI 店主")} 的夜铺</div>

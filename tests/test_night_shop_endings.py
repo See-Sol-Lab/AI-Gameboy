@@ -64,6 +64,29 @@ class TestEndings(unittest.TestCase):
         self.assertEqual(view["endings"], [])
         self.assertFalse(view["completion"]["true_ending"])
 
+    def test_waiting_item_is_visible_only_after_true_ending(self):
+        s = self.state
+        s["shift_index"] = rules.OPEN_SHIFT
+        cid = next(iter(rules.BOND_LINES))
+        code = rules.BOND_LINES[cid][0]
+        expected_name = next(row[1] for row in rules.ITEMS if row[0] == code)
+        s["customer"] = {"id": cid, "name": "测试来客", "_item_code": code}
+        s["customer_book"] = {cid: {"id": cid, "name": "测试来客", "visits": 1}}
+        for endings in ([], [{"id": "collection"}]):
+            s["endings"] = endings
+            view = rules.observe(s, "seat_a")["public_state"]
+            self.assertNotIn("waiting_item", view["customer"])
+            self.assertNotIn("waiting_item", view["customer_book"][0])
+        s["endings"].append({"id": "true_ending"})
+        original = deepcopy(s)
+        view = rules.observe(s, "seat_a")["public_state"]
+        expected = {"code": code, "name": expected_name, "required_condition": 3}
+        self.assertEqual(view["customer"]["waiting_item"], expected)
+        self.assertEqual(view["customer_book"][0]["waiting_item"], expected)
+        self.assertNotIn("_item_code", view["customer"])
+        self.assertEqual(s, original)
+        self.assertEqual(rules._waiting_item(s, "unmapped_guest"), {})
+
     def test_congratulations_use_only_known_guests(self):
         self.fill()
         known = [row["name"] for row in self.state["customer_book"].values()]

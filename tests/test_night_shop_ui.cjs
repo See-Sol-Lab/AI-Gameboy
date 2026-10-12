@@ -278,6 +278,20 @@ test("updated spectator screen shows five shifts, sand, scroll, witch and closed
   assert.ok(!html.includes("data-act=\"teleport\""));
 });
 
+test("earned waiting-item hints appear on guest and customer book with escaped names", () => {
+  const p = page();
+  const html = p.run(`CART_UI["pocket-night-shop"].felt({seats:[{seat_id:"seat_a",display_name:"店主"}],
+    public_state:{day:20,shift:"傍晚",coins:30,reputation:10,shop_level:5,capacity:12,inventory:[],
+      customer:{name:"客人",visits:2,patience:2,clue:"线索",waiting_item:{name:"<指定旧物>"}},
+      customer_book:[{name:"客人",visits:2,clue:"线索",waiting_item:{name:"<指定旧物>"},bond:true}],
+      locations:[],collection:{found:72,total:72,revealed:72,entries:[]},encounters:{found:0,total:48,entries:[]}}})`);
+  assert.equal((html.match(/等待的旧物：/g) || []).length, 2);
+  assert.ok(html.includes("修满后交付"));
+  assert.ok(html.includes("（已完成）"));
+  assert.ok(html.includes("&lt;指定旧物&gt;"));
+  assert.ok(!html.includes("<指定旧物>"));
+});
+
 test("bankrupt ending does not claim collection success or a null reward", () => {
   const p = page();
   const html = p.run(`nightEndings({bankrupt:true,endings:[{id:"closed",title:"落叶封门",day:10,

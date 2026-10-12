@@ -45,6 +45,14 @@ class TestNightStandalone(unittest.TestCase):
             with self.subTest(action=action):
                 self.assertNotIn("未知指令", self.call(action + " {}").get("message", ""))
 
+    def test_waiting_item_is_rendered_in_blind_customer_text(self):
+        customer = {"name": "测试来客", "visits": 1, "patience": 2, "clue": "旧线索"}
+        self.assertNotIn("等待的旧物", self.shop._customer_text(customer))
+        customer["waiting_item"] = {"code": "test", "name": "测试旧物", "required_condition": 3}
+        text = self.shop._customer_text(customer)
+        self.assertIn("等待的旧物:测试旧物", text)
+        self.assertIn("修满后交付", text)
+
     def test_rounds_lock_after_limit_and_only_real_time_unlocks(self):
         self.shop.CALL_LIMIT = self.limit
         clock = [1000.0]

@@ -1151,11 +1151,20 @@ def _is_open(s):
     return s["shift_index"] >= OPEN_SHIFT
 
 
+def _waiting_item(s, cid):
+    if not any(e["id"] == "true_ending" for e in s.get("endings", [])) or cid not in BOND_LINES:
+        return {}
+    code = BOND_LINES[cid][0]
+    name = next(item[1] for item in ITEMS if item[0] == code)
+    return {"waiting_item": {"code": code, "name": name, "required_condition": 3}}
+
+
 def _public_customer(s):
     if s["customer"] is None or not _is_open(s):
         return None
     view = {key: value for key, value in s["customer"].items() if not key.startswith("_")}
     view["hint"] = CUSTOMER_HINT
+    view.update(_waiting_item(s, s["customer"]["id"]))
     return view
 
 
@@ -1274,7 +1283,8 @@ def observe(full_state, seat_id):
         "current_goal": s["current_goal"], "resting": s["resting"],
         "start_funds_pending": bool(s.get("start_funds_pending")),
         "last_checkpoint": deepcopy(s["last_checkpoint"]),
-        "customer": _public_customer(s), "customer_book": deepcopy(list(s["customer_book"].values())),
+        "customer": _public_customer(s), "customer_book": [dict(deepcopy(row), **_waiting_item(s, cid))
+                                                          for cid, row in s["customer_book"].items()],
         "customer_collection": {"found": len(s["customer_book"]), "total": len(CUSTOMERS),
                                 "visit_limit": MAX_CUSTOMER_VISITS,
                                 "retired": sum(row["visits"] >= MAX_CUSTOMER_VISITS
