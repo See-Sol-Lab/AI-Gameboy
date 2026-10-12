@@ -165,8 +165,24 @@ class TestNightStandalone(unittest.TestCase):
                              "clue", "rarity", "condition", "new_log", "stop_reason", "shelf_change",
                              "uncommon", "heirloom", "ancient", '"result"'):
                     self.assertNotIn(word, text)
+        for text in outputs:
+            self.assertNotRegex(text, r"\b[a-z][a-z_]*_\d+\b")      # 旧物编号只露数字,不露英文代号
         self.assertIn("本轮还能调用", outputs[0])
         self.assertIn("没办成:", outputs[-1])
+
+    def test_numeric_ids_and_chinese_place_names_work_in_commands(self):
+        self.call('new_game {"seed":17}')
+        self.call('roll_start_funds {"human_words":"掷"}')
+        shelf = self.call("observe")["public_state"]["inventory"]
+        real = shelf[0].split(" [")[1].split("]")[0]
+        number = real.rsplit("_", 1)[-1]
+        self.assertIn(f"[{number}]", self.shop.cmd("observe"))
+        done = self.call('work_shift {"focus":"recycle","item_id":"%s"}' % number)
+        self.assertEqual(done["result"], "ok")
+        self.assertTrue(done["public_state"]["shelf_change"][0].startswith("- "))
+        refused = self.call('unlock_location {"location":"废弃车站"}')   # 图鉴还不够:认得地名,只是条件没到
+        self.assertEqual(refused["result"], "rejected")
+        self.assertIn("还开不了废弃车站", refused["message"])
 
     def test_close_reopen_and_fresh_module_resume_disk_state(self):
         self.call('new_game {"seed":17}')

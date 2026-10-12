@@ -34,6 +34,7 @@ License: PolyForm Noncommercial 1.0.0，完整协议附在文件末尾。
 import base64 as _base64
 from contextlib import closing as _closing
 import json as _json
+import re as _re
 from pathlib import Path as _Path
 import secrets as _secrets
 import sqlite3 as _sqlite3
@@ -52,7 +53,7 @@ exec(compile(_zlib.decompress(_base64.b64decode(_RULES_B64)).decode("utf-8"),
 
 _HELP = """口袋夜铺 · 你是独自经营旧物铺的店主。
 observe / status：看店况、货架、客人和「能做的」（每个动作都附写法）。所有返回都是中文。
-货架每行：名字 [编号] 类别·稀有度·完好度·价值；指令里填方括号里的编号。稀有度五阶：寻常、少见、奇珍、上古、遗世。
+货架每行：名字 [编号] 类别·稀有度·完好度·价值；指令里填方括号里的数字编号，地图直接写中文名（如 废弃车站）。稀有度五阶：寻常、少见、奇珍、上古、遗世。
 指令是英文，跟人类说话请用中文叫法：sell卖货 repair修理 scavenge淘货 curate陈列 upgrade扩建 tidy整理 recycle回收 dismiss送客。
 新局第一步：掷启动资金（两颗六面骰，十位+个位，11-66枚古币）。先停下告诉人类，
 等人类亲口说“掷”，再 roll_start_funds {"human_words":"人类原话"}；不得替人类发令。
@@ -104,12 +105,12 @@ _ACTION_NAMES = {
     "sand_repair": "星沙修满", "teleport": "用传送卷轴", "call_human": "请人类救店"}
 _SYNTAX = {
     "work_shift": 'work_shift {"focus":"tidy"}。focus 可选:sell卖货(要带 item_id 和 asking_price)、repair修理(带 item_id)、'
-                  'scavenge淘货(可带 location 地图编号)、curate陈列(带 item_id)、upgrade扩建、tidy整理、recycle回收(带 item_id)、dismiss送客',
+                  'scavenge淘货(可带 location 地图中文名)、curate陈列(带 item_id)、upgrade扩建、tidy整理、recycle回收(带 item_id)、dismiss送客',
     "run_shifts": 'run_shifts {"focus":"scavenge","count":6,"stop_on":"new"}:连续淘货/修理/整理,最多6班',
     "choose_event": 'choose_event {"event_id":"事件编号","choice":"选项"}',
     "close_for_now": "close_for_now", "reopen_shop": "reopen_shop",
     "roll_start_funds": 'roll_start_funds {"human_words":"人类发令的原话"}',
-    "unlock_location": 'unlock_location {"location":"地图编号"}(编号用 map 看)',
+    "unlock_location": 'unlock_location {"location":"地图中文名,如 废弃车站"}',
     "witch_sell": 'witch_sell {"item_ids":["货架编号","货架编号"]}', "witch_buy": 'witch_buy {"item_id":"摊上编号"}',
     "buy_slot": "buy_slot {}", "merge": 'merge {"item_id":"要修的","from_id":"被拆的"}',
     "sand_repair": 'sand_repair {"item_id":"货架编号"}', "teleport": "teleport {}",
@@ -117,6 +118,38 @@ _SYNTAX = {
 _STOP_NAMES = {"count": "做满了", "reserve": "再做会低于保留线", "new": "淘到新种", "rare": "淘到稀有货",
                "event": "碰到街巷见闻", "decision": "有事件要你选", "witch": "碰到魔女", "ending": "解锁了结局过场",
                "dream": "店主做了梦", "scroll": "拿到传送卷轴"}
+
+
+# 旧物编号在存档里是「英文代号_数字」;给 AI 看只露数字,指令里填数字也认。AI 就不会拿英文代号称呼旧物。
+_ID_TAIL = _re.compile(r"\b[a-z][a-z_]*_(\d+)\b")
+
+
+def _plain_ids(text):
+    return _ID_TAIL.sub(r"\1", text).replace("[golden_apple]", "[金苹果]")
+
+
+def _resolve(state, params):
+    """把数字编号、中文地名换回存档里的编号;填完整旧编号照样认。"""
+    ids = [x["id"] for x in state.get("inventory", [])] + [x["id"] for x in (state.get("witch") or {}).get("stock", [])]
+    by_tail = {i.rsplit("_", 1)[-1]: i for i in ids if i.rsplit("_", 1)[-1].isdigit()}
+    by_tail["金苹果"] = "golden_apple"
+
+    def fix(value, table):
+        if isinstance(value, (str, int)) and not isinstance(value, bool):
+            return table.get(str(value).strip().lstrip("#"), value)
+        return value
+    for key in ("item_id", "from_id"):
+        if key in params:
+            params[key] = fix(params[key], by_tail)
+    if isinstance(params.get("item_ids"), list):
+        params["item_ids"] = [fix(v, by_tail) for v in params["item_ids"]]
+    if "event_id" in params and state.get("pending_event"):
+        pid = state["pending_event"]["id"]
+        params["event_id"] = fix(params["event_id"], {pid.rsplit("_", 1)[-1]: pid})
+    if isinstance(params.get("location"), str):
+        params["location"] = next((key for key, loc in _engine["LOCATIONS"].items()
+                                   if loc["name"] == params["location"].strip()), params["location"])
+    return params
 
 
 def _rarity(code):
@@ -283,7 +316,7 @@ def _state_text(p, legal, full):
 def _map_text(locations):
     lines = ["地图:"]
     for loc in locations:
-        line = f"  · {loc['name']} [{loc['id']}]:{loc['description']} 车马费{loc['cost']}古币(下午减半)。"
+        line = f"  · {loc['name']}:{loc['description']} 车马费{loc['cost']}古币(下午减半)。"
         if loc.get("unlocked"):
             line += "已关闭,这里的旧物都讲完了。" if loc.get("closed") else f"已开,还有{loc['undiscovered']}种没见过。"
         else:
@@ -296,7 +329,7 @@ def _map_text(locations):
 def _collection_text(col):
     lines = [f"图鉴:发现 {col['found']}/{col['total']} 种,揭秘 {col['revealed']} 种。"]
     for e in col.get("entries", []):
-        lines.append(f"  · {e['name']} [{e['code']}] {e['kind']}·{_rarity(e['rarity'])}·第{e['first_day']}天在"
+        lines.append(f"  · {e['name']} {e['kind']}·{_rarity(e['rarity'])}·第{e['first_day']}天在"
                      f"{_place(e['first_location'])}初见·收过{e['count']}次")
         lines.append(f"    {e['story']} 秘密:{e['revealed'] or '还没揭开'}")
     return "\n".join(lines)
@@ -383,7 +416,7 @@ def cmd(line="help"):
     action = line.strip().partition(" ")[0]
     if action in ("", "help"):
         return _HELP
-    return _render(action, _call(line))
+    return _plain_ids(_render(action, _call(line)))
 
 
 def _call(line):
@@ -460,7 +493,7 @@ def _data(line):
                 was = _engine["observe"](state, "seat_a")["public_state"]
                 before = {"shelf": _shelf(was), "customer": _customer(was, False)}
             if action in {"roll_start_funds", "work_shift", "run_shifts", "choose_event", "unlock_location", "witch_sell", "witch_buy", "buy_slot", "merge", "sand_repair", "teleport", "call_human", "close_for_now", "reopen_shop"}:
-                state = _engine["apply"](state, "seat_a", action, params)
+                state = _engine["apply"](state, "seat_a", action, _resolve(state, params))
             view = _engine["observe"](state, "seat_a")
             public = view["public_state"]
             for key in BLIND_HIDDEN:          # 盲玩:不给客人图鉴,熟客要靠自己记
