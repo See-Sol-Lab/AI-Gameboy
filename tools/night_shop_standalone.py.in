@@ -72,6 +72,7 @@ observe / status：看店况、货架、客人和「能做的」（每个动作�
 回收寻常/少见/奇珍会掉星沙（1/2/3 粒）；星沙能一次修满奇珍/上古/遗世：sand_repair {"item_id":"…"}（22/33/55 粒，不占班）。
 一天五班：下午两班还没开门（客人傍晚才来，出门淘货半价），傍晚两班、深夜一班接客，深夜打烊结算维护费。
 收齐全部旧物图鉴(第七面墙)以后,可以用古币换星沙:buy_sand {"amount":30}(3枚古币一粒,每天最多30粒,不占班次)。
+同样解锁货物飞来:summon_goods {"code":"buttonjar"}，花99枚古币指定召来一件图鉴旧物，不占班次，需要货架空位；已揭秘的同种旧物到货即修满。
 魔女的金苹果不上货架：拿到后用 golden_apple 二选一，cash 换成77枚古币，keep 收藏（只能一个，收藏后每次回收都多筛5粒星沙，打烊小结末尾挂[金苹果]）。
 街巷见闻有时会送传送卷轴：teleport {}，不花钱不占班，随机去一张已开的地图带回一件货；拿到当天打烊前要用掉（深夜拿到的留到第二天），过时化成灰。
 手头紧就先整理（tidy 不花钱）。连续 3 天交不齐维护费，才能请人类救店：call_human {"human_words":"人类原话"}（一局最多 3 次，之后再破产就关店）。
@@ -97,14 +98,14 @@ BLIND_HIDDEN = ("customer_book", "customer_collection")
 # 每一班都要的:时刻、古币、星沙,外加按需出现的(下午没开门、卷轴、事件、魔女、救店……)。
 # 声望、等级、图鉴、目标这些一天变不了几次,打烊小结里写,白天要看用 observe。
 _BRIEF_KEYS = ("day", "shift", "shift_number", "shifts_per_day", "coins", "stardust", "door", "apple", "scroll", "rescue_ready", "rescues_left", "bankrupt",
-               "resting", "start_funds_pending", "customer", "pending_event", "witch", "last_run", "closing_record")
+               "resting", "start_funds_pending", "customer", "pending_event", "witch", "last_run", "closing_record", "summon_goods")
 _FULL_KEYS = _BRIEF_KEYS + ("reputation", "shop_level", "capacity", "location", "current_goal", "journal_total")
 # 返回给 AI 的一律是中文文本:读进去的是中文,说出来的才是中文。编号和指令名只能是英文,其余不用英文。
 _ACTION_NAMES = {
     "work_shift": "经营一班", "run_shifts": "连续经营", "choose_event": "回应事件", "close_for_now": "歇业",
     "reopen_shop": "重新开门", "roll_start_funds": "掷启动资金", "unlock_location": "开新地图",
     "witch_sell": "卖给魔女", "witch_buy": "向魔女买", "buy_slot": "声望换格子", "merge": "拆件修理",
-    "sand_repair": "星沙修满", "teleport": "用传送卷轴", "golden_apple": "处理金苹果", "buy_sand": "古币换星沙", "call_human": "请人类救店"}
+    "sand_repair": "星沙修满", "teleport": "用传送卷轴", "golden_apple": "处理金苹果", "buy_sand": "古币换星沙", "summon_goods": "货物飞来", "call_human": "请人类救店"}
 _SYNTAX = {
     "work_shift": 'work_shift {"focus":"tidy"}。focus 可选:sell卖货(要带 item_id 和 asking_price)、repair修理(带 item_id)、'
                   'scavenge淘货(可带 location 地图中文名)、curate陈列(带 item_id)、upgrade扩建、tidy整理、recycle回收(带 item_id)、dismiss送客',
@@ -117,6 +118,7 @@ _SYNTAX = {
     "buy_slot": "buy_slot {}", "merge": 'merge {"item_id":"要修的","from_id":"被拆的"}',
     "sand_repair": 'sand_repair {"item_id":"货架编号"}', "teleport": "teleport {}",
     "buy_sand": 'buy_sand {"amount":30}:3枚古币换1粒星沙,每天最多30粒,不占班次',
+    "summon_goods": 'summon_goods {"code":"图鉴编号"}:99枚古币指定召货,不占班次',
     "golden_apple": 'golden_apple {"choice":"cash"} 换成77枚古币,或 {"choice":"keep"} 收藏(不占货架,只能收藏一个,之后每次回收多5粒星沙)',
     "call_human": 'call_human {"human_words":"人类发令的原话"}'}
 _STOP_NAMES = {"count": "做满了", "reserve": "再做会低于保留线", "new": "淘到新种", "rare": "淘到稀有货",
@@ -292,7 +294,7 @@ def _state_text(p, legal, full):
         lines.append("歇业中:reopen_shop 重新开门。")
     if p.get("bankrupt"):
         lines.append("夜铺已经破产关门。")
-    for key in ("door", "apple", "scroll"):
+    for key in ("door", "apple", "scroll", "summon_goods"):
         if p.get(key):
             lines.append(p[key])
     if p.get("rescue_ready"):
@@ -492,7 +494,7 @@ def _data(line):
             if not isinstance(params, dict):
                 raise ValueError("动作参数须为JSON对象")
         allowed = {"observe", "status", "collection", "encounters", "endings", "history", "new_game", "map", "detail",
-                   "roll_start_funds", "work_shift", "run_shifts", "choose_event", "unlock_location", "witch_sell", "witch_buy", "buy_slot", "merge", "sand_repair", "teleport", "golden_apple", "buy_sand", "call_human", "close_for_now", "reopen_shop"}
+                   "roll_start_funds", "work_shift", "run_shifts", "choose_event", "unlock_location", "witch_sell", "witch_buy", "buy_slot", "merge", "sand_repair", "teleport", "golden_apple", "buy_sand", "summon_goods", "call_human", "close_for_now", "reopen_shop"}
         if action not in allowed:
             raise ValueError("未知指令，请先 cmd('help')")
         with _closing(_sqlite3.connect(str(SAVE_PATH))) as conn, conn:
@@ -515,7 +517,7 @@ def _data(line):
             if "inventory" in state:
                 was = _engine["observe"](state, "seat_a")["public_state"]
                 before = {"shelf": _shelf(was), "customer": _customer(was, False)}
-            if action in {"roll_start_funds", "work_shift", "run_shifts", "choose_event", "unlock_location", "witch_sell", "witch_buy", "buy_slot", "merge", "sand_repair", "teleport", "golden_apple", "buy_sand", "call_human", "close_for_now", "reopen_shop"}:
+            if action in {"roll_start_funds", "work_shift", "run_shifts", "choose_event", "unlock_location", "witch_sell", "witch_buy", "buy_slot", "merge", "sand_repair", "teleport", "golden_apple", "buy_sand", "summon_goods", "call_human", "close_for_now", "reopen_shop"}:
                 state = _engine["apply"](state, "seat_a", action, _resolve(state, params))
             view = _engine["observe"](state, "seat_a")
             public = view["public_state"]

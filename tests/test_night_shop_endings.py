@@ -93,6 +93,53 @@ class TestEndings(unittest.TestCase):
         rules._check_endings(self.state)
         self.assertTrue(all(name in self.state["endings"][0]["paragraphs"][2] for name in known))
 
+    def test_summon_goods_is_paid_exactly_and_does_not_advance_time(self):
+        s = self.state
+        s["coins"] = 200
+        self.fill()
+        rules._check_endings(s)
+        for row in s["collection"].values():
+            row["count"] = 0
+        before = deepcopy(s)
+        out = rules.apply(s, "seat_a", "summon_goods", {"code": "buttonjar"})
+        self.assertEqual(out["coins"], 101)
+        self.assertEqual(out["inventory"][-1]["code"], "buttonjar")
+        self.assertEqual(out["item_counter"], s["item_counter"] + 1)
+        for key in ("day", "shift_index", "shift_count", "customer_count", "customer_book"):
+            self.assertEqual(out[key], s[key])
+        self.assertEqual(s, before)
+        self.assertTrue(any(a["action_id"] == "summon_goods" for a in rules._legal_actions(out)))
+
+    def test_summon_goods_rejects_without_payment_and_preserves_repair_progress(self):
+        s = self.state
+        s["coins"] = 200
+        with self.assertRaises(rules.IllegalAction):
+            rules.apply(s, "seat_a", "summon_goods", {"code": "buttonjar"})
+        self.fill(secrets=True)
+        rules._check_endings(s)
+        for row in s["collection"].values():
+            row["count"] = 0
+        out = rules.apply(s, "seat_a", "summon_goods", {"code": "buttonjar"})
+        self.assertEqual(out["inventory"][-1]["condition"], 3)
+        self.assertTrue(out["inventory"][-1]["pre_repaired"])
+        for bad in ("not_an_item", [], None):
+            with self.assertRaises(rules.IllegalAction):
+                rules.apply(s, "seat_a", "summon_goods", {"code": bad})
+        s["coins"] = 98
+        with self.assertRaises(rules.IllegalAction):
+            rules.apply(s, "seat_a", "summon_goods", {"code": "buttonjar"})
+        self.assertEqual(s["coins"], 98)
+        s["coins"] = 200
+        s["inventory"] = s["inventory"] * rules._capacity(s)
+        with self.assertRaises(rules.IllegalAction):
+            rules.apply(s, "seat_a", "summon_goods", {"code": "buttonjar"})
+        self.assertEqual(s["coins"], 200)
+
+    def test_collection_summon_notice(self):
+        self.assertNotIn("summon_goods", rules.observe(self.state, "seat_a")["public_state"])
+        self.state["endings"] = [{"id": "collection"}]
+        self.assertIn("99", rules.observe(self.state, "seat_a")["public_state"]["summon_goods"])
+
     def test_batch_stops_at_ending_even_with_no_optional_stops(self):
         self.fill()
         self.state["coins"] = 100

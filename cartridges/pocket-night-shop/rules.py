@@ -664,6 +664,10 @@ def _make_item(s, location, salt):
         if roll < weight:
             break
         roll -= weight
+    return _item_from_code(s, code, location)
+
+
+def _item_from_code(s, code, location):
     _, name, story, condition, value, secret = next(row for row in ITEMS if row[0] == code)
     s["item_counter"] += 1
     item = {"id": f"{code}_{s['item_counter']}", "code": code, "name": name,
@@ -708,6 +712,26 @@ def _sand_left(s):
 
 def _buy_sand_open(s):
     return any(e["id"] == "collection" for e in s.get("endings", []))
+
+
+def _summon_goods(s, params):
+    if not _buy_sand_open(s):
+        raise IllegalAction("第七面墙解锁后才能使用货物飞来")
+    code = params.get("code")
+    if not isinstance(code, str) or code not in s["collection"] or code not in ITEM_KINDS:
+        raise IllegalAction("code 请填图鉴里已发现旧物的编号")
+    if len(s["inventory"]) >= _capacity(s):
+        raise IllegalAction("货架满了，请先腾出一格再召货；未扣古币")
+    if s["coins"] < 99:
+        raise IllegalAction("货物飞来每次需要99枚古币；未扣古币")
+    before = (s["coins"], s["reputation"])
+    location = next(key for key, loc in LOCATIONS.items() if code in loc["pool"])
+    item = _item_from_code(s, code, location)
+    s["coins"] -= 99
+    _collect(s, item)
+    _log(s, s["day"], SHIFTS[s["shift_index"]], "summon_goods",
+         f"店主花99枚古币唤了一声货物飞来，「{item['name']}」穿过一道细小的光隙，稳稳落上货架。"
+         + (" 这种旧物已经揭秘，到货即修满。" if item.get("pre_repaired") else ""), before)
 
 
 def _buy_sand(s, params):
@@ -1241,6 +1265,9 @@ def _legal_actions(s):
     if _buy_sand_open(s) and _sand_left(s) > 0:
         actions.append({"action_id": "buy_sand", "params": {
             "amount": f"要买几粒星沙;每粒{SAND_PRICE}枚古币,今天还能买{_sand_left(s)}粒,不占班次"}})
+    if _buy_sand_open(s):
+        actions.append({"action_id": "summon_goods", "params": {
+            "code": "图鉴collection.entries中的code；99枚古币指定召来一件旧物，不占班次，需要货架空位"}})
     if s.get("apple_pending"):
         actions.append({"action_id": "golden_apple", "params": {"choice": _apple_text(s)}})
     if s.get("scroll"):
@@ -1285,6 +1312,8 @@ def observe(full_state, seat_id):
         "last_checkpoint": deepcopy(s["last_checkpoint"]),
         "customer": _public_customer(s), "customer_book": [dict(deepcopy(row), **_waiting_item(s, cid))
                                                           for cid, row in s["customer_book"].items()],
+        **({"summon_goods": "货物飞来已解锁：summon_goods {\"code\":\"图鉴编号\"}，99古币指定召货，不占班次；需要货架空位"}
+           if _buy_sand_open(s) else {}),
         "customer_collection": {"found": len(s["customer_book"]), "total": len(CUSTOMERS),
                                 "visit_limit": MAX_CUSTOMER_VISITS,
                                 "retired": sum(row["visits"] >= MAX_CUSTOMER_VISITS
@@ -1510,6 +1539,8 @@ def apply(full_state, seat_id, action_id, params):
         _teleport(s)
     elif action_id == "buy_sand":
         _buy_sand(s, params)
+    elif action_id == "summon_goods":
+        _summon_goods(s, params)
     elif action_id == "golden_apple":
         _golden_apple(s, params)
     elif action_id == "sand_repair":

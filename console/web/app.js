@@ -483,7 +483,7 @@ function nightJournalEntry(entry) {
     dismiss:"送客",recycle:"回收零件",curate:"布置橱窗",upgrade:"扩建铺子",
     choose_event:"处理街巷事件",unlock_location:"开辟淘货路线",merge:"拆件修理",sand_repair:"星沙修满",
     teleport:"使用传送卷轴",witch_sell:"卖给魔女",witch_buy:"向魔女买货",buy_slot:"声望换货架",
-    start_funds:"掷启动资金",call_human:"人类注资救店",ending:"故事过场"}[entry.focus] || entry.focus;
+    start_funds:"掷启动资金",call_human:"人类注资救店",summon_goods:"货物飞来",ending:"故事过场"}[entry.focus] || entry.focus;
   const customer = (c, label) => c ? `<p><strong>${label} · ${esc(c.name)}</strong>
     （第${esc(c.visits)}次来店）<br>想找：${esc(c.request ?? "（没开口，只能看线索猜）")}<br>
     <span class="dim">可观察到：${esc(c.clue)}</span></p>` : "";
@@ -657,6 +657,7 @@ const CART_UI = {
           <div class="dim">可选：${ps.pending_event.choices.map(c => esc(c.label) + (c.available ? "" : "（暂不可选）")).join(" / ")}</div>
           <div class="dim">由 AI 决定，观看者无需操作。</div></div>` : ""}
         ${rollFunds}${rescue}${customer}
+        ${ps.summon_goods ? `<div class="night-customer"><strong>✨ 货物飞来</strong><p>${esc(ps.summon_goods)}</p></div>` : ""}
         ${ps.scroll ? `<div class="night-customer"><strong>限时传送卷轴</strong><p>${esc(ps.scroll)}</p><div class="dim">由店主自行决定是否使用，观看者无需操作。</div></div>` : ""}
         ${ps.witch ? `<details class="night-history" data-panel="witch"><summary>魔女莉莉丝的摊位 · 本次还能卖${ps.witch.can_sell}件</summary>
           <p>${esc(ps.witch.hint)}</p>${(ps.witch.stock || []).map(item => `<div class="night-log"><strong>${esc(item.name)}</strong>
