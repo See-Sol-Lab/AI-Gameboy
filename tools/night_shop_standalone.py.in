@@ -237,7 +237,8 @@ def _customer_text(c):
         return "客人:眼下没有客人"
     text = f"客人:{c['name']}(第{c['visits']}次来,报价还能错{c['patience']}次{',特殊客人' if c.get('special') else ''})"
     text += f"——{c['request']}" if c.get("request") else "——没直说要什么"
-    text += f" 线索:{c['clue']}"
+    if c.get("clue"):
+        text += f" 线索:{c['clue']}"
     if c.get("waiting_item"):
         text += f"\n  🔑 等待的旧物:{c['waiting_item']['name']}；修满后交付可完成这位客人的故事。"
     if c.get("hint"):

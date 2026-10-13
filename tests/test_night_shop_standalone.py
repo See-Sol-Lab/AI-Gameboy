@@ -52,6 +52,8 @@ class TestNightStandalone(unittest.TestCase):
         text = self.shop._customer_text(customer)
         self.assertIn("等待的旧物:测试旧物", text)
         self.assertIn("修满后交付", text)
+        customer.pop("clue")
+        self.assertNotIn("线索:", self.shop._customer_text(customer))
 
     def test_rounds_lock_after_limit_and_only_real_time_unlocks(self):
         self.shop.CALL_LIMIT = self.limit

@@ -67,7 +67,44 @@ class TestNightExpansion(unittest.TestCase):
         for customer in rules.CUSTOMERS:
             self.assertTrue(set(customer[4]) <= set(rules.ITEM_KINDS.values()))
 
-    def test_event_frequency_falls_as_shop_grows(self):
+    def test_ordinary_clues_match_paired_items_and_unpaired_have_none(self):
+        ordinary = [c for c in rules.CUSTOMERS if c[0] not in rules.SPECIAL_CUSTOMERS]
+        self.assertEqual(sum(c[0] in rules.BOND_LINES for c in ordinary), 48)
+        self.assertEqual(sum(c[3] is None for c in ordinary), 14)
+        for cid, name, request, clue, wants, budget in ordinary:
+            self.assertEqual(bool(clue), cid in rules.BOND_LINES, name)
+            if cid in rules.BOND_LINES:
+                self.assertIn(rules.ITEM_KINDS[rules.BOND_LINES[cid][0]], wants)
+        self.assertIn("皮鞋", next(c[3] for c in ordinary if c[0] == "roadkeeper"))
+        self.assertNotIn("钥匙", next(c[3] for c in ordinary if c[0] == "roadkeeper"))
+        self.assertIn("玻璃罐", next(c[3] for c in ordinary if c[0] == "father"))
+        draft = (ROOT / "docs/night-shop-customer-lines-draft.md").read_text("utf-8")
+        table = draft.split("## 二、")[1].split("## 三、")[0]
+        pairs = {cells[0]: cells[2] for line in table.splitlines() if line.startswith("| ")
+                 for cells in [[cell.strip() for cell in line.split("|")[1:-1]]] if len(cells) == 5 and cells[0] != "客人"}
+        self.assertEqual(len(pairs), 48)
+        for cid, name, *_ in ordinary:
+            if cid in rules.BOND_LINES:
+                item_name = next(i[1] for i in rules.ITEMS if i[0] == rules.BOND_LINES[cid][0])
+                self.assertEqual(pairs[name], item_name, name)
+
+    def test_old_saved_customer_clues_use_current_text_without_mutating_save(self):
+        s = rules.new_game(["seat_a"], 42)
+        s["shift_index"] = rules.OPEN_SHIFT
+        s["customer"] = {"id": "roadkeeper", "name": "旅店主", "clue": "旧钥匙提示"}
+        s["customer_book"]["roadkeeper"] = {"id": "roadkeeper", "name": "旅店主", "clue": "旧钥匙提示", "visits": 1}
+        s["customer_book"]["cook"] = {"id": "cook", "name": "厨师", "clue": "应删除的旧线索", "visits": 1}
+        before = deepcopy(s)
+        view = rules.observe(s, "seat_a")["public_state"]
+        self.assertIn("皮鞋", view["customer"]["clue"])
+        self.assertIn("皮鞋", next(c for c in view["customer_book"] if c["id"] == "roadkeeper")["clue"])
+        self.assertNotIn("clue", next(c for c in view["customer_book"] if c["id"] == "cook"))
+        s["customer"] = {"id": "cook", "name": "厨师", "clue": "应删除的旧线索"}
+        self.assertNotIn("clue", rules._public_customer(s))
+        s["customer"] = before["customer"]
+        self.assertEqual(s, before)
+
+    def test_event_frequency_falls_as_shop_grows_all_levels(self):
         for level, interval in ((1, 4), (2, 6), (3, 8), (5, 8)):
             count = 0
             for n in range(96):
