@@ -38,6 +38,13 @@ class TestNightStandalone(unittest.TestCase):
         out.pop("round", None)
         return out
 
+    def test_departed_customer_is_explicit_in_daily_brief(self):
+        public = {"inventory": [], "capacity": 8, "customer": None}
+        view = {"public_state": public, "legal_actions": []}
+        brief = self.shop._brief(view, [], before={"shelf": {}, "customer": {"name": "旧客人"}})
+        self.assertIn("customer", brief["public_state"])
+        self.assertIsNone(brief["public_state"]["customer"])
+
     def test_every_rules_action_is_a_known_command(self):
         self.call("observe")
         src = (ROOT / "cartridges/pocket-night-shop/rules.py").read_text("utf-8")
@@ -139,6 +146,33 @@ class TestNightStandalone(unittest.TestCase):
         self.assertNotIn("collection", result["public_state"])
         self.assertTrue(result["public_state"]["new_log"])
         self.assertLess(len(json.dumps(result, ensure_ascii=False)), 6000)
+
+    def test_postgame_skills_match_cartridge_and_survive_reload(self):
+        canonical = load(ROOT / "cartridges/pocket-night-shop/rules.py", "postgame_canonical")
+        state = canonical.new_game(["seat_a"], 17)
+        state.update(start_funds_pending=False, coins=300, reputation=100, stardust=50, shop_level=5)
+        for code, _, _, _, _, secret in canonical.ITEMS:
+            origin = next(key for key, loc in canonical.LOCATIONS.items() if code in loc["pool"])
+            canonical._collect(state, canonical._item_from_code(state, code, origin))
+            state["collection"][code]["revealed"] = secret
+        state["inventory"] = []
+        canonical._check_endings(state)
+        self.call('new_game {"seed":17}')
+        with closing(sqlite3.connect(self.shop.SAVE_PATH)) as conn, conn:
+            conn.execute("UPDATE shop SET state=?", (json.dumps(state),))
+        for action, params in (("summon_goods", {"code": "buttonjar"}),
+                               ("exchange_resources", {"resource": "stardust", "amount": 25}),
+                               ("exchange_resources", {"resource": "reputation", "amount": 10}),
+                               ("close_for_now", {}), ("reopen_shop", {})):
+            state = canonical.apply(state, "seat_a", action, params)
+            self.assertEqual(self.call(action + " " + json.dumps(params))["result"], "ok")
+            expected = canonical.observe(state, "seat_a")["public_state"]
+            for key in self.shop.BLIND_HIDDEN:
+                expected.pop(key, None)
+            self.assertEqual(self.call("detail")["public_state"], expected)
+        reloaded = load(self.path, "postgame_reloaded")
+        self.assertIn("夜铺之外", reloaded.cmd("endings"))
+        self.assertIn("通关兑换", reloaded.cmd("observe"))
 
     def test_routine_replies_skip_unchanged_shelf_and_fold_repeats(self):
         self.call('new_game {"seed":17}')

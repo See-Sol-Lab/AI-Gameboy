@@ -99,8 +99,10 @@ class TestNightExpansion(unittest.TestCase):
         self.assertIn("皮鞋", view["customer"]["clue"])
         self.assertIn("皮鞋", next(c for c in view["customer_book"] if c["id"] == "roadkeeper")["clue"])
         self.assertNotIn("clue", next(c for c in view["customer_book"] if c["id"] == "cook"))
+        self.assertTrue(next(c for c in view["customer_book"] if c["id"] == "cook")["request"])
         s["customer"] = {"id": "cook", "name": "厨师", "clue": "应删除的旧线索"}
         self.assertNotIn("clue", rules._public_customer(s))
+        self.assertTrue(rules._public_customer(s)["request"])
         s["customer"] = before["customer"]
         self.assertEqual(s, before)
 
@@ -916,7 +918,10 @@ class TestNightExpansion(unittest.TestCase):
             if c["id"] in met:
                 self.assertIsNotNone(c["request"])          # 老街坊到哪都直说
             elif c["id"] not in rules.SPECIAL_CUSTOMERS:
-                seen.setdefault(c["id"], []).append(c["request"])
+                if c["id"] in rules.BOND_LINES:
+                    seen.setdefault(c["id"], []).append(c["request"])
+                else:
+                    self.assertIsNotNone(c["request"])   # 没有物品线索的来客直接报类别
         stranger = next(v for v in seen.values() if len(v) >= 6)
         self.assertTrue(all(r is None for r in stranger[:4]) and all(stranger[4:]))
         self.assertFalse(s["customer_book"][next(k for k, v in seen.items() if len(v) >= 6)]["neighbor"])

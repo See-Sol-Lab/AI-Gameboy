@@ -35,13 +35,12 @@ class TestEndings(unittest.TestCase):
         self.assertFalse(rules._check_endings(self.state))
         self.assertEqual(len(self.state["endings"]), 1)
 
-    def test_true_ending_requires_every_secret_and_guest_not_inventory(self):
-        self.fill(secrets=True, guests=True)
-        missing = self.state["customer_book"].pop(rules.CUSTOMERS[-1][0])
+    def test_true_ending_requires_every_secret_not_guests_or_inventory(self):
+        self.fill(secrets=True)
+        self.state["customer_book"] = {}
+        self.state["collection"][rules.ITEMS[0][0]]["revealed"] = None
         rules._check_endings(self.state)
         self.assertEqual(len(self.state["endings"]), 1)
-        self.state["customer_book"][rules.CUSTOMERS[-1][0]] = missing
-        self.state["collection"][rules.ITEMS[0][0]]["revealed"] = None
         self.assertFalse(rules._check_endings(self.state))
         self.state["collection"][rules.ITEMS[0][0]]["revealed"] = "repaired"
         self.state["inventory"] = []
@@ -51,7 +50,8 @@ class TestEndings(unittest.TestCase):
         self.assertFalse(rules._check_endings(self.state))
 
     def test_old_save_catches_up_on_reopen_and_persists(self):
-        self.fill(secrets=True, guests=True)
+        self.fill(secrets=True)
+        self.state["customer_book"] = {}
         self.state.pop("endings")
         self.state["resting"] = True
         restored = rules.apply(self.state, "seat_a", "reopen_shop", {})

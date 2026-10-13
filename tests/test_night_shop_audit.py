@@ -1,6 +1,7 @@
 """Regression fixtures for the updated night-shop rules; never uses player saves."""
 import importlib.util
 import json
+import random
 from copy import deepcopy
 from pathlib import Path
 import tempfile
@@ -73,6 +74,40 @@ class TestNightAudit(unittest.TestCase):
             with self.subTest(action=action), self.assertRaises(rules.IllegalAction):
                 rules.apply(s, "seat_a", action, params)
             self.assertEqual(s, before)
+
+    def test_seeded_long_runs_preserve_resources_inventory_and_guest_limits(self):
+        for seed in range(8):
+            s = rules.new_game(["seat_a"], seed)
+            s = rules.apply(s, "seat_a", "roll_start_funds", {"human_words": "synthetic launch"})
+            chooser = random.Random(seed)
+            for _ in range(120):
+                if s["phase"] == "finished":
+                    break
+                if s["pending_event"]:
+                    choice = next(k for k, v in rules.EVENTS[s["pending_event"]["kind"]]["choices"].items() if v["cost"] == 0)
+                    action, params = "choose_event", {"event_id": s["pending_event"]["id"], "choice": choice}
+                else:
+                    focus = chooser.choice(["scavenge", "tidy", "recycle", "repair", "dismiss"])
+                    if focus in ("recycle", "repair") and not s["inventory"] or focus == "dismiss" and not rules._public_customer(s):
+                        focus = "tidy"
+                    params = {"focus": focus}
+                    if focus in ("recycle", "repair"):
+                        params["item_id"] = chooser.choice(s["inventory"])["id"]
+                    action = "work_shift"
+                before = deepcopy(s)
+                try:
+                    new = rules.apply(s, "seat_a", action, params)
+                except rules.IllegalAction:
+                    new = rules.apply(s, "seat_a", "work_shift", {"focus": "tidy"})
+                self.assertEqual(s, before)
+                s = new
+                self.assertGreaterEqual(s["coins"], 0)
+                self.assertGreaterEqual(s["reputation"], 0)
+                self.assertGreaterEqual(s.get("stardust", 0), 0)
+                self.assertLessEqual(len(s["inventory"]), rules._capacity(s))
+                self.assertEqual(len({i["id"] for i in s["inventory"]}), len(s["inventory"]))
+                self.assertTrue(all(row["visits"] <= rules.MAX_CUSTOMER_VISITS for row in s["customer_book"].values()))
+                self.assertEqual([h["seq"] for h in s["history"]], list(range(1, len(s["history"]) + 1)))
 
     def test_bankrupt_shop_waits_for_no_further_player_action(self):
         s = self.state()

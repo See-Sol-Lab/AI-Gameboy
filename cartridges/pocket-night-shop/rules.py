@@ -734,6 +734,23 @@ def _summon_goods(s, params):
          + (" 这种旧物已经揭秘，到货即修满。" if item.get("pre_repaired") else ""), before)
 
 
+def _exchange_resources(s, params):
+    if not any(e["id"] == "true_ending" for e in s.get("endings", [])):
+        raise IllegalAction("夜铺之外解锁后才能兑换星沙和声望")
+    resource, amount = params.get("resource"), params.get("amount")
+    rates = {"stardust": ("星沙", 2), "reputation": ("声望", 1)}
+    if not isinstance(resource, str) or resource not in rates or type(amount) is not int or amount < 1:
+        raise IllegalAction("resource 填 stardust 或 reputation，amount 填正整数")
+    label, rate = rates[resource]
+    if amount > s.get(resource, 0):
+        raise IllegalAction(f"{label}不足，未兑换")
+    before = (s["coins"], s["reputation"])
+    s[resource] -= amount
+    s["coins"] += amount * rate
+    _log(s, s["day"], SHIFTS[s["shift_index"]], "exchange_resources",
+         f"把{amount}{'粒' if resource == 'stardust' else '点'}{label}换成{amount * rate}枚古币，不占班次。", before)
+
+
 def _buy_sand(s, params):
     if not _buy_sand_open(s):
         raise IllegalAction("收齐全部旧物图鉴(第七面墙)以后,才能用古币换星沙")
@@ -979,7 +996,7 @@ COLLECTION_SCENE = [
 ]
 TRUE_ENDING_SCENE = [
     "门铃响了。魔女莉莉丝站在门口，手里没有货。",
-    "她走过你的柜台，指尖轻轻拂过异物志。那些曾经修好的东西，有些早已被客人带走；可这一晚，你听见它们的声音从很远的地方回来。每一位来客，都在顾客簿上留下了自己的名字。",
+    "她走过你的柜台，指尖轻轻拂过异物志。那些曾经修好的东西，有些早已被客人带走；可这一晚，你听见它们的声音从很远的地方回来。顾客簿上的名字，在灯下泛起温暖的光。",
     "『我第一次来时，这里还是一间小铺子。』她看着你，笑了一下。『现在，迷路的东西知道该往哪里去了。』",
     "她推开货架尽头那扇门。门后没有墙。一条幽蓝的隧道伸向深处，远处亮着许多窗。有一扇窗后，似乎也有人正在整理柜台。",
     "莉莉丝把钥匙留在你手里。『恭喜，店主。你可以过去看看。』她替你扶住门，又回头看了一眼还亮着灯的铺子。『也可以先把今晚的生意做完。』",
@@ -1063,11 +1080,10 @@ def _check_endings(s):
     codes = [row[0] for row in ITEMS]       # ITEMS 是元组列表,按编号比
     discovered = all(code in s["collection"] for code in codes)
     revealed = discovered and all(s["collection"][code]["revealed"] for code in codes)
-    guests = all(customer[0] in s["customer_book"] for customer in CUSTOMERS)
     unlocked = False
     for key, ready, title, reward, pages in (
         ("collection", discovered, "第七面墙", "没有背面的店主铭牌", COLLECTION_SCENE),
-        ("true_ending", revealed and guests, "夜铺之外", "通往亚空间的钥匙", TRUE_ENDING_SCENE),
+        ("true_ending", revealed, "夜铺之外", "通往亚空间的钥匙", TRUE_ENDING_SCENE),
         ("grand_slam", None, "万灯送行", GRAND_SLAM_REWARD, GRAND_SLAM_SCENE),
     ):
         if key == "grand_slam":   # 前两座奖杯都到手(可能就在这一步),七十二句话都说出口
@@ -1127,6 +1143,10 @@ REGULAR_VISITS = 5
 
 
 def _spawn_customer(s):
+    if s["shift_index"] == LAST_SHIFT:
+        # 深夜行动之后已经没有可接待的班次，下一位等跨日后再入店、计到访。
+        s["customer"] = None
+        return
     pool = [c for c in CUSTOMERS
             if s["customer_book"].get(c[0], {}).get("visits", 0) < MAX_CUSTOMER_VISITS
             and not s["customer_book"].get(c[0], {}).get("farewell")
@@ -1145,7 +1165,7 @@ def _spawn_customer(s):
               "visits": 0, "deals": 0, "trust": 0,
               "neighbor": set(s["unlocked_locations"]) <= NEIGHBOR_LOCATIONS})
     row["visits"] += 1
-    if (row.get("neighbor", True) or cid in SPECIAL_CUSTOMERS
+    if (clue is None or row.get("neighbor", True) or cid in SPECIAL_CUSTOMERS
             or row["visits"] >= REGULAR_VISITS):
         row["request"] = request
     request = row["request"]
@@ -1166,9 +1186,9 @@ def _public_item(item):
     return view
 
 
-CUSTOMER_HINT = ("新手提示:客人只认旧物的「类别」(每件旧物都标着,比如陪伴、照明),不看名字和故事像不像。"
-                 "从客人说的要求猜他要哪一两类;远方来的生客不直说要什么,只能从线索猜,来过四次成了熟客才会直说;"
-                 "本局开头就来过的老街坊一直直说。类别对上才会买;手上没有对的类别,就送客(dismiss,不另收费),等下一位客人。")
+CUSTOMER_HINT = ("经营提示:普通客人按旧物类别购买；线索暗示的是能触发个人故事的那一件，修满后交付有额外回馈。"
+                 "无对应旧物的客人直接说明收货类别；有线索的远方生客第五次起直说类别，老街坊一直直说。"
+                 "特殊客人只收点名的那一件。库存缺合适的货可主动淘货；送客会消耗一次有限到访机会。")
 
 
 def _is_open(s):
@@ -1185,11 +1205,13 @@ def _waiting_item(s, cid):
 
 def _customer_view(row, cid):
     view = {key: deepcopy(value) for key, value in row.items() if not key.startswith("_")}
-    clue = next(c[3] for c in CUSTOMERS if c[0] == cid)
+    template = next(c for c in CUSTOMERS if c[0] == cid)
+    clue = template[3]
     if clue:
         view["clue"] = clue
     else:
         view.pop("clue", None)
+        view["request"] = template[2]
     return view
 
 
@@ -1278,6 +1300,9 @@ def _legal_actions(s):
     if _buy_sand_open(s):
         actions.append({"action_id": "summon_goods", "params": {
             "code": "图鉴collection.entries中的code；99枚古币指定召来一件旧物，不占班次，需要货架空位"}})
+    if any(e["id"] == "true_ending" for e in s.get("endings", [])):
+        actions.append({"action_id": "exchange_resources", "params": {
+            "resource": ["stardust", "reputation"], "amount": "正整数；每粒星沙换2古币，每点声望换1古币，不占班次"}})
     if s.get("apple_pending"):
         actions.append({"action_id": "golden_apple", "params": {"choice": _apple_text(s)}})
     if s.get("scroll"):
@@ -1324,6 +1349,8 @@ def observe(full_state, seat_id):
                                                           for cid, row in s["customer_book"].items()],
         **({"summon_goods": "货物飞来已解锁：summon_goods {\"code\":\"图鉴编号\"}，99古币指定召货，不占班次；需要货架空位"}
            if _buy_sand_open(s) else {}),
+        **({"exchange_resources": "通关兑换：exchange_resources {\"resource\":\"stardust或reputation\",\"amount\":数量}；1星沙换2古币，1声望换1古币，不占班次"}
+           if any(e["id"] == "true_ending" for e in s.get("endings", [])) else {}),
         "customer_collection": {"found": len(s["customer_book"]), "total": len(CUSTOMERS),
                                 "visit_limit": MAX_CUSTOMER_VISITS,
                                 "retired": sum(row["visits"] >= MAX_CUSTOMER_VISITS
@@ -1551,6 +1578,8 @@ def apply(full_state, seat_id, action_id, params):
         _buy_sand(s, params)
     elif action_id == "summon_goods":
         _summon_goods(s, params)
+    elif action_id == "exchange_resources":
+        _exchange_resources(s, params)
     elif action_id == "golden_apple":
         _golden_apple(s, params)
     elif action_id == "sand_repair":
@@ -1711,6 +1740,8 @@ def _work_shift(s, params):
             _spawn_customer(s)
         elif c and c.setdefault("_arrived_day", s["day"] - 1) + CUSTOMER_WAIT_DAYS <= s["day"]:
             report += f" {c['name']}等了三天,没等到合适的东西,走了。"
+            _spawn_customer(s)
+        elif c is None:
             _spawn_customer(s)
         report += " " + _day_summary(s, day)
         if dream:   # 梦单独起一行放在最后,别埋在打烊流水里
@@ -1921,7 +1952,9 @@ def _do_focus(s, params, flags):
     if focus == "dismiss":
         name = s["customer"]["name"]
         _spawn_customer(s)
-        return f"向{name}说明暂时无货,记下需求送客。" + ("另一位客人进门。" if s["customer"] else "眼下没有新的来客，店铺仍可经营。")
+        return f"向{name}说明暂时无货,记下需求送客。" + (
+            "深夜将尽，下一位客人待打烊后再安排。" if s["shift_index"] == LAST_SHIFT else
+            "另一位客人进门。" if s["customer"] else "眼下没有新的来客，店铺仍可经营。")
     if focus == "curate":
         item["displayed"] = True
         s["reputation"] += 1

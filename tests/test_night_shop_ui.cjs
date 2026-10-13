@@ -266,13 +266,13 @@ test("updated spectator screen shows five shifts, sand, scroll, witch and closed
   const html = p.run(`CART_UI["pocket-night-shop"].felt({seats:[{seat_id:"seat_a",display_name:"店主"}],
     public_state:{day:20,shift:"下午",shift_number:2,shifts_per_day:5,coins:30,stardust:22,reputation:10,
       shop_level:3,capacity:12,current_goal:"补货",journal_total:0,inventory:[],
-      door:"下午还没开门，客人傍晚才来",scroll:"第20天打烊前使用",summon_goods:"货物飞来：99古币指定召货",customer:null,
+      door:"下午还没开门，客人傍晚才来",scroll:"第20天打烊前使用",summon_goods:"货物飞来：99古币指定召货",exchange_resources:"1星沙换2古币，1声望换1古币",customer:null,
       last_run:{completed:1,requested:6,stop_reason:"scroll",stop_text:"拿到卷轴"},
       witch:{can_sell:2,hint:"上古八折",stock:[{name:"<旧物>",rarity:"ancient",condition:0,price:12}]},
       locations:[{id:"lane",name:"旧货巷",description:"故事已讲完",cost:2,undiscovered:0,closed:true,unlocked:true}],
       collection:{found:10,total:72,revealed:5,entries:[]},encounters:{found:2,total:24,entries:[]}}})`);
   for (const text of ["第2/5班", "星沙", "22", "下午还没开门", "限时传送卷轴", "魔女莉莉丝的摊位",
-                      "上古八折", "&lt;旧物&gt;", "已关闭", "下午半价", "拿到限时卷轴", "99古币指定召货"]) assert.ok(html.includes(text), text);
+                      "上古八折", "&lt;旧物&gt;", "已关闭", "下午半价", "拿到限时卷轴", "99古币指定召货", "1星沙换2古币"]) assert.ok(html.includes(text), text);
   assert.ok(!html.includes("<旧物>"));
   assert.ok(!html.includes("眼下没有可接待的新来客"));
   assert.ok(!html.includes("data-act=\"teleport\""));
