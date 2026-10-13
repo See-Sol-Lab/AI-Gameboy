@@ -450,7 +450,6 @@ function pcGuide(v) {
   const ps = v.public_state;
   const names = (v.waiting_for || []).filter((x) => x !== "narrator").map((x) => nameOf(v, x));
   const NARR = { gen_world: "写世界", gen_episode: "写这一段故事", gen_identities: "写身份卡",
-                 check_old_stories: "核对本幕旧事推断",
                  gen_milestones: "拆里程碑", gen_scene: "写下一幕", render_ending: "写结局" };
   let tip;
   if (ps.narration_pending) tip = `请按「召荷官」——荷官要${NARR[ps.narration_pending] || "动笔"}了`;
@@ -723,7 +722,6 @@ const CART_UI = {
       const t = ps.tracks || {};
       const [a, b] = v.seats;
       const NARR_NAMES = { gen_world: "正在织一个新世界", gen_identities: "正在写身份卡",
-                           check_old_stories: "正在核对旧事推断",
                            gen_scene: "正在写下一幕", render_ending: "正在写结局" };
       const axesChips = ps.axes ? Object.values(ps.axes)
         .map((x) => `<span class="chip prop">${esc(x)}</span>`).join("") : "";
@@ -781,7 +779,7 @@ const CART_UI = {
           ${esc(nameOf(v, b.seat_id))} ${hearts(t.vitality?.[b.seat_id] ?? 3)}</div>
         <div class="dim center">${identLine(a.seat_id)} · ${identLine(b.seat_id)}</div>
         ${ps.events && ps.events.done ? `<div class="dim center">随机事件 ${ps.events.done} 次 · 化解 ${ps.events.won} 次</div>` : ""}
-        ${sceneHtml}${hooks}${oldStoryPanel(ps, v)}${endProposed}${lastLog}${endingHtml}`;
+        ${sceneHtml}${hooks}${endProposed}${lastLog}${endingHtml}`;
     },
     myPanel(v, mine) {
       if (v.status !== "playing" || !mine) return "";
@@ -818,11 +816,6 @@ const CART_UI = {
         `<div class="mem-line">📜 ${esc(p)}</div>`).join("");
       const npcOpt = la.params && la.params.target ? `
         <label class="dim"><input type="checkbox" id="pc-npc"> ${esc(la.params.target)}</label>` : "";
-      const storyOptions = (mine.private_state.old_story_choices || []).filter((q) => q.status === "open"
-        && (q.owner === S.human.seatId || q.owner === "npc") && v.public_state.scene_index <= 8);
-      const storyOpt = storyOptions.length ? `<select id="pc-story" aria-label="追查旧事">
-        <option value="">推进主线或普通行动</option>${storyOptions.map((q) =>
-          `<option value="${esc(q.id)}">追查：${esc(q.question)}（选${esc(pcIntentName(q.intent))}）</option>`).join("")}</select>` : "";
       return `<div class="my-panel">
         <div class="dim center">🤫 你的私密目标:${esc(mine.private_state.secret_drive || "")}</div>
         ${prophecies ? `<div class="report">${prophecies}
@@ -833,7 +826,7 @@ const CART_UI = {
             placeholder="必填:这一步你具体怎么做(自由描述)">
           <select id="pc-item"><option value="">不动用物品</option>${itemOpts}</select>
           <input id="pc-line" maxlength="60" placeholder="桌边留言(可空)">
-          ${npcOpt}${storyOpt}
+          ${npcOpt}
           <button class="soft focusable" data-act="pc-submit"
             ${S.pc.intent ? "" : "disabled"}>确认暗投</button>
         </div>
@@ -923,22 +916,8 @@ ${hint}`, "{}");
   },
 };
 
-// 《口袋跑团》是《口袋穿越》分家出的经典骨架卡:对外状态与动作协议同构,直接共用界面
-CART_UI["pocket-tabletop"] = CART_UI["pocket-crossing"];
+// 跑团2.0使用卡带内的独立ui.js，避免与穿越的阶段和时钟混用。
 
-function oldStoryPanel(ps, v) {
-  if (!ps.old_stories) return "";
-  const group = (owner) => {
-    const stories = ps.old_stories.filter((q) => q.owner === owner);
-    const label = owner === "npc" ? "NPC旧事" : `${nameOf(v, owner)}的旧事`;
-    return `<details><summary>${esc(label)} ${stories.filter((q) => q.status === "resolved").length}/2</summary>
-      ${stories.map((q) => `<p>${q.status === "resolved" ? "✓" : "◇"} ${esc(q.question)}
-        ${q.status === "resolved" ? `<br>${esc(q.truth)}` : "（尚未揭示）"}</p>`).join("")}</details>`;
-  };
-  return `<div class="info-panel"><div>旧事收集 ${ps.old_stories.filter((q) => q.status === "resolved").length}/6</div>
-    ${["npc", ...v.seats.map((s) => s.seat_id)].map(group).join("")}
-    <p class="dim">${ps.scene_index <= 8 ? "前八幕：选择旧事及对应意图，成功后揭示答案。" : "NPC已离场；在行动中写出有依据的身份旧事推断，召荷官核对。"}</p></div>`;
-}
 
 /* ---------------- 纪念卡 ---------------- */
 
@@ -1074,8 +1053,6 @@ async function pcSubmit() {
   const line = (document.getElementById("pc-line")?.value || "").trim();
   if (line) params.line = line;
   if (document.getElementById("pc-npc")?.checked) params.target = "npc";
-  const storyId = document.getElementById("pc-story")?.value;
-  if (storyId) params.old_story_id = storyId;
   const r = await humanAct("commit", params, line);
   if (r && r.result === "ok") S.pc = { intent: null };
 }

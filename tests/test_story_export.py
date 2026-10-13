@@ -81,8 +81,8 @@ class TestStoryExport(unittest.TestCase):
         self.assertNotIn("巡检在门下等候", text)
         self.assertIn("检查桥索", text)
 
-    def test_both_rules_save_public_scene_prose_and_responses(self):
-        for cid in exporter.ADVENTURES:
+    def test_crossing_saves_public_scene_prose_and_responses(self):
+        for cid in ("pocket-crossing",):
             spec = importlib.util.spec_from_file_location(cid.replace("-", "_"), ROOT / "cartridges" / cid / "rules.py")
             rules = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(rules)
@@ -93,6 +93,23 @@ class TestStoryExport(unittest.TestCase):
             self.assertEqual(entry["story_text"], "雨停了。")
             self.assertEqual(entry["story_responses"], ["桥可以通行。"])
             self.assertNotIn("PRIVATE", json.dumps(entry))
+
+    def test_tabletop_actual_rounds_export_canonical_changes_and_ending(self):
+        from test_pocket_tabletop import setup, round_, feed, advance
+        state = feed(round_(setup(), advance("m1")), change_text="海堤修复后，旅人为居民搭起避雨棚。")
+        state["scene_index"] = 10
+        state = feed(round_(state, {"intent": "support", "target_id": "free", "action": "我帮助居民加固避雨棚，安置工具。"}))
+        text, warnings = exporter.render("pocket-tabletop", state, "md")
+        self.assertEqual(warnings, [])
+        self.assertIn(state["history"][0]["story_text"], text)
+        self.assertIn("阶段1已完成。", text)
+        self.assertIn("旅人为居民搭起避雨棚", text)
+        self.assertIn(state["ending"]["text"], text)
+        for identity in state["identity_pool"]:
+            if identity["id"] in state["identities"].values():
+                self.assertIn(identity["name"], text)
+        self.assertNotIn("骰", text)
+        self.assertNotIn("target_id", text)
 
     def test_real_rule_ending_exports_saved_prose(self):
         from test_pocket_crossing import setup_playing, feed, rules

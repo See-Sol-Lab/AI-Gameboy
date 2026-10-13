@@ -368,21 +368,16 @@ def apply_system(full_state, action_id, payload):
     if kind == "gen_world":
         data = dict(data)
         data["power_level"] = s["axes"]["power"]   # 常量由引擎注入,不劳荷官复读
-        data.pop("public_goal", None)    # 测试固定样本兼供经典跑团,穿越卡不留旧合同
-        data.pop("milestones", None)
         # 三层拆分:世界层只留大世界。本局那一段等降落点选定后另开合同生成,
-        # 同一颗世界种子因此能掉进完全不同的角落(C期设计稿 §1/§4)。
-        landings = deepcopy(data.pop("landings", []) or [])
+        # 同一颗世界种子可以落在不同的角落。
+        landings = deepcopy(data.pop("landings"))
         s["world"] = data
         s["landings"] = landings
         s["landing"] = None
         s["landing_votes"] = {}
-        if landings:
-            s["narration_request"] = None
-            s["stage"] = "landing"
-            return s
-        # 旧形态世界卡(本局字段直接写在世界层)自己兼作本局层,老样本零改造
-        kind = "gen_episode"
+        s["narration_request"] = None
+        s["stage"] = "landing"
+        return s
     if kind == "gen_episode":
         data = dict(data)
         s["episode"] = data
@@ -481,8 +476,8 @@ def _law_gloss(law):
 
 
 def _ep(s):
-    """本局小段。三层拆分后本局字段住在 episode 里;旧形态世界卡自己兼作本局层。"""
-    return s.get("episode") or s.get("world") or {}
+    """本局小段仅来自当前规则的 episode。"""
+    return s["episode"] or {}
 
 
 def _world_brief(s):
@@ -490,7 +485,7 @@ def _world_brief(s):
     ep = _ep(s)
     brief = {"world_name": w["world_name"], "premise": w["premise"],
              "lore": w["lore"], "power_level": w["power_level"],
-             "world_thread": w.get("world_thread", w.get("public_goal", "")),
+             "world_thread": w["world_thread"],
              "goal_menu": deepcopy(ep.get("goal_menu", [])),
              "clock_text": w.get("clock_text"),
              "laws": [_law_gloss(l) for l in w["laws"]]}
@@ -504,7 +499,7 @@ def _world_brief(s):
 
 
 def _active_goal(s, seat_id):
-    for goal in reversed((s.get("player_goals") or {}).get(seat_id, [])):
+    for goal in reversed(s["player_goals"][seat_id]):
         if not goal.get("abandoned"):
             return goal
     return None
@@ -712,7 +707,7 @@ def observe(full_state, seat_id):
     private = {
         "identity_offers": offers,
         "secret_drive": my_drive,
-        "player_goals": deepcopy((s.get("player_goals") or {}).get(seat_id, [])),
+        "player_goals": deepcopy(s["player_goals"][seat_id]),
         "my_pending": deepcopy(s["pending"].get(seat_id)),
         "prophecies": deepcopy(s.get("prophecies", {}).get(seat_id, [])),
     }
@@ -1404,9 +1399,7 @@ def _finish(s, kind, reason):
         ident = _identity(s, s["identities"][seat])
         d = ident["secret_drive"]
         ok = False
-        if d["kind"] == "shared_items>=3":   # 旧菜单,只为旧存档保留
-            ok = len(s["inventory"]["shared"]) >= 3
-        elif d["kind"] == "events_won>=2":
+        if d["kind"] == "events_won>=2":
             ok = (s.get("events") or {}).get("won", 0) >= 2
         elif d["kind"] == "crit>=1":
             ok = (s.get("crits") or {}).get(seat, 0) >= 1
@@ -1429,7 +1422,7 @@ def _finish(s, kind, reason):
     for seat in s["seats"]:
         identity = (_identity(s, s["identities"][seat])["name"]
                     if s["identities"].get(seat) else None)
-        for goal in (s.get("player_goals") or {}).get(seat, []):
+        for goal in s["player_goals"][seat]:
             goal_results.append({
                 "seat": seat, "identity": identity, "text": goal["text"],
                 "achieved": bool(goal.get("goal_locked")),

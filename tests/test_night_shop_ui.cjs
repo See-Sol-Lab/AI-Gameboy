@@ -14,6 +14,7 @@ function page() {
   const source = fs.readFileSync(path.join(__dirname, "../console/web/app.js"), "utf8")
     .replace(/\nroute\(\);\s*$/, "\n");
   vm.runInContext(source, context);
+  vm.runInContext(fs.readFileSync(path.join(__dirname,"../cartridges/pocket-tabletop/ui.js"),"utf8"),context);
   return {
     run(code) { return vm.runInContext(code, context); },
     time(value) { now = value; },
@@ -69,24 +70,16 @@ test("current observer panel exposes no gameplay controls", () => {
   assert.equal(html, "");
 });
 
-test("old story display shows owned progress and hides unrevealed answers", () => {
+test("tabletop 2.0 displays earned evidence and canonical completed stages", () => {
   const p = page();
-  const stories = ["npc", "seat_a", "seat_b"].flatMap((owner) => [1,2].map((n) =>
-    ({id:`${owner}:${n}`,owner,question:`${owner}旧事${n}`,intent:"explore",status:n===1?"resolved":"open",truth:n===1?"已知答案":null})));
-  const html = p.run(`oldStoryPanel({old_stories:${JSON.stringify(stories)},scene_index:9},
-    {seats:[{seat_id:"seat_a",display_name:"甲"},{seat_id:"seat_b",display_name:"乙"}]})`);
-  assert.ok(html.includes("旧事收集 3/6"));
-  assert.ok(html.includes("甲的旧事 1/2"));
-  assert.ok(html.includes("NPC已离场"));
-  assert.ok(html.includes("已知答案"));
-  assert.ok(html.includes("尚未揭示"));
+  const html = p.run(`CART_UI["pocket-tabletop"].felt({seats:[],public_state:{ruleset:2,world:{world_name:"海港"},
+    scene_index:9,tracks:{progress:1,progress_total:3,danger:2},main_complete:false,
+    main_nodes:[{title:"取得钥匙",done:true,effort:2},{title:"修好海堤",done:false,effort:1}],
+    npc:{available:false,location_name:"钟楼"},old_stories:[{owner:"npc",question:"谁留下钥匙",status:"open",clue_count:1,
+    clues:[{source:"照片",text:"照片中出现见证人甲"}],truth:null}],history:[]}})`);
+  for (const label of ["主线完成 1/3","阶段进展1/2","证据1/2","见证人甲","已离场"]) assert.ok(html.includes(label),label);
+  assert.ok(!html.includes("时钟"));
   assert.ok(!html.includes("null"));
-  p.run('S.human={seatId:"seat_a"}');
-  const controls = p.run(`CART_UI["pocket-tabletop"].myPanel({status:"playing",public_state:{old_stories:${JSON.stringify(stories)},scene_index:8}},
-    {private_state:{old_story_choices:${JSON.stringify(stories)}},legal_actions:[{action_id:"commit"}]})`);
-  assert.ok(controls.includes('value="seat_a:2"'));
-  assert.ok(controls.includes('value="npc:2"'));
-  assert.ok(!controls.includes('value="seat_b:2"'));
 });
 
 test("both seats have escaped table bubbles on opposite sides", () => {
@@ -115,7 +108,7 @@ test("human adventure submission sends the message to both the card and public t
 test("adventure item uses and intent labels are Chinese while submitted codes stay intact", () => {
   const p = page();
   p.run('S.human={seatId:"seat_a"}; S.pc.intent="confront"');
-  for (const id of ["pocket-crossing", "pocket-tabletop"]) {
+  for (const id of ["pocket-crossing"]) {
     const html = p.run(`CART_UI[${JSON.stringify(id)}].myPanel({status:"playing",public_state:{inventory:{
       seat_a:[{id:"oar",name:"半刻之桨",use:["confront","recover"]}],
       shared:[{id:"map",name:"地图",use:["advance","explore","support"]}]}}},
@@ -130,6 +123,15 @@ test("adventure item uses and intent labels are Chinese while submitted codes st
     const seat = p.run(`CART_UI[${JSON.stringify(id)}].seatExtra({public_state:{identities:{seat_a:{name:"旅人",specialty:"explore"}}}},"seat_a")`);
     assert.ok(seat.includes("擅探索"));
   }
+});
+
+test("tabletop player chooses a fixed target and sees Chinese item uses", () => {
+  const p = page();
+  p.run('S.human={seatId:"seat_a"}');
+  const html = p.run(`CART_UI["pocket-tabletop"].myPanel({status:"playing",public_state:{ruleset:2,inventory:{seat_a:[{id:"tool",name:"铜剪",use:["confront","recover"]}]}}},
+    {legal_actions:[{action_id:"commit"}],private_state:{targets:[{id:"main:m1",label:"取钥匙",intent:"advance",attribute:"wisdom",target:7}],old_stories:[]}})`);
+  for (const label of ["智慧·目标7","利于对抗／休整",'value="main:m1"','data-act="tt-submit"']) assert.ok(html.includes(label),label);
+  assert.ok(!html.includes("confront/recover"));
 });
 
 test("narrator failure explains retry and restores the summon button", async () => {

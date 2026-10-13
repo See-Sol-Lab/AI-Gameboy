@@ -88,7 +88,7 @@ class GameHost:
             manifest = self._load_manifest(cartridge_id)
             folder = locate(self.cartridges_dir, cartridge_id)
             if manifest.get("version") != version:
-                raise CartridgeVersionMissing(f"{cartridge_id}@{version}:该旧版已退役")
+                raise CartridgeVersionMissing(f"{cartridge_id}@{version}:仅支持当前卡带版本")
             path = folder / "rules.py"
             spec = importlib.util.spec_from_file_location(
                 "cartridge_" + cartridge_id.replace("-", "_")
@@ -209,6 +209,9 @@ class GameHost:
         req = (state or {}).get("narration_request")
         if not req:
             return {"result": "rejected", "reason": "没有待办的荷官请求"}
+        manifest = self._load_manifest(srow["cartridge_id"])
+        if manifest["version"] != srow["cartridge_version"]:
+            return {"result": "rejected", "reason": "卡带版本不匹配，不能召荷官"}
         from . import narrator
         try:
             data = narrator.call(req["kind"], req["context"])
@@ -281,12 +284,12 @@ class GameHost:
                 conn.execute("ROLLBACK")
                 return {"result": "rejected", "reason": "还有席位未完成自我介绍"}
             try:
-                _, rules = self._load_cartridge(srow["cartridge_id"],
+                manifest, rules = self._load_cartridge(srow["cartridge_id"],
                                                 srow["cartridge_version"])
             except CartridgeVersionMissing:
                 conn.execute("ROLLBACK")
                 return {"result": "cartridge_version_missing",
-                        "message": "缺少本局卡带版本,请安装原版本"}
+                        "message": "本局与当前卡带版本不匹配；产品仅提供最新版，请开新局"}
             state = rules.new_game([s["seat_id"] for s in seats], secrets.randbits(32))
             engine = json.loads(srow["engine_state_json"])
             engine["cartridge_state"] = state
@@ -361,7 +364,7 @@ class GameHost:
                                                        srow["cartridge_version"])
             except CartridgeVersionMissing:
                 return {"result": "cartridge_version_missing",
-                        "message": "缺少本局卡带版本,请安装原版本"}
+                        "message": "本局与当前卡带版本不匹配；产品仅提供最新版，请开新局"}
             state = engine.get("cartridge_state")
             if state is not None:
                 ob = rules.observe(state, state["seats"][0])
@@ -449,7 +452,7 @@ class GameHost:
                         **self._observation(srow, seats, seat["seat_id"])}
             except CartridgeVersionMissing:
                 return {"result": "cartridge_version_missing",
-                        "message": "缺少本局卡带版本,请安装原版本"}
+                        "message": "本局与当前卡带版本不匹配；产品仅提供最新版，请开新局"}
         finally:
             conn.close()
 
@@ -472,12 +475,12 @@ class GameHost:
             srow = store.get_session(conn, session_id)
             seats = store.get_seats(conn, session_id)
             try:
-                _, rules = self._load_cartridge(srow["cartridge_id"],
+                manifest, rules = self._load_cartridge(srow["cartridge_id"],
                                                 srow["cartridge_version"])
             except CartridgeVersionMissing:
                 conn.execute("ROLLBACK")
                 return {"result": "cartridge_version_missing",
-                        "message": "缺少本局卡带版本,请安装原版本"}
+                        "message": "本局与当前卡带版本不匹配；产品仅提供最新版，请开新局"}
 
             def rejected(reason):
                 conn.execute("ROLLBACK")

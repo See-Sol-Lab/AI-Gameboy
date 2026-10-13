@@ -798,14 +798,6 @@ def _golden_apple(s, params):
     _log(s, s["day"], SHIFTS[s["shift_index"]], "golden_apple", text, before)
 
 
-def _migrate_apples(s):
-    """旧存档货架上的金苹果挪出来,等店主决定换钱还是收藏。"""
-    apples = [x for x in s["inventory"] if x.get("code") == "golden_apple"]
-    if apples:
-        s["inventory"] = [x for x in s["inventory"] if x.get("code") != "golden_apple"]
-        s["apple_pending"] = s.get("apple_pending", 0) + len(apples)
-
-
 def _witch_on(s):
     return len(s["unlocked_locations"]) >= WITCH_MIN_LOCATIONS
 
@@ -849,7 +841,7 @@ def _witch_tick(s):
                     and (row[0] not in SECRET_ITEMS or SECRET in s["unlocked_locations"])
                     and not _lit(s, row[0])]
         rows = pool(tiers[0]) or pool(tiers[1])
-        w["stock"] = [x for x in w["stock"] if x.get("_slot") not in (slot, None)]
+        w["stock"] = [x for x in w["stock"] if x["_slot"] != slot]
         if rows:
             code, name, story, condition, value, secret = rows[_number(s["seed"], "witch_stock", n) % len(rows)]
             s["item_counter"] += 1
@@ -868,8 +860,8 @@ def _witch_meet(s, location):
         return ""
     w = _witch_book(s)
     w["met"] += 1
-    # 故事讲完的不再摆;旧版三摊位时进的货(没有摊位号)也撤掉,只留两个摊位的货
-    w["stock"] = [item for item in w["stock"] if not _lit(s, item["code"]) and "_slot" in item]
+    # 故事讲完的旧物不再摆上当前两个摊位。
+    w["stock"] = [item for item in w["stock"] if not _lit(s, item["code"])]
     for item in w["stock"]:      # 摊上的货也按"揭过秘就是修好的"算,看到的和买到的一致
         _arrive_repaired(s, item)
     apple = _apple_held(s)
@@ -1561,7 +1553,6 @@ def apply(full_state, seat_id, action_id, params):
              f"人类发令「{words.strip()[:40]}」救店,两颗骰子落下:十位{tens}、个位{ones}——注资{tens * 10 + ones}枚古币。"
              f"这是第{s['rescues']}次救店,还剩{RESCUE_LIMIT - s['rescues']}次。", before)
         return s
-    _migrate_apples(s)
     if action_id == "choose_event":
         _choose_event(s, params)
     elif s["pending_event"]:

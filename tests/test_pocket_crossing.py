@@ -182,14 +182,21 @@ def fix_scene(n):
             "questions": [f"第{n}号街为什么这么安静?"]}
 
 
+def current_world():
+    data = {k: deepcopy(FIX_WORLD[k]) for k in ("world_name", "premise", "lore", "power_level", "world_thread", "laws", "hidden_threads")}
+    data["world_background"] = "用于验收的当前三层世界背景。"
+    data["landings"] = deepcopy(FIX_WORLD3["landings"])
+    return data
+
+
 def feed(s):
     """假荷官:凡有挂起请求就按合同喂固定料。"""
     while s.get("narration_request"):
         kind = s["narration_request"]["kind"]
         if kind == "gen_world":
-            data = FIX_WORLD
+            data = current_world()
         elif kind == "gen_episode":
-            data = FIX_EPISODE
+            data = FIX_EPISODE if s["world"].get("global_canon") else FIX_WORLD
         elif kind == "gen_identities":
             data = FIX_IDENTITIES
         elif kind == "gen_milestones":
@@ -207,6 +214,9 @@ def feed(s):
         else:
             data = {"text": "测试之城照常运转,断言全部通过。" * 2}
         s = rules.apply_system(s, "narration_result", {"kind": kind, "data": data})
+        if kind == "gen_world":
+            for seat in SEATS:
+                s = rules.apply(s, seat, "choose_landing", {"landing_id": s["landings"][0]["id"]})
     return s
 
 
@@ -267,11 +277,14 @@ class TestNarrationFlow(unittest.TestCase):
         with self.assertRaises(rules.IllegalAction):   # 荷官执笔中不能行动
             rules.apply(s, "seat_a", "commit", {"intent": "advance", "action": "x"})
         s = rules.apply_system(s, "narration_result",
-                               {"kind": "gen_world", "data": FIX_WORLD})
-        self.assertEqual(s["stage"], "identities_gen")
+                               {"kind": "gen_world", "data": current_world()})
+        self.assertEqual(s["stage"], "landing")
+        for seat in SEATS:
+            s = rules.apply(s, seat, "choose_landing", {"landing_id": s["landings"][0]["id"]})
         with self.assertRaises(rules.IllegalAction):   # 回填必须对上请求
             rules.apply_system(s, "narration_result",
                                {"kind": "gen_world", "data": FIX_WORLD})
+        s = rules.apply_system(s, "narration_result", {"kind": "gen_episode", "data": FIX_WORLD})
         s = rules.apply_system(s, "narration_result",
                                {"kind": "gen_identities", "data": FIX_IDENTITIES})
         self.assertEqual(s["stage"], "identity")
@@ -309,15 +322,6 @@ class TestNarrationFlow(unittest.TestCase):
         self.assertFalse(s["main_goal_locked"])
         self.assertTrue(all(g["milestones"] for goals in s["player_goals"].values()
                             for g in goals))
-
-    def test_observe_old_state_without_goal_fields(self):
-        s = setup_playing(4)
-        s.pop("player_goals")
-        s["world"]["public_goal"] = s["world"].pop("world_thread")
-        s["world"].pop("goal_menu")
-        observed = rules.observe(s, "seat_a")
-        self.assertEqual(observed["private_state"]["player_goals"], [])
-        self.assertTrue(observed["public_state"]["world"]["world_thread"])
 
     def test_axes_deterministic(self):
         self.assertEqual(rules.new_game(SEATS, 5)["axes"],
@@ -1135,14 +1139,6 @@ class TestThreeLayerWorld(unittest.TestCase):
 
     def test_canon_absent_without_global_canon(self):
         self.assertIsNone(rules._canon_now(setup_playing()))
-
-    def test_old_shape_world_still_works(self):
-        """旧形态世界卡(本局字段写在世界层)照旧能开局,不逼老存档改造。"""
-        s = setup_playing()
-        self.assertIsNone(s["landing"])
-        self.assertEqual(s["stage"], "scene")
-        self.assertEqual(rules._ep(s)["goal_menu"][0]["id"], "clear_assertions")
-
 
 if __name__ == "__main__":
     unittest.main()

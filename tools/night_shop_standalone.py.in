@@ -505,7 +505,7 @@ def _data(line):
             conn.execute("CREATE TABLE IF NOT EXISTS shop (id INTEGER PRIMARY KEY CHECK(id=1), version TEXT NOT NULL, state TEXT NOT NULL)")
             row = conn.execute("SELECT version,state FROM shop WHERE id=1").fetchone()
             if row and row[0] != VERSION:
-                raise ValueError("存档版本与游戏不一致，请使用对应版本的单文件；旧档保持不变")
+                raise ValueError("存档版本与当前游戏不一致；本产品仅提供最新版，存档未改动，请在另一目录开新局")
             if row and action == "new_game":
                 raise ValueError("已有存档，new_game不会覆盖；请继续observe，或在另一目录建立新铺子")
             if row:

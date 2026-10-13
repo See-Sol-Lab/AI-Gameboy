@@ -1,166 +1,137 @@
-"""六条旧事、数值调查与终幕推断；全部使用虚拟资料，无API调用。"""
-import copy
+"""成功获得预写证据，推断命中后才完成；含不泄密与荷官越权回归。"""
 import unittest
-from unittest.mock import patch
+from copy import deepcopy
+from console import tabletop_contract as contract
+from test_pocket_tabletop import rules,setup,round_,feed,advance,world,scene
 
-from console import narrator
-from test_pocket_tabletop import rules, setup_scene, old_story_world, old_story_identities, feed
+
+def investigate(s,owner="npc"):
+    q = next(q for q in s["side_quests"] if q["owner"] == owner and q["status"] == "open")
+    return q,{"intent":"explore","action":"我检查旧照片背面的署名，并向守门人询问钥匙用途。","target_id":"clue:"+q["id"]}
 
 
-class TestOldStories(unittest.TestCase):
-    def round(self, s, params_a, params_b=None, die=6):
-        params_b = params_b or {"intent": "recover", "action": "歇脚"}
-        with patch.object(rules, "_die", return_value=die):
-            s = rules.apply(s, "seat_a", "commit", params_a)
-            return rules.apply(s, "seat_b", "commit", params_b)
+def match(c):
+    return {"seat":c["seat"],"story_id":c["story_id"],"quote":c["action"],"matched_facts":c["key_facts"]}
 
-    def test_contract_and_hidden_answers(self):
-        ctx = {"axes": rules.new_game(["seat_a", "seat_b"], 1)["axes"], "old_story_mode": True}
-        narrator.VALIDATORS["gen_world"](old_story_world(), ctx)
-        narrator.VALIDATORS["gen_identities"](old_story_identities(), {"old_story_mode": True})
-        bad = old_story_world()
-        bad["side_quests"][1]["npc"]["name"] = "另一个人"
-        with self.assertRaises(narrator.NarratorError):
-            narrator.VALIDATORS["gen_world"](bad, ctx)
-        s = setup_scene(41)
-        ob = rules.observe(s, "seat_a")
-        self.assertEqual(len(ob["public_state"]["old_stories"]), 6)
-        self.assertTrue(all(q["truth"] is None for q in ob["public_state"]["old_stories"]))
-        self.assertNotIn("key_facts", str(ob))
-        partner = next(q for q in s["side_quests"] if q["owner"] == "seat_b")
-        self.assertNotIn(partner["question"], str(ob))
-        self.assertTrue(any(q["owner"] == "seat_a" for q in ob["private_state"]["old_story_choices"]))
 
-    def test_success_reveals_original_without_advancing_main_goal(self):
-        s = setup_scene(42)
-        q = next(q for q in s["side_quests"] if q["owner"] == "seat_a")
-        truth = q["truth"]
-        s = self.round(s, {"intent": "explore", "action": "翻阅遗物", "old_story_id": q["id"]})
-        self.assertEqual(next(x for x in s["side_quests"] if x["id"] == q["id"])["status"], "resolved")
-        self.assertIn(f"真相大白:{truth}", s["facts"])
-        self.assertEqual(s["milestones_done"], [])
-        s = feed(s)
+class TestStoryEvidence(unittest.TestCase):
+    def test_success_pays_fixed_clues_not_answer(self):
+        s = setup()
+        q,p = investigate(s)
+        s = round_(s,p)
+        updated = next(x for x in s["side_quests"] if x["id"] == q["id"])
+        self.assertEqual(updated["found_clues"],[0,1])
+        self.assertEqual(updated["status"],"open")
+        self.assertNotIn(q["truth"],str(s["facts"])+str(s["history"]))
+        public = rules.observe(s,"seat_a")["public_state"]
+        view = next(x for x in public["old_stories"] if x["id"] == q["id"])
+        self.assertEqual(view["clues"],q["clues"])
+        self.assertIsNone(view["truth"])
+
+    def test_partial_pays_one_clue_and_retry_keeps_evidence(self):
+        s = setup()
+        s["attrs"]["seat_a"]["wisdom"] = 2
+        q,p = investigate(s)
+        s = round_(s,p,{"intent":"end","target_id":"free","action":""},die=2)
+        self.assertEqual(s["side_quests"][0]["found_clues"],[0])
+        s = round_(feed(s),p,{"intent":"end","target_id":"free","action":""},die=2)
+        self.assertEqual(s["side_quests"][0]["found_clues"],[0,1])
+        self.assertEqual(s["side_quests"][0]["status"],"open")
+
+    def test_valid_deduction_completes_only_selected_story(self):
+        s = setup()
+        q,p = investigate(s)
+        s = feed(round_(s,p))
+        p = {"intent":"explore","target_id":"deduce:"+q["id"],"action":"照片说明见证人甲曾共同守门；旧信说明这把钥匙用于让旅人进入避风港。"}
+        s = round_(s,p)
+        c, = s["narration_request"]["context"]["candidates"]
+        s = feed(s,[match(c)])
+        self.assertEqual(sum(q["status"] == "resolved" for q in s["side_quests"]),1)
+        self.assertEqual(s["side_quests"][0]["status"],"resolved")
+
+    def test_wrong_guess_preserves_clues_and_no_random_guess_without_evidence(self):
+        s = setup()
+        q,p = investigate(s)
         with self.assertRaises(rules.IllegalAction):
-            rules.apply(s, "seat_a", "commit", {"intent": "explore", "action": "重复查", "old_story_id": q["id"]})
+            rules.apply(s,"seat_a","commit",{"intent":"explore","target_id":"deduce:"+q["id"],"action":"我猜所有秘密都和海神有关。"})
+        s = feed(round_(s,p))
+        s = feed(round_(s,{"intent":"explore","target_id":"deduce:"+q["id"],"action":"我认为这是海神留下的钥匙，照片中的人就是海神。"}))
+        self.assertEqual(s["side_quests"][0]["found_clues"],[0,1])
+        self.assertEqual(s["side_quests"][0]["status"],"open")
 
-    def test_failure_does_not_destroy_opportunity_and_cannot_take_partners_story(self):
-        s = setup_scene(43)
-        q = next(q for q in s["side_quests"] if q["owner"] == "seat_b")
-        with self.assertRaises(rules.IllegalAction):
-            rules.apply(s, "seat_a", "commit", {"intent": "explore", "action": "查看", "old_story_id": q["id"]})
-        q = next(q for q in s["side_quests"] if q["owner"] == "seat_a")
-        s = self.round(s, {"intent": "explore", "action": "翻阅", "old_story_id": q["id"]}, die=1)
-        self.assertEqual(next(x for x in s["side_quests"] if x["id"] == q["id"])["status"], "open")
-        self.assertNotIn(q["truth"], str(s["history"][-1]["report"]))
+    def test_npc_leaves_after_eight_but_acquired_evidence_remains_usable(self):
+        s = setup()
+        s["scene_index"] = 8
+        q,p = investigate(s)
+        s = feed(round_(s,p))
+        self.assertEqual(s["scene_index"],9)
+        self.assertFalse(s["npc"]["available"])
+        targets = rules.observe(s,"seat_a")["private_state"]["targets"]
+        self.assertNotIn("clue:"+q["id"],[t["id"] for t in targets])
+        self.assertIn("deduce:"+q["id"],[t["id"] for t in targets])
+        self.assertNotIn("npc",[o["id"] for o in s["current_scene"]["objects"]])
 
-    def late(self, scene):
-        s = setup_scene(44)
-        s["scene_index"] = scene
-        s["danger"] = 0
-        s["world"]["laws"] = []
-        s["main_goal_locked"] = True
-        s["milestones_done"] = [m["id"] for m in s["world"]["milestones"]]
-        s["facts"].append("已知：渡口的名字属于本人，第四枚令牌一直在本人手里。")
-        return s
+    def test_private_clues_and_answers_do_not_leak_to_partner(self):
+        s = setup()
+        q,p = investigate(s,"seat_a")
+        s = round_(s,p)
+        ob = rules.observe(s,"seat_b")
+        self.assertNotIn(q["clues"][0]["text"],str(ob))
+        own = rules.observe(s,"seat_a")["private_state"]
+        self.assertIn(q["clues"][0]["text"],str(own))
+        self.assertNotIn(q["truth"],str(own))
 
-    def test_npc_disappears_after_eight_and_no_late_numeric_investigation(self):
-        s = self.late(8)
-        self.assertIsNotNone(rules._npc_due(s, 8))
-        self.assertIsNone(rules._npc_due(s, 9))
-        ctx = rules._scene_context(s, [])
-        self.assertIsNone(ctx["npc_onstage"])
-        self.assertNotIn("npc", [q["owner"] for q in ctx["old_story_opportunities"]])
-        self.assertIn("严禁再次安排", narrator.PROMPTS["gen_scene"](ctx))
-        from test_pocket_crossing import fix_scene
-        bad_scene = fix_scene(9)
-        bad_scene["objects"][0] = {"id": "npc", "name": "守夜人", "hint": "回来了"}
-        with self.assertRaises(narrator.NarratorError):
-            narrator.VALIDATORS["gen_scene"](bad_scene, ctx)
-        s["scene_index"] = 9
-        q = s["side_quests"][0]
-        with self.assertRaises(rules.IllegalAction):
-            rules.apply(s, "seat_a", "commit", {"intent": "explore", "action": "追NPC", "old_story_id": q["id"]})
+    def test_scene_input_contains_no_unearned_clues_or_old_tragedy(self):
+        s = setup()
+        ctx = {"snapshot":rules._snapshot(s)}
+        prompt = contract.prompt("tt_scene",ctx)
+        for q in s["side_quests"]:
+            self.assertNotIn(q["truth"],prompt)
+            self.assertNotIn(q["clues"][0]["text"],prompt)
+        self.assertNotIn(s["world"]["original_ending"],prompt)
 
-    def test_final_turn_checks_inference_before_te_and_only_own_stories(self):
-        s = self.late(10)
-        s = self.round(s, {"intent": "explore", "action": "我在渡口刻回了姓名，并保管着第四枚令牌。"}, die=1)
-        req = s["narration_request"]
-        self.assertEqual(req["kind"], "check_old_stories")
-        self.assertNotIn("npc", [q["seat"] for q in req["context"]["candidates"]])
-        c = next(q for q in req["context"]["candidates"] if q["seat"] == "seat_a")
-        match = {"seat": c["seat"], "id": c["id"], "quote": req["context"]["actions"]["seat_a"], "matched_facts": c["key_facts"]}
-        narrator.VALIDATORS["check_old_stories"]({"matches": [match]}, req["context"])
-        s = rules.apply_system(s, "narration_result", {"kind": "check_old_stories", "data": {"matches": [match]}})
-        self.assertEqual(s["ending"]["kind"], "TE")
-        self.assertEqual(next(q for q in s["side_quests"] if q["id"] == c["id"])["status"], "resolved")
+    def test_contract_rejects_reset_item_npc_teleport_and_early_secret(self):
+        s = feed(round_(setup(),advance("m1")))
+        ctx = {"snapshot":rules._snapshot(s)}
+        for obj in [{"id":"key1","name":"钥匙1","hint":"还没取走"},{"id":"invented","name":"新谜题","hint":"新任务"}]:
+            d = scene(ctx["snapshot"])
+            d["objects"].append(obj)
+            with self.assertRaises(ValueError):
+                contract.validate("tt_scene",d,ctx)
+        ctx["snapshot"]["location_id"] = "tower"
+        ctx["snapshot"]["allowed_objects"] = [{"id":"tower","name":"灯塔"}]
+        d = scene(ctx["snapshot"])
+        d["objects"].append({"id":"npc","name":"守门人","hint":"突然在塔楼出现"})
+        with self.assertRaises(ValueError):
+            contract.validate("tt_scene",d,ctx)
+        d = scene(ctx["snapshot"])
+        d["text"] = s["side_quests"][0]["truth"]
+        with self.assertRaises(ValueError):
+            contract.validate("tt_scene",d,ctx)
 
-    def test_inference_rejects_fabricated_quote_and_incomplete_or_foreign_match(self):
-        s = self.round(self.late(9), {"intent": "explore", "action": "我在渡口刻回了姓名，并保管着第四枚令牌。"})
+    def test_full_completion_can_be_he_and_bad_numbers_still_be(self):
+        s = setup()
+        for mid in ("m1","m2","m3"):
+            s = feed(round_(s,advance(mid)))
+        for q in s["side_quests"]:
+            q["status"] = "resolved"
+        s = feed(round_(s,{"intent":"advance","target_id":"free","action":"我开起一间农具铺，为获救居民准备新的生活。"}))
+        self.assertEqual(s["ending"]["kind"],"HE")
+        self.assertLess(s["scene_index"],10)
+        self.assertEqual(contract.ending_kind(dict(rules._snapshot(s),danger=10)),"BE")
+
+    def test_duplicates_and_foreign_deductions_are_rejected(self):
+        s = setup()
+        q,p = investigate(s)
+        s = feed(round_(s,p))
+        s = round_(s,{"intent":"explore","target_id":"deduce:"+q["id"],"action":"见证人甲曾共同守门，钥匙为了让旅人进入避风港。"})
         ctx = s["narration_request"]["context"]
-        c = next(q for q in ctx["candidates"] if q["seat"] == "seat_a")
-        good = {"seat": "seat_a", "id": c["id"], "quote": ctx["actions"]["seat_a"], "matched_facts": c["key_facts"]}
-        for key, value in [("quote", "一段不存在的原话"), ("matched_facts", c["key_facts"][:1]), ("id", "npc1")]:
-            bad = dict(good, **{key: value})
-            with self.assertRaises(narrator.NarratorError):
-                narrator.VALIDATORS["check_old_stories"]({"matches": [bad]}, ctx)
-        s = rules.apply_system(s, "narration_result", {"kind": "check_old_stories", "data": {"matches": []}})
-        self.assertEqual(s["narration_request"]["kind"], "gen_scene")
-        self.assertTrue(all(q["status"] == "open" for q in s["side_quests"]))
-
-    def test_all_six_revealed_finishes_early_and_be_has_priority(self):
-        s = self.late(4)
-        for q in s["side_quests"]:
-            q["status"] = "resolved"
-        rules._continue_after_round(s)
-        self.assertEqual(s["ending"]["kind"], "HE")
-        s = self.late(4)
-        for q in s["side_quests"]:
-            q["status"] = "resolved"
-        s["danger"] = 10
-        rules._continue_after_round(s)
-        self.assertEqual(s["ending"]["kind"], "BE")
-
-    def test_four_round_numeric_playthrough_finishes_he(self):
-        s = setup_scene(46)
-        s["world"]["laws"] = []
-        s["inventory"]["seat_b"].append({"id": "goal_tool", "name": "过闸凭证", "use": ["advance"]})
-        quests = {owner: [q["id"] for q in s["side_quests"] if q["owner"] == owner]
-                  for owner in ("npc", "seat_a", "seat_b")}
-        def investigate(qid):
-            return {"intent": "explore", "action": "沿线索查看遗物", "old_story_id": qid}
-        rounds = [(quests["npc"][0], quests["seat_b"][0]),
-                  (quests["npc"][1], quests["seat_b"][1]),
-                  (quests["seat_a"][0], None), (quests["seat_a"][1], None)]
-        for qa, qb in rounds:
-            s = self.round(s, investigate(qa), investigate(qb) if qb else {"intent": "advance", "action": "完成当前主线阶段", "item_id": "goal_tool"})
-            self.assertEqual(next(q for q in s["side_quests"] if q["id"] == qa)["status"], "resolved", s["history"][-1]["report"])
-            if s["stage"] != "endinggen":
-                s = feed(s)
-        self.assertEqual(s["ending"]["kind"], "HE")
-        self.assertEqual(s["scene_index"], 4)
-        self.assertEqual(sum(q["status"] == "resolved" for q in s["side_quests"]), 6)
-
-    def test_tenth_turn_inference_can_complete_he_without_successful_die(self):
-        s = self.late(10)
-        own = next(q for q in s["side_quests"] if q["owner"] == "seat_a")
-        for q in s["side_quests"]:
-            if q is not own:
-                q["status"] = "resolved"
-        s = self.round(s, {"intent": "explore", "action": "我在渡口刻回了姓名，并保管着第四枚令牌。"}, die=1)
-        self.assertFalse(any("已做到:我在渡口" in fact for fact in s["facts"]))
-        req = s["narration_request"]
-        c, = req["context"]["candidates"]
-        match = {"seat": c["seat"], "id": c["id"], "quote": req["context"]["actions"]["seat_a"], "matched_facts": c["key_facts"]}
-        s = rules.apply_system(s, "narration_result", {"kind": "check_old_stories", "data": {"matches": [match]}})
-        self.assertEqual(s["ending"]["kind"], "HE")
-
-    def test_legacy_save_still_uses_original_contract(self):
-        s = rules.new_game(["seat_a", "seat_b"], 12)
-        s.pop("old_story_mode")
-        s["narration_request"]["context"].pop("old_story_mode")
-        s = feed(s)
-        self.assertEqual(len(s["side_quests"]), 2)
-        self.assertNotIn("old_story_mode", s)
+        c, = ctx["candidates"]
+        valid = match(c)
+        base = {"world_changes":[{"seat":a["seat"],"quote":a["action"],"text":"帮助同伴完成了准备工作。"} for a in ctx["approved_actions"]],"scene":scene(ctx["snapshot"]),"ending":None}
+        for guesses in [[valid,valid],[dict(valid,seat="seat_b")],[dict(valid,quote="我从未说过的假原文")]]:
+            with self.assertRaises(ValueError):
+                contract.validate("tt_turn",dict(base,deductions=guesses),ctx)
 
 
 if __name__ == "__main__":

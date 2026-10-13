@@ -360,16 +360,6 @@ class TestNightExpansion(unittest.TestCase):
         self.assertAlmostEqual(seen[0]["heirloom"] / 1000, 0.30, delta=0.05)
         self.assertAlmostEqual(seen[1]["ancient"] / 1000, 0.40, delta=0.05)
 
-    def test_old_three_slot_stall_is_cleared_on_next_meeting(self):
-        s = rules.new_game(["seat_a"], 4)
-        s.update(unlocked_locations=list(rules.LOCATIONS)[:4], shop_level=5)
-        old = {"id": "claycalendar_9", "code": "claycalendar", "name": "x", "story": "", "condition": 0,
-               "value": 32, "displayed": False, "kind": "时间", "rarity": "ancient", "origin": "witch",
-               "secret": None, "_secret": ""}
-        rules._witch_book(s)["stock"] = [dict(old, id=f"old{i}") for i in range(3)]
-        rules._witch_meet(s, rules._witch_spot(s))
-        self.assertEqual(rules._witch_book(s)["stock"], [])
-
     def test_witch_stock_of_revealed_species_is_already_repaired(self):
         s = rules.new_game(["seat_a"], 4)
         s.update(unlocked_locations=list(rules.LOCATIONS)[:4], shop_level=3)
@@ -471,13 +461,6 @@ class TestNightExpansion(unittest.TestCase):
         s = rules.apply(s, "seat_a", "work_shift", {"focus": "recycle", "item_id": item["id"]})
         self.assertEqual(s["stardust"], base + rules.APPLE_SAND)
         self.assertTrue(rules._day_summary(s, s["day"]).endswith("[金苹果]"))
-        # 旧档货架上的金苹果会挪出来等决定
-        t = rules.new_game(["seat_a"], 4)
-        t["inventory"].append({**rules.GOLDEN_APPLE, "id": "golden_apple_99", "displayed": False,
-                               "origin": "witch", "secret": None})
-        t = rules.apply(t, "seat_a", "work_shift", {"focus": "tidy"})
-        self.assertFalse(any(x["code"] == "golden_apple" for x in t["inventory"]))
-        self.assertEqual(t["apple_pending"], 1)
 
     def test_grand_slam_closes_the_shop_with_a_keepsake_record(self):
         s = rules.new_game(["seat_a"], 4)
