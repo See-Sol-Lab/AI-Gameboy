@@ -18,21 +18,26 @@ CART_UI["pocket-tabletop"] = {
       <button class="soft focusable" data-act="pc-narrate">召荷官</button></div>` : "";
     if (!ps.world) return narr + '<p class="center">世界正在成形。</p>';
     const scene = ps.scene;
-    const nodes = (ps.main_nodes || []).map((n) => `<div>${n.done ? "✓" : "◇"} ${esc(n.title)}
-      ${n.done ? "已完成" : `阶段进展${n.effort}/2`}</div>`).join("");
     const publicStories = (ps.old_stories || []).filter((q) => q.owner === "npc" || q.status === "resolved");
-    const changes = (ps.world_changes || []).map((c) => `<p>第${c.scene_index}幕 · ${esc(nameOf(v,c.seat))}：${esc(c.text)}</p>`).join("");
     const last = (ps.history || []).at(-1);
+    const report = last ? last.report.filter(line => !line.startsWith("世界已改变：")) : [];
+    const bar = (value, total, cls, label) => `<div class="bar-track" role="progressbar" aria-label="${label}" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${value}">
+      <div class="bar-fill ${cls}" style="width:${value / total * 100}%"></div></div>`;
     return `${narr}<div class="sit-name center">《${esc(ps.world.world_name)}》</div>
-      <p class="center">第${ps.scene_index}/10幕 · 危险${ps.tracks.danger}/10 · ${ps.main_complete ? "共同危机已解除" : "主线危机仍在推进"}</p>
-      <div class="info-panel"><div>主线完成 ${ps.tracks.progress}/${ps.tracks.progress_total}</div>${nodes}</div>
-      <p class="dim">NPC位置：${esc(ps.npc?.location_name)} · ${ps.npc?.available ? "可在所在地点互动" : "已离场，新调查关闭；已有证据仍可推断"}</p>
-      ${scene ? `<div class="situation"><div class="sit-name">${esc(scene.title)}</div><p>${esc(scene.text)}</p>
+      <details class="situation" data-panel="tt-background" ${ps.scene_index === 0 ? "open" : ""}>
+        <summary>故事背景 · 展开重读</summary>
+        <p>${esc(ps.world.premise)}</p><p>${esc(ps.world.lore)}</p>
+      </details>
+      <p class="center">🎯 共同目标：${esc(ps.world.public_goal)}</p>
+      <div class="dim center">进度 ${ps.scene_index}/10</div>
+      ${bar(ps.scene_index, 10, "ok", "幕次进度")}
+      <div class="dim center">危险 ${ps.tracks.danger}/10</div>${bar(ps.tracks.danger, 10, "bad", "危险进度")}
+      ${ps.scene_index === 0 ? '<p class="center">准备阶段 · 等待双方选择身份</p>' : ""}
+      ${scene ? `<div class="situation"><div class="sit-name">第${ps.scene_index}幕 · ${esc(scene.title)}</div><p>${esc(scene.text)}</p>
         <p>⚡ ${esc(scene.crisis)}</p>${(scene.objects || []).map((o) => `<span class="chip" title="${esc(o.hint)}">${esc(o.name)}</span>`).join("")}</div>` : ""}
       <div class="info-panel">队伍已有物品：${(ps.inventory?.shared || []).map((i) => esc(i.name)).join("、") || "暂无"}</div>
       <details><summary>旧事揭示 ${(ps.old_stories || []).filter(q=>q.status === "resolved").length}/6 · 已知证据</summary>${ttStories(publicStories)}</details>
-      ${changes ? `<details><summary>玩家改变的世界</summary>${changes}</details>` : ""}
-      ${last ? `<div class="report">${last.report.map((line) => `<p>${esc(line)}</p>`).join("")}</div>` : ""}`;
+      ${report.length ? `<div class="report">${report.map((line) => `<p>${esc(line)}</p>`).join("")}</div>` : ""}`;
   },
   myPanel(v, mine) {
     if (!mine || v.status !== "playing") return "";

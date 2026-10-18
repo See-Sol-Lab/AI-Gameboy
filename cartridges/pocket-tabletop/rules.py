@@ -244,11 +244,13 @@ def _resolve(s):
     for seat in s["seats"]:
         p = s["pending"][seat]
         if p["intent"] == "end":
+            outcomes.append({"seat": seat, "target_id": p["target_id"], "result": "closing_decision", "action": p["action"]})
+            report.append(f"{_identity(s, seat)['name']}收尾决定：{p['action']}" if p["action"] else f"{_identity(s, seat)['name']}选择收尾。")
             continue
         prefix, _, key = p["target_id"].partition(":")
         if prefix == "deduce":
             q = next(q for q in s["side_quests"] if q["id"] == key)
-            candidates.append({"seat": seat, "story_id": q["id"], "truth": q["truth"], "key_facts": q["key_facts"],
+            candidates.append({"seat": seat, "story_id": q["id"], "truth": q["truth"],
                                "action": p["action"], "evidence": [deepcopy(q["clues"][i]) for i in q["found_clues"]]})
             outcomes.append({"seat": seat, "target_id": p["target_id"], "result": "awaiting_deduction"})
             report.append(f"{_identity(s, seat)['name']}提出旧事推断，等待按证据核对。")
@@ -304,6 +306,10 @@ def _resolve(s):
                         report.append(f"{_identity(s, seat)['name']}获得第{i + 1}条身份旧事线索（仅本人可见）。")
                     if check["result"] == "partial":
                         break
+            if s["scene_index"] == 10 and achieved and len(q["found_clues"]) == 2:
+                candidates.append({"seat": seat, "story_id": q["id"], "truth": q["truth"],
+                                   "action": p["action"], "evidence": [deepcopy(q["clues"][i]) for i in q["found_clues"]]})
+                report.append("末幕证据已齐，行动中的明确推断将在本幕按证据核对。")
         elif prefix == "move" and check["result"] == "success":
             s["location_id"] = key
         elif p["intent"] == "confront" and check["result"] == "success":
@@ -320,6 +326,8 @@ def _resolve(s):
     snapshot = _snapshot(s, stop)
     snapshot["next_scene_index"] = s["scene_index"] + 1
     context = {"snapshot": snapshot, "outcomes": outcomes, "approved_actions": approved, "candidates": candidates,
+               "closing_decisions": [{"scene_index": h["scene_index"], "seat": o["seat"], "action": o["action"]}
+                                     for h in s["history"] for o in h["outcomes"] if o["result"] == "closing_decision"],
                "known_clues": [deepcopy(q["clues"][i]) for q in s["side_quests"] for i in q["found_clues"]], "known_facts": list(s["facts"])}
     if ending_kind(snapshot) or (snapshot["main_complete"] and set(snapshot["open_story_ids"]) <= {q["story_id"] for q in candidates}):
         context["original_ending"] = s["world"]["original_ending"]
@@ -365,7 +373,7 @@ def apply_system(state, action_id, payload):
             report.append("世界已改变：" + change["text"])
         s["history"][-1]["story_responses"].extend(change["text"] for change in d["world_changes"])
         if req["context"]["candidates"] and not d["deductions"]:
-            report.append("推断未命中完整关键事实；已有线索保留，可以继续推理。")
+            report.append("推断与证据及答案尚未吻合；已有线索保留，可以继续推理。")
         end = ending_kind(_snapshot(s, req["context"]["snapshot"]["stop_requested"]))
         if end:
             s["ending"] = dict(d["ending"], world_name=s["world"]["world_name"], seed=s["seed"],

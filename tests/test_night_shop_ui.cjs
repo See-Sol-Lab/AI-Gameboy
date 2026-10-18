@@ -70,14 +70,27 @@ test("current observer panel exposes no gameplay controls", () => {
   assert.equal(html, "");
 });
 
-test("tabletop 2.0 displays earned evidence and canonical completed stages", () => {
+test("tabletop display tracks act count and danger while keeping changes for the ending card", () => {
   const p = page();
   const html = p.run(`CART_UI["pocket-tabletop"].felt({seats:[],public_state:{ruleset:2,world:{world_name:"海港"},
     scene_index:9,tracks:{progress:1,progress_total:3,danger:2},main_complete:false,
     main_nodes:[{title:"取得钥匙",done:true,effort:2},{title:"修好海堤",done:false,effort:1}],
     npc:{available:false,location_name:"钟楼"},old_stories:[{owner:"npc",question:"谁留下钥匙",status:"open",clue_count:1,
-    clues:[{source:"照片",text:"照片中出现见证人甲"}],truth:null}],history:[]}})`);
-  for (const label of ["主线完成 1/3","阶段进展1/2","证据1/2","见证人甲","已离场"]) assert.ok(html.includes(label),label);
+    clues:[{source:"照片",text:"照片中出现见证人甲"}],truth:null}],
+    scene:{title:"新的海港",text:"本幕的剧情",crisis:"眼前的危机"},
+    world_changes:[{scene_index:1,seat:"seat_a",text:"修好了旧海堤"}],
+    history:[{scene_index:1,title:"修堤",story_text:"过去的剧情",report:["检定成功", "世界已改变：修好了旧海堤"]}]}})`);
+  for (const label of ["进度 9/10","证据1/2","见证人甲","危险 2/10","第9幕 · 新的海港"]) assert.ok(html.includes(label),label);
+  assert.equal((html.match(/role="progressbar"/g) || []).length, 2);
+  assert.ok(html.includes('aria-label="幕次进度" aria-valuemin="0" aria-valuemax="10" aria-valuenow="9"'));
+  assert.ok(html.includes('style="width:90%"'));
+  assert.ok(html.includes('aria-label="危险进度" aria-valuemin="0" aria-valuemax="10" aria-valuenow="2"'));
+  assert.ok(!html.includes("NPC位置"));
+  for (const label of ["主线完成", "主线阶段详情", "玩家改变的世界", "修好了旧海堤"]) assert.ok(!html.includes(label),label);
+  const memorial = p.run(`CART_UI["pocket-tabletop"].memorial({public_state:{world:{world_name:"海港"},
+    history:[{scene_index:1,title:"修堤",story_text:"过去的剧情",report:["检定成功", "世界已改变：修好了旧海堤"]}],
+    ending:{kind:"HE",text:"新的生活开始了。"}}})`);
+  assert.ok(memorial.rounds.includes("修好了旧海堤"));
   assert.ok(!html.includes("时钟"));
   assert.ok(!html.includes("null"));
 });
@@ -91,6 +104,20 @@ test("both seats have escaped table bubbles on opposite sides", () => {
     assert.ok(html.includes("&lt;玩家&gt;"));
     assert.ok(html.includes("&lt;script&gt;留言&lt;/script&gt;"));
   }
+});
+
+test("tabletop public background is readable before roles without revealing the original ending", () => {
+  const p = page();
+  const html = p.run(`CART_UI["pocket-tabletop"].felt({seats:[],public_state:{stage:"identity",scene_index:0,
+    world:{world_name:"回音市",premise:"你们醒在末班电车。",lore:"市民的名字正从<档案>中消失。",
+      public_goal:"抵达控制室，逆转遗忘波。",original_ending:"HIDDEN_TRAGEDY"},
+    tracks:{progress:0,progress_total:3,danger:0},main_nodes:[],old_stories:[],history:[]}})`);
+  for (const text of ["故事背景", "你们醒在末班电车", "名字正从&lt;档案&gt;中消失", "逆转遗忘波", "准备阶段"])
+    assert.ok(html.includes(text), text);
+  assert.ok(html.includes('data-panel="tt-background" open'));
+  assert.ok(!html.includes("第0/10幕"));
+  assert.ok(!html.includes("HIDDEN_TRAGEDY"));
+  assert.ok(html.indexOf("</details>") < html.indexOf("共同目标："));
 });
 
 test("human adventure submission sends the message to both the card and public table", async () => {

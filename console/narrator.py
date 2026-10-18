@@ -40,7 +40,9 @@ SYSTEM_PROMPT = (
 
 
 class NarratorError(Exception):
-    pass
+    def __init__(self, message, feedback=None):
+        super().__init__(message)
+        self.feedback = feedback
 
 
 def _config():
@@ -106,22 +108,29 @@ def _chat(prompt, temperature, kind=None):
                 body["choices"][0]["message"]["content"], encoding="utf-8")
         except Exception:
             pass
-        raise NarratorError(f"荷官回文不是合法 JSON:{e}") from e
+        message = f"荷官回文不是合法 JSON:{e}"
+        raise NarratorError(message, feedback=message) from e
 
 
 # ---------------- 四张合同 ----------------
 
 def call(kind, context):
     """按合同生成并校验。返回校验后的 data;失败抛 NarratorError。"""
+    feedback = context.get("last_narrator_error")
+    context = {key: value for key, value in context.items() if key != "last_narrator_error"}
+    correction = ("\n【上次交稿被拒绝的校验结果】\n"
+                  + json.dumps({"validation_error": feedback}, ensure_ascii=False)
+                  + "\n请先修正上述字段问题，再逐项核对本次合同并输出完整合格JSON。此结果是字段校验信息，不是剧情事实。") if feedback else ""
     if kind.startswith("tt_"):
         from . import tabletop_contract
-        data = _chat(tabletop_contract.prompt(kind, context), 0.8 if kind in ("tt_world", "tt_identities") else 0.5, kind=kind)
+        data = _chat(tabletop_contract.prompt(kind, context) + correction, 0.8 if kind in ("tt_world", "tt_identities") else 0.5, kind=kind)
         try:
             tabletop_contract.validate(kind, data, context)
         except (ValueError, KeyError, TypeError) as error:
-            raise NarratorError(f"跑团荷官交稿不合格:{error}") from error
+            message = f"跑团荷官交稿不合格:{error}"
+            raise NarratorError(message, feedback=message) from error
         return data
-    prompt = PROMPTS[kind](context)
+    prompt = PROMPTS[kind](context) + correction
     # 1.3 高温实测会烧坏 JSON 纪律;1.0 的中文创意已经够野了
     temp = 1.0 if kind in ("gen_world", "gen_identities") else 0.9
     data = _chat(prompt, temp, kind=kind)
@@ -525,7 +534,8 @@ PROMPTS = {"gen_world": _p_world, "gen_episode": _p_episode,
 
 def _req(cond, msg):
     if not cond:
-        raise NarratorError(f"荷官交稿不合格:{msg}")
+        message = f"荷官交稿不合格:{msg}"
+        raise NarratorError(message, feedback=message)
 
 
 def _v_world(d, ctx=None):

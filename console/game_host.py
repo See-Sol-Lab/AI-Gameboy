@@ -213,9 +213,30 @@ class GameHost:
         if manifest["version"] != srow["cartridge_version"]:
             return {"result": "rejected", "reason": "卡带版本不匹配，不能召荷官"}
         from . import narrator
+        context = dict(req["context"])
+        if req.get("last_error"):
+            context["last_narrator_error"] = req["last_error"]
         try:
-            data = narrator.call(req["kind"], req["context"])
+            data = narrator.call(req["kind"], context)
         except narrator.NarratorError as e:
+            if e.feedback:
+                conn = store.connect(self.db_path)
+                try:
+                    conn.execute("BEGIN IMMEDIATE")
+                    current = store.get_session(conn, session_id)
+                    if current and current["status"] == srow["status"]:
+                        saved = json.loads(current["engine_state_json"])
+                        pending = (saved.get("cartridge_state") or {}).get("narration_request")
+                        if pending == req and pending.get("last_error") != e.feedback:
+                            pending["last_error"] = e.feedback
+                            store.update_session(conn, session_id, current["status"], current["revision"] + 1,
+                                                 json.dumps(saved, ensure_ascii=False), _now())
+                    conn.execute("COMMIT")
+                except BaseException:
+                    conn.execute("ROLLBACK")
+                    raise
+                finally:
+                    conn.close()
             return {"result": "narrator_error", "message": str(e)}
         conn = store.connect(self.db_path)
         try:

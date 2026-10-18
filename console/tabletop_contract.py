@@ -31,7 +31,14 @@ STORY_SCHEMA = '''{"id":"英文短名","question":"具体待查的旧事疑问",
  "intent":"explore或support或confront","attribute":"wisdom或stamina或luck","target":7,
  "clues":[{"source":"证据的具体载体或NPC回答","text":"第一条可观察的证据，≤90字"},
           {"source":"另一份证据载体或回答","text":"第二条证据，≤90字"}],
- "truth":"旧事完整答案，≤160字","key_facts":["答案中的关键事实一","答案中的关键事实二"]}'''
+ "truth":"仅由上述两条证据推出的简短答案，建议一句话，≤160字"}'''
+
+SCENE_SCHEMA = '''{"title":"1到30字符的短标题，建议8到16字符",
+ "text":"1到700字符的行动前现场，建议300到450字符",
+ "crisis":"1到160字符的当前问题，建议一句话",
+ "location_id":"逐字照抄snapshot.location_id",
+ "objects":[1到5个对象，每个{"id":"snapshot.allowed_objects中的id",
+             "name":"对应对象名称原样照抄","hint":"1到180字符的可观察信息"}]}'''
 
 
 def prompt(kind, ctx):
@@ -55,12 +62,15 @@ def prompt(kind, ctx):
    "success_fact":"解决后确定的世界变化"}}],
  "npc_old_stories":[这个NPC的两条旧事，结构为{STORY_SCHEMA}]}}
 三条主线完成即已解决共同危机，第三阶段success_fact必须明确危机解除。所有id引用都来自上述清单。
+【交稿前逐项核对】npc必须是单个对象；npc.id是固定协议值，必须逐字写"npc"，不能改成人物姓名或代号；姓名写在npc.name。
+npc.location_id、starting_location和节点location_id都必须逐字引用locations中某一行的id，不填中文地点名，不另造位置。
+例如locations里有{{"id":"harbor","name":"海港"}}，NPC应写{{"id":"npc","name":"守门人","desc":"站在门边","location_id":"harbor"}}。
+所有use用途只能从advance/explore/support/confront/recover中选1到2个代码，不翻译成中文。
+每件任务物品必须且只能分配到一个main_nodes.item_ids中，不遗漏、不重复发放；物品id、地点id与固定npc不得重名。
 主线应当可以独立完成，不得把未解的旧事答案变成必备门槛。六条旧事是人物故事的完成度。
 target只能6到9。npc_destination只能null或地点id；迁移只有节点成功才发生，禁止强制NPC牺牲。
-两份旧事的线索必须足以推断全部关键事实：关键人物姓名、关系与事件因果必须留下具体证据。
-例如真相涉及恋人，至少一条线索明确这位恋人的名字或双方关系，不能只反复写沉默与神秘姿势。
-clues给证据，不直接写整段标准答案；两条合起来能推出truth。若公开认知与隐藏真相不同，
-必须明确哪个是传闻、哪个是已确认事实。物品数量、原剧情、旧事之间必须自洽。'''
+先写两条具体证据，再用一句话写它们共同支持的truth；答案不得增加证据里没有的姓名、身份或因果。
+物品数量、原剧情与旧事保持一致；传闻须标明传闻。'''
     if kind == "tt_identities":
         return f'''为下面的世界生成六张身份卡。背景及NPC旧事固定，不能修改：
 {json.dumps(ctx, ensure_ascii=False)}
@@ -68,40 +78,87 @@ clues给证据，不直接写整段标准答案；两条合起来能推出truth�
  "specialty":"五种意图之一","starting_item":{{"id":"唯一短名","name":"物品名","use":[1到2个意图]}},
  "old_stories":[本身份自己的两条旧事，每条{STORY_SCHEMA}]}}]}}。
 意图是advance/explore/support/confront/recover。每人旧事须与世界和NPC已写事实一致。
-线索要有实际证据、姓名和关系，能支撑key_facts；不要另造无法观察、无法推断的关键前提。'''
+两条证据合起来必须能推出简短答案；答案不增加证据中没有的姓名、身份或因果。'''
     if kind == "tt_scene":
         return f'''写第一幕，只用这份已知局面：{json.dumps(ctx, ensure_ascii=False)}
-输出{{"title":"≤16字","text":"≤450字的行动前现场","crisis":"当前可行动的问题",
- "location_id":"当前队伍位置id","objects":[2到5个{{"id":"局面允许的对象id","name":"照抄名称","hint":"可观察信息"}}]}}。
+输出{SCENE_SCHEMA}。
+长度按JSON解码后的字符数计算，标点、正文中的空格与换行也计入；不按token数计算，尽量按建议长度写。
 NPC只能在其固定位置且available=true时出现。main_nodes只描写当前可做的阶段，不预先发奖励。
 不知道的旧事答案不在你的输入中，不得编造。'''
-    return f'''承接这一轮已经结算的冒险：{json.dumps(ctx, ensure_ascii=False)}
-输出{{"deductions":[核对通过的推断，每条{{"seat":"原seat","story_id":"原旧事id",
- "quote":"玩家行动中逐字连续的证据原文","matched_facts":[照抄全部两项key_facts]}}],
- "world_changes":[每个完整成功的玩家恰好一条{{"seat":"该玩家席位",
- "quote":"其行动中逐字连续的原文","text":"这次行动实际造成的世界变化，≤160字"}}],
- "scene":若还未结束则按第一幕格式写下一幕，否则null,
- "ending":若已结束则{{"kind":"引擎允许的HE/TE/BE","text":"≤700字结局"}}，否则null}}。
-推断只核对candidates中的答案，要求命中两条关键事实并有known_clues或known_facts支撑。
-接受同义表达；问题、多选乱猜、只中一部分、与证据矛盾均不算。不以骰果否定正确推断。
-world_changes必须逐席承认approved_actions中完整成功的发挥，包括合理的开店、种田、改造魔法等。
-完整成功以及累计部分进展完成节点的行动，都必须承认其已经实现的成果。
-可以改变实现的方法，不得否认目标、奖励或节点已完成的事实。
-自由行动一次只确认其意图内的一件具体成果，不把一句愿望放大成未做过的连锁奇迹。
-失败与尚未完成节点的部分成功只能承接outcomes明确记录的代价和部分进展，不能写成完整成果。
-先核对推断，再按snapshot判结局：危险10或无人生还=BE；主线完成且所有旧事揭示=HE；
-第十幕或玩家停笔仍有欠缺=TE；否则继续下一幕。已有两位玩家真实改变的世界都要累计承接。
-主线已完成时可以经营、种田、修行和收尾，禁止制造新必做任务或把已经解除的危机重新放回去。
-world中的lore是开局历史背景，不是当前状态；现在发生了什么以facts、world_changes和节点结果为准。
-original_ending若出现在输入里，只用于结局对照，绝不能覆盖玩家成果。
-HE应写已拯救世界沿玩家改变的新生活，TE写具体已成与未成，BE也保留他们真正做成的事。
-TE仅代表仍有欠缺，绝不代表拯救世界失败；如果main_complete=true，TE也必须承认危机已经解除。
-NPC不在当前地点或available=false时，不能出现、说话、传话或远程送答案。
-只描写snapshot.allowed_objects里的对象，不能把队伍已有物品再次当作现场待领取奖励。'''
+    return _turn_prompt(ctx)
+
+
+def _turn_prompt(ctx):
+    snapshot = ctx["snapshot"]
+    end = ending_kind(snapshot)
+    scene = None if end else {
+        "title": "填写短标题",
+        "text": "填写下一幕现场，建议300到450字符",
+        "crisis": "填写当前可行动的问题",
+        "location_id": snapshot["location_id"],
+        "objects": [dict(obj, hint="填写可观察信息") for obj in snapshot["allowed_objects"][:5]],
+    }
+    output = {
+        "deductions": [],
+        "world_changes": [{"seat": action["seat"], "quote": action["action"], "text": "填写这次成功实际造成的变化"}
+                          for action in ctx["approved_actions"]],
+        "scene": scene,
+        "ending": {"kind": end, "text": "填写根据玩家成果改写的新结局"} if end else None,
+    }
+    candidates = [{"truth": q["truth"], "evidence": q["evidence"],
+                   "accept_if_correct": {"seat": q["seat"], "story_id": q["story_id"],
+                                         "quote": q["action"]}}
+                  for q in ctx["candidates"]]
+    data = {
+        "snapshot": {key: snapshot[key] for key in (
+            "world", "turn", "location_id", "main_complete", "danger", "vitality",
+            "inventory", "facts", "world_changes", "open_story_ids", "stop_requested", "allowed_objects")},
+        "main_nodes": [{key: node[key] for key in ("id", "title", "location_id", "done", "effort")}
+                      | ({"success_fact": node["success_fact"]} if node["done"] else {})
+                      for node in snapshot["main_nodes"]],
+        "outcomes": ctx["outcomes"],
+        "known_clues": ctx["known_clues"],
+        "deduction_candidates": candidates,
+        "closing_decisions": ctx["closing_decisions"],
+    }
+    npc = snapshot["npc"]
+    data["npc"] = npc if npc["available"] and npc["location_id"] == snapshot["location_id"] else None
+    if "original_ending" in ctx:
+        data["original_ending"] = ctx["original_ending"]
+    can_finish_he = end != "BE" and snapshot["main_complete"] and bool(snapshot["open_story_ids"]) and (
+        set(snapshot["open_story_ids"]) <= {q["story_id"] for q in ctx["candidates"]})
+    ending_rule = (f"本轮已结束：保留ending.kind={end}，scene必须null，填写结局正文。"
+                   if end else "本轮继续：填写scene，ending必须null。")
+    if can_finish_he:
+        ending_rule += "只有本次推断核对后全部剩余旧事都通过，才改为HE：scene=null，ending={\"kind\":\"HE\",\"text\":\"新结局\"}。"
+    return f'''【通过条件】
+按下面模板输出完整JSON，deductions须按本轮推断核对结果填写。
+world_changes必须恰好{len(output["world_changes"])}条：保留模板每条seat和quote，只填text（1到160字符）。
+推断行动不另加world_changes。失败不能写成完整成功，部分进展以outcomes为准。
+逐条核对deduction_candidates中accept_if_correct.quote的玩家结论：只要抓住旧事疑问的核心事实，方向与truth接近且有evidence支持，就判完成；允许同义表达、省略次要细节及不影响核心结论的小偏差，不要求逐句复述标准答案。
+例如疑问是“为何留下”，玩家明确说“自愿留下守核”即可通过，无需同时复述剥离声纹等过程。只在关键人物、核心因果相反或结论缺乏证据支持时拒绝；提问、多选乱猜不通过。
+第十幕调查成功拿齐两条证据时，候选也可能来自调查行动；仅核对玩家已经写出的明确结论。拿齐线索、询问答案或照抄问题都不自动完成旧事。
+通过的每条必须将accept_if_correct对象原样加入deductions；仅当没有通过的候选时才填[]，不能照抄模板空列表。truth只供核对，未通过前不能作为公开剧情事实。
+{ending_rule}
+scene完整格式：{SCENE_SCHEMA}。模板已填好地点和对象；对象可改选allowed_objects里的1到5个，id与name照抄。
+长度按JSON解码后的字符数计算，标点、空格与换行计入；标题建议8到16字符，正文建议300到450。
+【写作要求】
+snapshot.world是原来的背景；facts、world_changes、已完成节点和outcomes是现在的真实结果，逐条承接。
+在成功范围内落实玩家的具体办法，包括开店、种田、修行。危机已解除就继续新生活，结局按玩家做成的事情改写。
+original_ending只是对照，不能把已改变的世界拉回旧悲剧；TE有欠缺也保留成果，BE也承认已经做成的事。
+NPC只在所在地点且available=true时出场。现有物品不能写成还在原地等领取。
+npc=null表示NPC已离开当前现场，后续场景只引用已有记录，不安排NPC现场行动。结局可交代其后日生活。
+closing_decisions保留历幕收尾原文，结局承接各项独有决定，同一事项采用玩家最后的明确选择；尚未决定的去留保持开放。它不自动完成旧事，也不发放未取得的成果。
+结局像史官记录：依已完成节点和world_changes交代关键道具如何被使用、合成或安置。inventory是已获物品清单，不代表合核后的裂片仍可拆出；没有记录的变化不编造。
+【世界与本轮行动】
+{json.dumps(data, ensure_ascii=False)}
+【输出模板】
+{json.dumps(output, ensure_ascii=False, indent=2)}'''
 
 
 def text(value, label, limit=500):
-    require(isinstance(value, str) and 1 <= len(value.strip()) <= limit, f"{label}须是1到{limit}字的文本")
+    actual = f"实际{len(value.strip())}字符" if isinstance(value, str) else f"实际类型{type(value).__name__}"
+    require(isinstance(value, str) and 1 <= len(value.strip()) <= limit, f"{label}须是1到{limit}字的文本（{actual}）")
 
 
 def rows(value, label, low, high):
@@ -127,10 +184,6 @@ def stories(value):
         text(q.get("truth"), "旧事答案", 160)
         require(q.get("intent") in ("explore", "support", "confront"), "调查意图非法")
         check_spec(q)
-        facts = q.get("key_facts")
-        require(isinstance(facts, list) and len(facts) == 2 and len(set(facts)) == 2, "旧事须有两条关键事实")
-        for fact in facts:
-            text(fact, "关键事实", 80)
         clues = q.get("clues")
         require(isinstance(clues, list) and len(clues) == 2, "旧事须有两条预写证据")
         for clue in clues:
@@ -149,7 +202,11 @@ def validate_world(d):
         text(place.get("name"), "地点名称", 40)
     require(d.get("starting_location") in locations, "起始地点非法")
     npc = d.get("npc")
-    require(isinstance(npc, dict) and npc.get("id") == "npc" and npc.get("location_id") in locations, "NPC须有固定位置")
+    require(isinstance(npc, dict), "npc必须是单个JSON对象，不能是列表或文本")
+    require(npc.get("id") == "npc", f'npc.id必须固定写"npc"；人物姓名写在name；收到id={npc.get("id")!r}')
+    require("location_id" in npc, "npc缺少location_id；请引用locations中的一个id")
+    require(isinstance(npc["location_id"], str) and npc["location_id"] in locations,
+            f'npc.location_id必须引用locations的id；收到{npc["location_id"]!r}；可用id={sorted(locations)}，不要填地点中文名')
     text(npc.get("name"), "NPC姓名", 40)
     text(npc.get("desc"), "NPC初见", 120)
     items = rows(d.get("items"), "任务物品", 3, 6)
@@ -188,8 +245,13 @@ def validate_item(item):
 
 def validate_scene(scene, snapshot):
     require(isinstance(scene, dict), "场景须是对象")
+    errors = []
     for key, limit in (("title", 30), ("text", 700), ("crisis", 160)):
-        text(scene.get(key), key, limit)
+        try:
+            text(scene.get(key), key, limit)
+        except ValueError as error:
+            errors.append(str(error))
+    require(not errors, "场景文本校验失败：" + "；".join(errors))
     require(scene.get("location_id") == snapshot["location_id"], "荷官不能移动队伍")
     allowed = {o["id"]: o["name"] for o in snapshot["allowed_objects"]}
     rows(scene.get("objects"), "场景对象", 1, 5)
@@ -228,17 +290,18 @@ def validate(kind, d, ctx):
     require(isinstance(d["deductions"], list), "推断须是列表")
     seen, revealed = set(), set()
     for guess in d["deductions"]:
-        require(isinstance(guess, dict) and set(guess) == {"seat", "story_id", "quote", "matched_facts"}, "推断字段非法")
+        require(isinstance(guess, dict) and set(guess) == {"seat", "story_id", "quote"}, "推断字段非法")
         key = (guess["seat"], guess["story_id"])
         require(key in candidates and key not in seen, "推断越权或重复")
         seen.add(key)
         c = candidates[key]
         text(guess["quote"], "推断原文", 240)
         require(len(guess["quote"]) >= 4 and guess["quote"] in c["action"], "推断须引用玩家原文")
-        require(guess["matched_facts"] == c["key_facts"], "推断未核对全部关键事实")
         revealed.add(guess["story_id"])
     approved = {a["seat"]: a for a in ctx["approved_actions"]}
-    require(isinstance(d["world_changes"], list) and len(d["world_changes"]) == len(approved), "每次完整成功须兑现一条变化")
+    received = len(d["world_changes"]) if isinstance(d["world_changes"], list) else type(d["world_changes"]).__name__
+    require(isinstance(d["world_changes"], list) and received == len(approved),
+            f"world_changes必须恰好{len(approved)}条，对应席位{list(approved)}；收到{received}；推断行动不计入此列表，请按模板填写")
     changed = set()
     for change in d["world_changes"]:
         require(isinstance(change, dict) and set(change) == {"seat", "quote", "text"}, "世界变化字段非法")

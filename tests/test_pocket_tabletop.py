@@ -21,8 +21,7 @@ def story(sid):
     return {"id": sid, "question": "旧照片上的人为何留下这把钥匙？", "intent": "explore", "attribute": "wisdom", "target": 7,
             "clues": [{"source": "旧照片", "text": "照片背面写着：我与见证人甲曾一同守门。"},
                       {"source": "旧信", "text": "见证人甲说：我留下钥匙，是为让后来的旅人进入避风港。"}],
-            "truth": "见证人甲曾共同守门，留下钥匙是为了让旅人进入避风港。",
-            "key_facts": ["见证人甲曾共同守门", "钥匙用于让旅人进入避风港"]}
+            "truth": "见证人甲曾共同守门，留下钥匙是为了让旅人进入避风港。"}
 
 
 def world():
@@ -242,6 +241,46 @@ class TestTabletopHost(unittest.TestCase):
         with patch.object(narrator,"_chat") as chat:
             self.assertEqual(self.host.narrate(self.sid)["result"], "rejected")
             chat.assert_not_called()
+
+    def test_human_resummon_receives_last_validation_error_then_clears_it(self):
+        for rev, seat in enumerate(self.created["seats"]):
+            self.host.act(self.sid,seat["seat_token"],rev,"introduce",{"display_name":seat["seat_id"],"surface":"test"})
+        self.host.start_game(self.sid)
+        bad = world()
+        bad["npc"]["id"] = "gatekeeper"
+        with patch.object(narrator,"_chat",return_value=bad) as chat:
+            first = self.host.narrate(self.sid)
+            self.assertEqual(chat.call_count, 1)
+        self.assertIn("npc.id", first["message"])
+        with closing(store.connect(self.host.db_path)) as conn:
+            saved = json.loads(store.get_session(conn,self.sid)["engine_state_json"])["cartridge_state"]
+        self.assertIsNone(saved["world"])
+        self.assertEqual(saved["history"], [])
+        self.assertEqual(saved["narration_request"]["last_error"], first["message"])
+        bad = world()
+        bad["npc"]["location_id"] = "海港"
+        with patch.object(narrator,"_chat",return_value=bad) as chat:
+            second = self.host.narrate(self.sid)
+            self.assertIn(json.dumps({"validation_error": first["message"]}, ensure_ascii=False), chat.call_args.args[0])
+            self.assertEqual(chat.call_count, 1)
+        self.assertIn("npc.location_id", second["message"])
+        with patch.object(narrator,"_chat",return_value=world()) as chat:
+            self.assertEqual(self.host.narrate(self.sid)["result"], "ok")
+            self.assertIn(json.dumps({"validation_error": second["message"]}, ensure_ascii=False), chat.call_args.args[0])
+            self.assertEqual(chat.call_count, 1)
+        with closing(store.connect(self.host.db_path)) as conn:
+            saved = json.loads(store.get_session(conn,self.sid)["engine_state_json"])["cartridge_state"]
+        self.assertEqual(saved["narration_request"]["kind"], "tt_identities")
+        self.assertNotIn("last_error", saved["narration_request"])
+
+    def test_transport_failure_does_not_change_game_state(self):
+        for rev, seat in enumerate(self.created["seats"]):
+            self.host.act(self.sid,seat["seat_token"],rev,"introduce",{"display_name":seat["seat_id"],"surface":"test"})
+        self.host.start_game(self.sid)
+        before = self.host.public_view(self.sid)
+        with patch.object(narrator,"_chat",side_effect=narrator.NarratorError("连接失败")):
+            self.assertEqual(self.host.narrate(self.sid)["result"], "narrator_error")
+        self.assertEqual(self.host.public_view(self.sid), before)
 
 
 if __name__ == "__main__":

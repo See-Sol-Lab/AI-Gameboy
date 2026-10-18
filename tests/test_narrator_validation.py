@@ -14,6 +14,15 @@ from test_pocket_crossing import (FIX_WORLD, FIX_IDENTITIES,
 
 
 class TestValidators(unittest.TestCase):
+    def test_resummon_feedback_is_in_crossing_prompt_without_mutating_context(self):
+        ctx = {"world": {"world_name": "测试世界", "premise": "背景", "lore": "传说"},
+               "last_narrator_error": "gift.kind只能使用菜单中的代码"}
+        before = copy.deepcopy(ctx)
+        with patch.object(narrator, "_chat", return_value={"identities": copy.deepcopy(FIX_IDENTITIES)}) as chat:
+            self.assertEqual(narrator.call("gen_identities", ctx), FIX_IDENTITIES)
+            self.assertIn(ctx["last_narrator_error"], chat.call_args.args[0])
+        self.assertEqual(ctx, before)
+
     def test_identity_object_is_unwrapped_and_validated(self):
         ctx = {"world": {"world_name": "测试世界", "premise": "背景", "lore": "传说"}}
         prompt = narrator.PROMPTS["gen_identities"](ctx)
