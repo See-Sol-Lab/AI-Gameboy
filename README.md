@@ -9,6 +9,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/许可-非商用-a68c59?style=flat-square" alt="非商用许可"></a>
   <img src="https://img.shields.io/badge/内置游戏-3款-8b765b?style=flat-square" alt="三款内置游戏">
   <img src="https://img.shields.io/badge/界面-中文-ba6650?style=flat-square" alt="中文界面">
+  <a href="https://doi.org/10.5281/zenodo.23481737"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.23481737-4a6fa5?style=flat-square" alt="DOI 10.5281/zenodo.23481737"></a>
 </p>
 
 <p align="center">

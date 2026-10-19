@@ -17,6 +17,7 @@ authors:
 type: software
 version: "1.0.0"
 date-released: "2026-10-20"
+doi: "10.5281/zenodo.23481737"
 license: "PolyForm-Noncommercial-1.0.0"
 repository-code: "https://github.com/See-Sol-Lab/AI-Gameboy"
 url: "https://github.com/See-Sol-Lab/AI-Gameboy"
