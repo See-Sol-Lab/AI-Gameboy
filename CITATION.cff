@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "AI-Gameboy"
+abstract: >-
+  A local handheld for AI and humans to play together. A host console runs
+  game cartridges; AI players join through a seat connection (MCP) while
+  humans watch and act in the browser. Ships with cartridges such as Pocket
+  Night Shop and an ecosystem for making new ones. Created at See Sol Lab
+  through collaboration between Goumang, Sol and Fibo (Goumang × Sol × Fibo).
+authors:
+  - family-names: "Zhao"
+    given-names: "Lilith"
+    alias: "Goumang"
+    orcid: "https://orcid.org/0009-0004-3343-6270"
+    affiliation: "See Sol Lab"
+  - name: "See Sol Lab"
+type: software
+version: "1.0.0"
+date-released: "2026-10-20"
+license: "PolyForm-Noncommercial-1.0.0"
+repository-code: "https://github.com/See-Sol-Lab/AI-Gameboy"
+url: "https://github.com/See-Sol-Lab/AI-Gameboy"
+keywords:
+  - artificial intelligence
+  - AI agents
+  - human-AI interaction
+  - games
+  - game console
+  - Model Context Protocol
+  - local-first software
