@@ -413,12 +413,16 @@ function renderGame(v, mine, tokenLost) {
 function sideSeat(v, s, ui) {
   const turn = (v.waiting_for || []).includes(s.seat_id);
   const sub = v.public_state.submitted && v.public_state.submitted[s.seat_id];
+  const stage = v.public_state.stage;
+  const status = stage === "identity" ? (turn ? "选择身份中…" : "身份已选 ✓")
+    : stage === "goal" ? (turn ? "身份已选 · 选择目标中…" : "目标已选 ✓")
+    : sub ? "已暗投 ▮" : turn ? "考虑行动中…" : "";
   const isMe = S.human && S.human.seatId === s.seat_id;
   return `<div class="side-seat ${turn ? "turn" : ""}">
     <div class="lamp"></div>
     <div class="who">${esc(s.display_name)}${isMe ? " (你)" : ""}</div>
     <div class="surf">${esc(s.surface)}</div>
-    <div class="stat">${sub ? "已暗投 ▮" : turn ? "考虑中…" : ""}</div>
+    <div class="stat">${esc(status)}</div>
     ${ui && ui.seatExtra ? ui.seatExtra(v, s.seat_id) : ""}
   </div>`;
 }

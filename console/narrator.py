@@ -448,9 +448,15 @@ abandoned=true 的旧目标只作引擎备查,正文禁止提及、惩罚或评�
 时钟含义:{w.get('clock_text') or "时钟走满,这段故事就到站"}
 (若结局因"时钟走完"或"三辞而别"而来,按时钟含义与散伙的分量写,不必强行升级成灾难。)
 最终账本:{json.dumps(ctx['tracks'], ensure_ascii=False)}
+时钟当前为{ctx['tracks']['clock']}/8。低于8时,终局发生在期限之前,不得写成钟走满或期限已到;不要替引擎推进时间。
 两位旅人:{json.dumps(ctx['identities'], ensure_ascii=False)}
 走过的地方:{json.dumps(ctx['scene_titles'], ensure_ascii=False)}
 既成事实:{json.dumps(ctx['facts'], ensure_ascii=False)}
+终幕完整结算:{json.dumps(ctx.get('final_settlement', []), ensure_ascii=False)}
+终幕待回应:{json.dumps(ctx.get('pending_interactions', []), ensure_ascii=False)}
+终幕已成功的行动与已完成里程碑必须兑现为具体结果,不得退回上一幕的未完成状态。
+若有终幕待回应,本次结局直接演出这些回应,并交 npc_responses(每笔 object_id、kind、detail;kind取{RESPONSE_KINDS},detail至少4字),无需再开一幕。
+回应须承认终幕已成功的成果:例如已锁定嫌疑人就须明确指认,同时保留嫌疑与定罪的区别。
 已浮出的暗线:{json.dumps(ctx['hidden_fired'], ensure_ascii=False)}
 {matrix}
 
@@ -472,7 +478,7 @@ abandoned=true 的旧目标只作引擎备查,正文禁止提及、惩罚或评�
 
 只输出这个 JSON:
 {{"text":"不超过400字的结局正文。必须与结局类型相符:HE收束而不腻,BE庄重而不残忍,TE余韵悠长。
-引用至少一件既成事实;若有暗线,让它在结局里回响;写世界如何继续,不评价玩家。"}}"""
+引用至少一件既成事实;若有暗线,让它在结局里回响;写世界如何继续,不评价玩家。"{', "npc_responses":[逐笔填写终幕待回应]' if ctx.get('pending_interactions') else ''}}}"""
 
 
 def _p_episode(ctx):
@@ -796,21 +802,7 @@ def _v_scene(d, ctx=None):
     else:
         d["questions"] = []
     # NPC响应协议:上一幕欠下的回应债,本幕必须逐笔清偿——没有"没有回应"这个选项
-    pend = (ctx or {}).get("pending_interactions") or []
-    if pend:
-        resp = d.get("npc_responses")
-        _req(isinstance(resp, list) and resp, "欠着回应债却没交 npc_responses")
-        by_id = {}
-        for r in resp:
-            _req(isinstance(r, dict) and r.get("object_id"), "npc_response 缺 object_id")
-            _req(r.get("kind") in RESPONSE_KINDS,
-                 f"npc_response kind 非法:{r.get('kind')}(须是 {RESPONSE_KINDS} 之一)")
-            detail = (r.get("detail") or "").strip()
-            _req(len(detail) >= 4, "npc_response detail 太空:回应必须有实质内容")
-            by_id[r["object_id"]] = r
-        for p in pend:
-            _req(p["object_id"] in by_id,
-                 f"{p['object_name']}的回应没交账——被正面交涉的对象不许装聋")
+    _v_responses(d, ctx)
     # 随机事件:引擎按配额要求/禁止,荷官只给事件与难度,成败归引擎
     quota = (ctx or {}).get("event_quota", "optional")
     ev = d.get("event")
@@ -835,9 +827,29 @@ def _v_scene(d, ctx=None):
                      "没有新变化就别让他出场")
 
 
+def _v_responses(d, ctx):
+    pend = (ctx or {}).get("pending_interactions") or []
+    if not pend:
+        return
+    resp = d.get("npc_responses")
+    _req(isinstance(resp, list) and resp, "欠着回应债却没交 npc_responses")
+    by_id = {}
+    for r in resp:
+        _req(isinstance(r, dict) and r.get("object_id"), "npc_response 缺 object_id")
+        _req(r.get("kind") in RESPONSE_KINDS,
+             f"npc_response kind 非法:{r.get('kind')}(须是 {RESPONSE_KINDS} 之一)")
+        detail = (r.get("detail") or "").strip()
+        _req(len(detail) >= 4, "npc_response detail 太空:回应必须有实质内容")
+        by_id[r["object_id"]] = r
+    for p in pend:
+        _req(p["object_id"] in by_id,
+             f"{p['object_name']}的回应没交账——被正面交涉的对象不许装聋")
+
+
 def _v_ending(d, ctx=None):
     _req(isinstance(d, dict) and "text" in d, "结局缺 text")
     _req(isinstance(d["text"], str) and 20 <= len(d["text"]) <= 600, "结局长度不对")
+    _v_responses(d, ctx)
 
 
 VALIDATORS = {"gen_world": _v_world, "gen_episode": _v_episode,

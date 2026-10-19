@@ -213,6 +213,11 @@ def feed(s):
                      "detail": "断言街的规矩,问了就答。"} for p in pend]
         else:
             data = {"text": "测试之城照常运转,断言全部通过。" * 2}
+            if s.get("pending_interactions"):
+                data["npc_responses"] = [
+                    {"object_id": p["object_id"], "kind": "answered",
+                     "detail": "当众确认了本幕查明的证据。"}
+                    for p in s["pending_interactions"]]
         s = rules.apply_system(s, "narration_result", {"kind": kind, "data": data})
         if kind == "gen_world":
             for seat in SEATS:
@@ -458,6 +463,47 @@ class TestDiceAndResolution(unittest.TestCase):
 
 
 class TestHiddenAndEndings(unittest.TestCase):
+    def test_final_interaction_settles_in_ending_without_extra_scene(self):
+        from console import narrator
+        from unittest.mock import patch
+        s = setup_playing(75)
+        s["clock"] = 6
+        for q in s["side_quests"]:
+            q["status"] = "resolved"
+        s["hooks"] = []
+        for seat in SEATS:
+            goal = rules._active_goal(s, seat)
+            goal["milestones_done"] = [m["id"] for m in goal["milestones"][:-1]]
+        action = "请巡检当众指认戴帽人就是留下指印的嫌疑人"
+        with patch.object(rules, "_die", return_value=6):
+            s = rules.apply(s, "seat_a", "commit", {
+                "intent": "support", "action": action,
+                "target": "patrol", "line": "PRIVATE_TABLE_LINE"})
+            s = rules.apply(s, "seat_b", "commit", {
+                "intent": "support", "action": "保全证据与见证人"})
+        self.assertEqual(s["stage"], "endinggen")
+        ctx = s["narration_request"]["context"]
+        self.assertEqual(ctx["tracks"]["clock"], 7)
+        self.assertIn(action, json.dumps(ctx["final_settlement"], ensure_ascii=False))
+        self.assertNotIn("PRIVATE_TABLE_LINE", json.dumps(ctx, ensure_ascii=False))
+        self.assertEqual(ctx["pending_interactions"][0]["object_id"], "patrol")
+        prompt = narrator._p_ending(ctx)
+        self.assertIn("时钟当前为7/8", prompt)
+        self.assertIn("不得写成钟走满", prompt)
+        data = {"text": "钟声将尽之前，巡检当众指认戴帽人是留下指印的嫌疑人。"}
+        with self.assertRaises(narrator.NarratorError):
+            narrator._v_ending(data, ctx)
+        data["npc_responses"] = [{"object_id": "patrol", "kind": "answered",
+                                  "detail": "戴帽人就是留下指印的嫌疑人。"}]
+        narrator._v_ending(data, ctx)
+        idx = s["scene_index"]
+        s = rules.apply_system(s, "narration_result", {"kind": "render_ending", "data": data})
+        self.assertEqual(s["phase"], "finished")
+        self.assertEqual(s["scene_index"], idx)
+        self.assertEqual(s["clock"], 7)
+        self.assertIsNone(s["pending_interactions"])
+        self.assertIn("戴帽人就是留下指印的嫌疑人", s["facts"][-1])
+
     def test_hidden_thread(self):
         s = setup_playing(1)
         s["flags"].append("found_the_key_truth")
@@ -645,6 +691,8 @@ class TestHiddenAndEndings(unittest.TestCase):
         self.assertIn(truth, json.dumps(s["facts"], ensure_ascii=False))
         self.assertNotIn(hook, s["hooks"])
         self.assertIn("追问到底", json.dumps(s["history"], ensure_ascii=False))
+        self.assertNotIn("下一幕必须有所回应",
+                         json.dumps(s["history"][-1]["report"], ensure_ascii=False))
 
     def test_npc_book_tracks_appearances(self):
         """同名对象反复登场,台帐计数;change 入台帐(刷脸铁律的账本侧)。"""
@@ -847,7 +895,7 @@ class TestSideQuests(unittest.TestCase):
         try:
             s = rules.apply(s, "seat_a", "commit",
                             {"intent": "explore", "action": "追上那个人",
-                             "target": "npc"})
+                             "target": "npc", "about": self._npc_quest(s)["question"]})
             s = rules.apply(s, "seat_b", "commit",
                             {"intent": "support", "action": "掩护"})
         finally:
@@ -953,7 +1001,9 @@ class TestLockAndEndFixes(unittest.TestCase):
                         {"intent": "recover", "action": "撑住"})
         self.assertEqual(s["stage"], "endinggen")
         self.assertEqual(s["ending"]["kind"], "TE")
-        self.assertEqual(s["ending"]["reason"], "out_of_time")
+        self.assertEqual(s["ending"]["reason"], "scene_limit")
+        self.assertEqual(s["ending"]["reason_name"], "幕数走尽")
+        self.assertLess(s["clock"], 8)
 
 
 class TestScopeAndAntiEpic(unittest.TestCase):
@@ -1016,7 +1066,7 @@ class TestScopeAndAntiEpic(unittest.TestCase):
     def test_ending_prompt_forbids_invention_and_moralizing(self):
         from console import narrator
         ctx = {"world": {"world_name": "测", "clock_text": ""},
-               "kind": "HE", "reason_name": "目标达成", "tracks": {},
+               "kind": "HE", "reason_name": "目标达成", "tracks": {"clock": 7},
                "identities": {}, "scene_titles": [], "facts": [],
                "hidden_fired": []}
         p = narrator._p_ending(ctx)

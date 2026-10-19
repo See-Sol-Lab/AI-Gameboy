@@ -451,6 +451,14 @@ def apply_system(full_state, action_id, payload):
         s["narration_request"] = None
         s["stage"] = "scene"
     elif kind == "render_ending":
+        pend = {p["object_id"]: p for p in s.get("pending_interactions") or []}
+        for r in data.get("npc_responses") or []:
+            p = pend.get(r.get("object_id"))
+            if p:
+                kn = RESPONSE_KIND_NAMES.get(r.get("kind"), r.get("kind", "?"))
+                s["facts"].append(f"[终局]{p['object_name']}对{p['by']}"
+                                  f"有了回应({kn}):{r['detail']}")
+        s["pending_interactions"] = None
         s["ending"]["text"] = data["text"]
         s["narration_request"] = None
         s["phase"] = "finished"
@@ -957,7 +965,7 @@ def _apply_commit(s, seat_id, params):
     about = params.get("about")
     if about is not None:
         # 追问机制:问对了人、点对了悬事,就是解谜的关键——引擎按逼问次数放谜底
-        if not target or target == "npc":
+        if not target:
             raise IllegalAction("about 须与 target(在场对象)同用:先点名问谁,再声明问什么")
         if about not in s["hooks"]:
             raise IllegalAction(f"about 须逐字引用未解决悬事之一:{s['hooks']}")
@@ -1185,8 +1193,6 @@ def _resolve(s):
                 "object_id": t, "object_name": obj_by_id[t]["name"],
                 "by": ident["name"], "action": p["action"][:80],
                 "tier": tiers[seat], "about": p.get("about")})
-            report.append(f"  ◆ {ident['name']}与{obj_by_id[t]['name']}正面交涉"
-                          "——对方下一幕必须有所回应")
             # 追问机制:点对悬事且判定成功=逼问一次;两次(卓越算两次)谜底必出。
             # 能问对人、问对问题,本身就是解谜成果——不许守门守到终局。
             if p.get("about") and tiers[seat] in ("success", "critical_success"):
@@ -1208,6 +1214,9 @@ def _resolve(s):
     # 谜底本幕已出的,追问债随之销账——真相大白就是最好的回应(三测毛边①)
     interactions = [i for i in interactions
                     if not i.get("about") or i["about"] in s["hooks"]]
+    for i in interactions:
+        report.append(f"  ◆ {i['by']}与{i['object_name']}正面交涉"
+                      "——对方下一幕必须有所回应")
     s["pending_interactions"] = interactions or None
 
     ia, ib = pa["intent"], pb["intent"]
@@ -1343,7 +1352,7 @@ def _resolve(s):
         _finish_auto(s, "insist_end")
     elif s["scene_index"] >= MAX_SCENES:
         # 幕数走满,引擎强制收卷——不看任何人脸色
-        _finish_auto(s, "out_of_time")
+        _finish_auto(s, "scene_limit")
     elif s["clock"] >= 8 and not locked:
         _finish_auto(s, "out_of_time")
     else:
@@ -1388,6 +1397,7 @@ def _log(s, scene, commits, slip, report):
 
 REASON_NAMES = {"goal": "目标达成", "all_down": "无人生还", "world_lost": "世界失守",
                 "sacrifice": "有人没能回来", "out_of_time": "时钟走完",
+                "scene_limit": "幕数走尽",
                 "mutual_end": "双双停笔", "insist_end": "三辞而别"}
 
 
@@ -1455,6 +1465,9 @@ def _finish(s, kind, reason):
             "identities": [_identity(s, s["identities"][x])["name"]
                            for x in s["seats"] if s["identities"][x]],
             "facts": s["facts"][-10:],
+            "final_settlement": [line for line in s["history"][-1]["report"]
+                                 if "留言:「" not in line] if s["history"] else [],
+            "pending_interactions": deepcopy(s.get("pending_interactions") or []),
             "main_goal_locked": s.get("main_goal_locked", False),
             "goal_locked_at_scene": s.get("goal_locked_at_scene"),
             "events": deepcopy((s.get("events") or {}).get("log", [])),
