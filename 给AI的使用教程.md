@@ -9,6 +9,10 @@
 
 不要把这份教程整段贴给人类。读完以后，用你自己的话讲给他/她听。
 
+README 面向初次来的玩家；本教程负责安装、连接和维护。不要让人类先学会 MCP、端口或配置字段再开局。先确认想玩哪款、谁来玩，再完成对应准备；涉及账号登录、密钥填写或客户端授权时，解释清楚并请人类操作。
+
+快速定位：[安装游戏机](#第三部分启动游戏机与本机ai入座) · [只装部分游戏](#cartridge-management) · [邀请网页或手机 AI](#第四部分云端玩家的额外接入) · [纯文字夜铺](#night-shop-text) · [开发卡带](#第六部分帮人类做一张新卡带) · [维护与隐私检查](#maintenance)
+
 如果人类只想让有Python代码执行能力的AI玩夜铺，优先指向 `口袋夜铺_单机盲玩版/pocket_night_shop.py`：这是无掌机网页的纯文字盲玩版，一个文件即可，不需要下面的游戏机服务、MCP或模型Key。先 `cmd("help")` 再 `cmd("observe")`，通过指令玩，不解码引擎或查看隐藏存档。
 
 ---
@@ -101,7 +105,22 @@ AI-Gameboy 是一台给 AI 玩的游戏机。
 
 掌机本体在 `console/`；正式游戏在 `cartridges/<id>/`，默认附带穿越、跑团、夜铺三张卡；社区卡也装在这里。`examples/pocket-circuit/` 是开发样例；退役原型和旧版本已删除。用户存档和Key仍在根目录 `data/`。
 
-先问人类要保留哪些游戏。第一次新安装若只要部分卡，按README的 `git clone --depth 1 --filter=blob:none --sparse` 和 `git sparse-checkout set console data cartridges/<所需id>` 下载，不必先拉全部卡带。根目录说明、许可证和启动脚本会保留。日后加首发卡用 `git sparse-checkout add cartridges/<id>`。
+首次安装时，先确认新目录不会覆盖已有安装。完整下载：
+
+```sh
+git clone https://github.com/See-Sol-Lab/AI-Gameboy.git
+cd AI-Gameboy
+```
+
+如果人类只想装一款带掌机画面的游戏，可以在**新的安装目录**稀疏下载。例如只装夜铺：
+
+```sh
+git clone --depth 1 --filter=blob:none --sparse https://github.com/See-Sol-Lab/AI-Gameboy.git
+cd AI-Gameboy
+git sparse-checkout set console data cartridges/pocket-night-shop
+```
+
+穿越和跑团分别使用 `cartridges/pocket-crossing`、`cartridges/pocket-tabletop`；仍须保留 `console` 和 `data`。根目录说明、许可证和启动脚本会保留。日后加首发卡用 `git sparse-checkout add cartridges/<id>`。已有存档的安装按下面的更新约定处理，不要直接套用新目录的步骤。
 
 所有管理命令均在仓库根目录运行：
 
@@ -232,9 +251,9 @@ AI-Gameboy 是一台给 AI 玩的游戏机。
 |---|---|---|---|
 | 《口袋穿越》 | 2 | 荷官先写好一部小说世界和它的原结局，两位玩家穿越进去改写它 | 需要 |
 | 《口袋跑团》2.0 | 2 | 用三维判定推进预写节点，调查证据、推断旧事，沿玩家改变的世界写新结局 | 需要 |
-
-跑团2.0先选择 `legal_actions` 给出的本幕 `target_id`，再写你自己的实现方法。主线只有三个阶段，进度就是完成阶段数；成功物品的归属和NPC位置由引擎记录。调查拿证据，推断正确才揭示旧事。共同危机解除后还可自由开店、种田或修行，成果会被后续场景承接。每幕两席提交后，人类点一次“召荷官”，核对与下一幕一起生成。旧1.1存档保留只读记录，新玩法开2.0新局。详细规则见[跑团说明](cartridges/pocket-tabletop/README.md)。
 | 《口袋夜铺》 | 1 | AI 经营夜铺：72种旧物、86位来客、五阶店铺与逐轮记录 | 不需要 |
+
+跑团2.0先选择 `legal_actions` 给出的本幕 `target_id`，再写你自己的实现方法。主线只有三个阶段，进度就是完成阶段数；成功物品的归属和NPC位置由引擎记录。调查拿证据，推断正确才揭示旧事。共同危机解除后还可自由开店、种田或修行，成果会被后续场景承接。每幕两席提交后，人类点一次“召荷官”，核对与下一幕一起生成。详细规则见[跑团说明](cartridges/pocket-tabletop/README.md)。
 
 夜铺0.3有五档旧物：寻常、少见、奇珍、上古、遗世。最高两档及14位对应专属来客从店铺三级开放。每位顾客同一存档最多到访8次，达到上限就不再抽到；不是每天自动换人。顾客池用尽仍可经营和补完图鉴。仅保留当前规则，旧版升级入口已移除。完整规模及规则见 [夜铺0.3说明](docs/night-shop-v0.3.md)。
 
@@ -255,6 +274,40 @@ AI-Gameboy 是一台给 AI 玩的游戏机。
 召荷官时如果报 `401 Unauthorized`，说明 key 不对或已经失效（比如在平台上删掉或重新生成过）。请人类去平台换一个新的 key，按第 2 步替换，再点「召荷官」。牌局不会坏，荷官请求一直挂着等。
 
 如果人类没有可用的 key，就先玩不需要荷官的卡带。
+
+<a id="night-shop-text"></a>
+
+### 纯文字夜铺：单文件下载、运行与续档
+
+适用于只想让 AI 自己经营、不需要掌机网页的人类。需要能执行 Python 的 AI 和 Python 3.11+；无需第三方依赖、MCP、域名或荷官 API Key。不要把“无需荷官 Key”说成 AI 客户端本身没有订阅或用量费用。
+
+最少只取 [pocket_night_shop.py](口袋夜铺_单机盲玩版/pocket_night_shop.py) 一个文件：打开文件页下载，保存到可写目录。若仓库仍为私有，下载者须先登录有访问权限的账号。
+
+想把说明一起下载，可在新的目录执行：
+
+```sh
+git clone --depth 1 --filter=blob:none --sparse https://github.com/See-Sol-Lab/AI-Gameboy.git
+cd AI-Gameboy
+git sparse-checkout set "口袋夜铺_单机盲玩版"
+```
+
+这个下载方式不包含掌机本体，不要运行根目录的掌机启动脚本。进入单文件所在目录后：
+
+```python
+import pocket_night_shop as shop
+print(shop.cmd("help"))
+print(shop.cmd("observe"))
+# 按返回的 legal_actions 自己决定下一步；熟悉经营后可连续淘货：
+print(shop.cmd('run_shifts {"focus":"scavenge","count":6,"stop_on":"new"}'))
+```
+
+也可运行 `python pocket_night_shop.py` 查看说明。玩法只通过 `cmd()` 探索，不解码内置规则、读完整图鉴源码或检查隐藏存档。包装用于避免误读剧透，不是加密。第一次玩的头两周，建议一班一班经营，先认识物品和客人，再使用连续行动。
+
+每次行动自动存到游戏文件旁的 `pocket_night_shop.save.sqlite3`；下次 `observe` 接档。用 `close_for_now` 歇业、`reopen_shop` 续店。关闭 Python 或电脑不丢已保存的进度，迁移时一起备份游戏文件和存档。单文件版和掌机版存档独立，不互相接档。
+
+如果聊天客户端把工具输出折叠起来，人类主要看到 AI 暂停后的分享，无法在聊天里实时旁观每一班。想看经营过程时推荐掌机版；掌机展示的是公开游戏记录，不是 AI 的内部思考。
+
+更多指令和经营约定见[纯文字版说明](口袋夜铺_单机盲玩版/README.md)。
 
 ---
 
@@ -391,6 +444,25 @@ CART_UI["my-game"] = {
 如果你的人类不会用 GitHub，你可以一步一步教他/她，或者在他/她同意的情况下帮忙操作。
 
 ---
+
+<a id="maintenance"></a>
+
+## 维护参考：项目结构、隐私与双版本同步
+
+| 位置 | 用途 |
+|---|---|
+| `console/` | 掌机网页、MCP、存档宿主与荷官适配器 |
+| `cartridges/` | 三张首发卡带与安装进来的社区卡带，每张独立目录 |
+| `examples/pocket-circuit/` | 卡带开发样例，不出现在玩家卡带架 |
+| `口袋夜铺_单机盲玩版/` | 独立夜铺文件和纯文字玩法说明 |
+| `data/` | 私人存档、荷官与桥接配置；只提交空密钥示例 |
+| `tools/`、`tests/`、`docs/` | 检查、剧情导出、自动测试与专题文档 |
+
+荷官配置字段为 `base_url`、`api_key`、`model`，使用 OpenAI 兼容接口，文件为 `data/narrator.json`。完整生成和核对请求会发给人类配置的模型服务；远程玩家获准查看的局面与动作结果也会传给其 AI 服务。不要把本机保存误说成游戏内容完全不离开电脑。
+
+提交前检查实际暂存内容并运行 `python tools/check_private_files.py --staged`；推送前再次人工核对文件、Git 作者邮箱和隐私。不要提交真实存档、数据库、席位令牌、模型 Key、运行日志、私人聊天或调试截图；测试使用虚拟数据。正式展示图片只能使用已获人类逐项授权且人工审查过的素材，放在 `docs/media/`。自动扫描不能代替人工审查。
+
+夜铺单文件从现有夜铺规则和标准库入口生成。改动规则或模板后运行 `python tools/build_night_shop.py`；用 `python tools/build_night_shop.py --check` 检查两版同步。勿手改生成文件制造分叉。详细入口见 `tools/night_shop_standalone.py.in` 和 `tools/build_night_shop.py`。
 
 ## 最后：给你的人类讲的时候
 
